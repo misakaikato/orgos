@@ -1,0 +1,5 @@
+{
+	"name": "@orgos/runner",
+	"private": true,
+	"type": "module"
+}

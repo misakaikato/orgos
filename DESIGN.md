@@ -31,7 +31,7 @@
 
 ```css
 --font-ui: "Instrument Sans", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
---font-title: "Noto Serif SC", "Songti SC", serif;   /* 只用于页面级标题，全站 ≤4 处 */
+--font-title: "Songti SC", "STSong", "Noto Serif SC", serif;   /* 只用于页面级标题，全站 ≤4 处；系统宋体，不加载网络字体 */
 --font-mono: "JetBrains Mono", "SF Mono", Menlo, monospace;
 ```
 

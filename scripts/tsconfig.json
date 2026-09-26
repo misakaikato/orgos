@@ -1,0 +1,12 @@
+{
+	"extends": "../tsconfig.base.json",
+	"compilerOptions": {
+		"types": ["bun"],
+		"noEmit": true,
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["../apps/server/src/*"]
+		}
+	},
+	"include": ["./**/*.ts"]
+}

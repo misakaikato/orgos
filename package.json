@@ -1,0 +1,21 @@
+{
+	"name": "orgos",
+	"private": true,
+	"type": "module",
+	"workspaces": ["apps/*", "packages/*"],
+	"scripts": {
+		"dev:db": "NO_PROXY=localhost,127.0.0.1 bash scripts/dev-db.sh",
+		"db:generate": "NO_PROXY=localhost,127.0.0.1 bun run --cwd apps/server db:generate",
+		"db:migrate": "NO_PROXY=localhost,127.0.0.1 bun run --cwd apps/server db:migrate",
+		"typecheck": "NO_PROXY=localhost,127.0.0.1 bun run --filter '*' typecheck && NO_PROXY=localhost,127.0.0.1 tsc --noEmit -p scripts/tsconfig.json",
+		"lint": "NO_PROXY=localhost,127.0.0.1 biome check apps packages scripts",
+		"test": "NO_PROXY=localhost,127.0.0.1 bun run --filter '*' test",
+		"seed": "NO_PROXY=localhost,127.0.0.1 bun scripts/seed.ts"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.6",
+		"@types/bun": "1.3.14",
+		"typescript": "5.9.3"
+	},
+	"trustedDependencies": ["@biomejs/biome"]
+}

@@ -1,0 +1,5 @@
+{
+	"name": "@orgos/web",
+	"private": true,
+	"type": "module"
+}
