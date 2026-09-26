@@ -2,9 +2,14 @@ import { ERROR_CODES } from "@orgos/protocol";
 import { Hono } from "hono";
 import { auth } from "@/auth";
 import { AppError, errorBody } from "@/lib/errors";
+import { wsProxyEvents } from "@/lib/ws-proxy";
+import { upgradeWs } from "@/lib/ws-upgrade";
 import type { AppEnv } from "@/middleware/auth";
+import { nextWsTarget, proxyToNext } from "@/proxy";
+import { registerConversationRoutes } from "@/routes/conversations";
 import { registerMeRoutes } from "@/routes/me";
 import { registerOnboardingRoutes } from "@/routes/onboarding";
+import { registerWsRoutes } from "@/routes/ws";
 
 export function createApp(): Hono<AppEnv> {
 	const app = new Hono<AppEnv>();
@@ -14,10 +19,19 @@ export function createApp(): Hono<AppEnv> {
 
 	registerOnboardingRoutes(app);
 	registerMeRoutes(app);
+	registerConversationRoutes(app);
+	registerWsRoutes(app);
 
-	app.notFound((c) =>
+	// 具体路由在前；未命中的 /api 返回统一错误体，其余全部反代给内部 Next（含 HMR 的 WS 升级）。
+	app.all("/api/*", (c) =>
 		c.json(errorBody(ERROR_CODES.NOT_FOUND, "not found"), 404),
 	);
+	app.all("*", (c) => {
+		if (c.req.header("upgrade")?.toLowerCase() === "websocket") {
+			return upgradeWs(c, wsProxyEvents(nextWsTarget(new URL(c.req.url))));
+		}
+		return proxyToNext(c.req.raw);
+	});
 	app.onError((err, c) => {
 		if (err instanceof AppError) {
 			return c.json(errorBody(err.code, err.message), err.status);

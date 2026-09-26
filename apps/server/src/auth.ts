@@ -17,6 +17,8 @@ export const auth = betterAuth({
 		schema: { user, session, account, verification },
 	}),
 	baseURL: env.BETTER_AUTH_URL,
+	// 本地经 127.0.0.1 访问与 localhost 等价。
+	trustedOrigins: [env.BETTER_AUTH_URL.replace("//localhost", "//127.0.0.1")],
 	secret: env.BETTER_AUTH_SECRET,
 	emailAndPassword: {
 		enabled: true,

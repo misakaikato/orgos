@@ -1,5 +1,27 @@
 {
 	"name": "@orgos/web",
 	"private": true,
-	"type": "module"
+	"type": "module",
+	"scripts": {
+		"dev": "NO_PROXY=localhost,127.0.0.1 next dev --port 3930 --hostname 127.0.0.1",
+		"build": "NO_PROXY=localhost,127.0.0.1 next build",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@orgos/protocol": "workspace:*",
+		"ky": "2.1.0",
+		"next": "16.3.6",
+		"react": "19.3.0",
+		"react-dom": "19.3.0"
+	},
+	"devDependencies": {
+		"@tailwindcss/postcss": "4.3.3",
+		"@types/node": "26.6.3",
+		"@types/react": "19.3.0",
+		"@types/react-dom": "19.3.0",
+		"tailwindcss": "4.3.3",
+		"typescript": "5.9.3",
+		"vitest": "4.1.10"
+	}
 }

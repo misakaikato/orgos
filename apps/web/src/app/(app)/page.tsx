@@ -1,0 +1,16 @@
+"use client";
+
+import { EmptyState } from "@/components/ui/states";
+import { appHref } from "@/lib/auth-mode";
+
+/** 桌面端未选会话时的主区。 */
+export default function HomePage() {
+	return (
+		<div className="flex flex-1 items-center justify-center">
+			<EmptyState
+				text="从左侧选一个会话，或从通讯录找同事和他们的幕僚长。"
+				action={{ label: "打开通讯录", href: appHref("/contacts") }}
+			/>
+		</div>
+	);
+}

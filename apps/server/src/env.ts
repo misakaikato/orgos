@@ -9,4 +9,6 @@ export const env = {
 		process.env.BETTER_AUTH_SECRET ?? "orgos-local-dev-secret-not-for-deploy",
 	BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "http://localhost:8930",
 	PORT: Number(process.env.PORT ?? 8930),
+	/** 内部 Next 进程；浏览器只经服务端访问它。 */
+	NEXT_INTERNAL_URL: process.env.NEXT_INTERNAL_URL ?? "http://127.0.0.1:3930",
 } as const;

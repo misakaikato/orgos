@@ -63,3 +63,14 @@ export const UserSchema = z.object({
 	name: z.string(),
 });
 export type User = z.infer<typeof UserSchema>;
+
+export const ConversationSchema = z.object({
+	id: z.uuid(),
+	tenantId: z.uuid(),
+	kind: z.enum(CONVERSATION_KINDS),
+	title: z.string().nullable(),
+	createdBy: z.uuid(),
+	createdAt: z.iso.datetime(),
+	lastSeq: z.number().int(),
+});
+export type Conversation = z.infer<typeof ConversationSchema>;

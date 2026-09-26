@@ -17,3 +17,13 @@ export async function parseJson<S extends z.ZodType>(
 	if (!parsed.success) throw badRequest(formatZodError(parsed.error));
 	return parsed.data;
 }
+
+/** 按 schema 校验查询参数；不合法 → 400。 */
+export function parseQuery<S extends z.ZodType>(
+	c: Context,
+	schema: S,
+): z.infer<S> {
+	const parsed = schema.safeParse(c.req.query());
+	if (!parsed.success) throw badRequest(formatZodError(parsed.error));
+	return parsed.data;
+}

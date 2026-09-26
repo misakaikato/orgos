@@ -8,6 +8,7 @@ import {
 	OnboardingResponseSchema,
 } from "@orgos/protocol";
 import { beforeAll, describe, expect, it } from "vitest";
+import { app } from "@/index";
 import {
 	anonymous,
 	bearerClient,
@@ -151,6 +152,20 @@ describe("onboarding 成功", () => {
 			expect(p.front.ownerId).toBe(p.principal.id);
 			expect(p.front.handle).toBe(`${p.principal.handle}-chief`);
 		}
+	});
+
+	it("cookie 与 bearer 同时出现时以 bearer 为准", async () => {
+		const b = await bearerClient(joiner.email);
+		const res = await b.request("GET", "/api/me");
+		const both = await app.request("/api/me", {
+			headers: {
+				...owner.headers,
+				authorization: (b.headers as { authorization: string }).authorization,
+			},
+		});
+		expect(res.status).toBe(200);
+		const me = MeResponseSchema.parse(await both.json());
+		expect(me.user.email).toBe(joiner.email);
 	});
 
 	it("bearer token 与 cookie 等价", async () => {

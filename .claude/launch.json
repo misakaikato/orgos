@@ -1,0 +1,1 @@
+{"version":"0.0.1","configurations":[{"name":"orgos","runtimeExecutable":"bun","runtimeArgs":["run","dev"],"port":8930}]}

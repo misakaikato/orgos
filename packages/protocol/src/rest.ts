@@ -4,11 +4,13 @@
 import { z } from "zod";
 import {
 	AgentSchema,
+	ConversationSchema,
 	HandleSchema,
 	PrincipalSchema,
 	TenantSchema,
 	UserSchema,
 } from "./entities";
+import { EventSchema, MESSAGE_MAX_LENGTH } from "./events";
 
 /** 统一错误体：`{ error: { code, message } }`。 */
 export const ErrorBodySchema = z.object({
@@ -28,6 +30,8 @@ export const ERROR_CODES = {
 	ALREADY_ONBOARDED: "ALREADY_ONBOARDED",
 	HANDLE_TAKEN: "HANDLE_TAKEN",
 	INVITE_CODE_INVALID: "INVITE_CODE_INVALID",
+	AGENT_NOT_REACHABLE: "AGENT_NOT_REACHABLE",
+	ALREADY_MEMBER: "ALREADY_MEMBER",
 	INTERNAL: "INTERNAL",
 } as const;
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -74,3 +78,85 @@ export const DirectoryResponseSchema = z.object({
 	),
 });
 export type DirectoryResponse = z.infer<typeof DirectoryResponseSchema>;
+
+// ─────────────────────────── 会话 ───────────────────────────
+
+export const ConversationSummarySchema = z.object({
+	conversation: ConversationSchema,
+	members: z.array(PrincipalSchema),
+	lastEvent: EventSchema.optional(),
+	/** 他人发来、我尚未读到的消息数。 */
+	unread: z.number().int(),
+	/** 我在该会话里已读到的 seq。 */
+	lastReadSeq: z.number().int().optional(),
+});
+export type ConversationSummary = z.infer<typeof ConversationSummarySchema>;
+
+export const ConversationListResponseSchema = z.object({
+	items: z.array(ConversationSummarySchema),
+});
+export type ConversationListResponse = z.infer<
+	typeof ConversationListResponseSchema
+>;
+
+export const GROUP_TITLE_MAX_LENGTH = 60;
+
+export const CreateConversationRequestSchema = z.discriminatedUnion("kind", [
+	z.object({
+		kind: z.literal("dm"),
+		withPrincipalId: z.uuid(),
+	}),
+	z.object({
+		kind: z.literal("group"),
+		title: z.string().trim().min(1).max(GROUP_TITLE_MAX_LENGTH),
+		memberIds: z.array(z.uuid()).max(100),
+	}),
+]);
+export type CreateConversationRequest = z.infer<
+	typeof CreateConversationRequestSchema
+>;
+
+export const CreateConversationResponseSchema = z.object({
+	conversation: ConversationSchema,
+});
+export type CreateConversationResponse = z.infer<
+	typeof CreateConversationResponseSchema
+>;
+
+export const EVENTS_PAGE_MAX = 200;
+
+/** `GET /api/conversations/:id/events` 的查询参数（字符串经 coerce 转数字）。 */
+export const EventsQuerySchema = z.object({
+	after: z.coerce.number().int().min(0).default(0),
+	limit: z.coerce.number().int().min(1).max(EVENTS_PAGE_MAX).default(100),
+});
+export type EventsQuery = z.infer<typeof EventsQuerySchema>;
+
+export const EventsResponseSchema = z.object({
+	items: z.array(EventSchema),
+});
+export type EventsResponse = z.infer<typeof EventsResponseSchema>;
+
+export const PostMessageRequestSchema = z.object({
+	text: z
+		.string()
+		.max(MESSAGE_MAX_LENGTH)
+		.refine((t) => t.trim().length > 0, "消息不能为空"),
+	mentions: z.array(z.uuid()).max(50).optional(),
+});
+export type PostMessageRequest = z.infer<typeof PostMessageRequestSchema>;
+
+export const PostMessageResponseSchema = z.object({
+	event: EventSchema,
+});
+export type PostMessageResponse = z.infer<typeof PostMessageResponseSchema>;
+
+export const AddMemberRequestSchema = z.object({
+	principalId: z.uuid(),
+});
+export type AddMemberRequest = z.infer<typeof AddMemberRequestSchema>;
+
+export const MarkReadRequestSchema = z.object({
+	seq: z.number().int().min(0),
+});
+export type MarkReadRequest = z.infer<typeof MarkReadRequestSchema>;

@@ -1,3 +1,4 @@
+import { type MeResponse, MeResponseSchema } from "@orgos/protocol";
 import { app } from "@/index";
 
 const ORIGIN = process.env.BETTER_AUTH_URL ?? "http://localhost:8930";
@@ -17,6 +18,8 @@ function cookiesFrom(res: Response): string {
 
 export type Client = {
 	email: string;
+	/** 鉴权头（cookie 或 authorization），供 WS 等非 REST 场景复用。 */
+	headers: Record<string, string>;
 	/** body 为 JSON 值，序列化后发送。 */
 	request(method: string, path: string, body?: unknown): Promise<Response>;
 	/** 原样发送字符串请求体。 */
@@ -40,6 +43,7 @@ function client(email: string, headers: Record<string, string>): Client {
 		});
 	return {
 		email,
+		headers,
 		request: (method, path, body) =>
 			send(method, path, body === undefined ? undefined : JSON.stringify(body)),
 		send,
@@ -76,4 +80,33 @@ export async function bearerClient(email: string): Promise<Client> {
 	const token = res.headers.get("set-auth-token");
 	if (!token) throw new Error("sign-in 未返回 set-auth-token");
 	return client(email, { authorization: `Bearer ${token}` });
+}
+
+export type TeamMember = { client: Client; me: MeResponse };
+
+/**
+ * 建一个租户：第一人创建组织，其余人用邀请码加入。返回各自的客户端与 /api/me。
+ */
+export async function createTeam(names: string[]): Promise<TeamMember[]> {
+	const team: TeamMember[] = [];
+	let inviteCode: string | undefined;
+	for (const name of names) {
+		const client = await signUpAndIn(name);
+		const handle = uniq(name.toLowerCase().replace(/[^a-z]/g, "") || "p");
+		const res = await client.request(
+			"POST",
+			"/api/onboarding",
+			inviteCode
+				? { mode: "join", inviteCode, displayName: name, handle }
+				: { mode: "create", orgName: uniq("org-"), displayName: name, handle },
+		);
+		if (res.status !== 201)
+			throw new Error(`onboarding ${res.status}: ${await res.text()}`);
+		const me = MeResponseSchema.parse(
+			await (await client.request("GET", "/api/me")).json(),
+		);
+		inviteCode ??= me.tenant.inviteCode;
+		team.push({ client, me });
+	}
+	return team;
 }

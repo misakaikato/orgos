@@ -10,7 +10,7 @@
 import { and, eq, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { db, type Executor } from "@/db";
-import { members, tenants, user } from "@/db/schema";
+import { members, principals, tenants, user } from "@/db/schema";
 
 export type TenantTable = PgTable & { tenantId: PgColumn };
 
@@ -95,6 +95,7 @@ export function scoped(tenantId: string, executor: Executor = db): Scoped {
 
 export type Tenant = typeof tenants.$inferSelect;
 export type Member = typeof members.$inferSelect;
+export type PrincipalRow = typeof principals.$inferSelect;
 
 /** 用户所属的租户与成员身份；尚未 onboarding 返回 null。 */
 export async function findMembership(
@@ -142,4 +143,16 @@ export async function findUserIdByEmail(
 		.where(eq(user.email, email))
 		.limit(1);
 	return rows[0]?.id;
+}
+
+/** 用户在其租户里的本人主体（kind=human）。 */
+export async function findSelfPrincipal(
+	s: Scoped,
+	userId: string,
+): Promise<PrincipalRow | undefined> {
+	return s.first(
+		principals,
+		eq(principals.userId, userId),
+		eq(principals.kind, "human"),
+	);
 }
