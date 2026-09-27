@@ -72,7 +72,7 @@
 	.sw.later { background: transparent; border: 1.5px dotted var(--muted); }
 	figure { margin: 20px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
 	.scroll { overflow-x: auto; }
-	figure svg { display: block; max-width: none; height: auto; }
+	figure svg { display: block; width: 100%; min-width: 960px; height: auto; }
 	figcaption { margin-top: 12px; font-size: 13.5px; color: var(--muted); max-width: 820px; }
 
 	/* 图中的元素 */
@@ -119,14 +119,16 @@
 	.ask h3 { margin: 0 0 8px; font-size: 14px; color: var(--pending); }
 	.ask ol { margin: 0; padding-left: 20px; font-size: 14px; }
 	.ask li { margin-bottom: 6px; }
+	.c { fill: var(--muted); font-size: 10.5px; font-family: "SF Mono", Menlo, Consolas, monospace; }
+	.c.b { fill: currentColor; font-size: 12px; font-weight: 600; }
 	code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; background: var(--sunk); padding: 1px 5px; border-radius: 4px; }
 </style>
 
 <div class="wrap">
 	<header class="prose">
-		<p class="eyebrow">orgos · 阶段一设计梳理 · 最近更新 2026 年 9 月 28 日</p>
+		<p class="eyebrow">orgos · 阶段一设计梳理 · 最近更新 2026 年 9 月 27 日</p>
 		<h1>orgos 架构</h1>
-		<p class="lede">人与各自的代理组在同一个即时通讯里协作：分身对外代表本人，助手替本人干活，设备 Runner 把员工电脑变成虚拟总线上的节点。下面依次是：系统分层、一条消息怎么被分身处理、一个代理的多条线（话题）、记忆层，以及关键决定与进度。</p>
+		<p class="lede">人与各自的代理组在同一个即时通讯里协作：分身对外代表本人，助手替本人干活，设备 Runner 把员工电脑变成虚拟总线上的节点。下面先总览，再逐层展开：系统分层、服务端模块地图、分身怎么处理一条消息以及它在代码里走过的路径、会话内话题、设备 Runner 与外部 agent、企业模型网关、记忆层、数据模型、连接与协议，最后是关键决定与进度。</p>
 		<div class="legend" aria-label="图例">
 			<span><i class="sw done"></i>已完成并验收</span>
 			<span><i class="sw review"></i>施工中</span>
@@ -136,7 +138,7 @@
 	</header>
 
 	<section aria-labelledby="f1">
-		<h2 id="f1">系统分层</h2>
+		<h2 id="f1">系统分层（总览）</h2>
 		<figure>
 			<div class="scroll">
 				<svg viewBox="0 0 1160 820" width="1160" role="img" aria-label="服务端分为接入层、代理层、业务层、平台层四层，上层调用下层，业务层的新事件经事件通知唤起代理层；服务端下方是 PostgreSQL 与员工电脑上的 Runner，Runner 主动连回能力总线并以 ACP 驱动外部 agent；企业模型网关连接模型厂商。">
@@ -261,6 +263,215 @@
 		</figure>
 	</section>
 
+	<section aria-labelledby="fM">
+		<h2 id="fM">服务端模块地图</h2>
+		<p class="prose">把总览里的每一层展开到模块：每个方块写它做什么，底部一行是代码位置（<code>apps/server/src</code> 下，前端在 <code>apps/web/src</code>）。</p>
+		<figure>
+			<div class="scroll">
+<svg viewBox="0 0 1160 920" width="1160" role="img" aria-label="服务端模块地图：前端、接入层、代理层、业务层、平台层五行，每层五个模块并注明代码位置；接入层与代理层之间有鉴权中间件；右侧共享协议包被三端共用；底部是 PostgreSQL。">
+<defs><marker id="mm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="mmA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="mmM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker><marker id="mmP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah p"/></marker></defs>
+<text class="t" x="20" y="46">前端</text>
+<text class="c" x="20" y="66">apps/web</text>
+<rect class="box " x="140" y="20" width="165" height="112" rx="10"/>
+<text class="t" x="152" y="42">页面</text>
+<text class="s" x="152" y="62">消息 · 待办 · 通讯录</text>
+<text class="s" x="152" y="80">代理组 · 设备 · 模型</text>
+<text class="s" x="152" y="98">登录 · 引导 · 我</text>
+<text class="c" x="152" y="122">app/(app)/*</text>
+<rect class="box " x="320" y="20" width="165" height="112" rx="10"/>
+<text class="t" x="332" y="42">会话视图</text>
+<text class="s" x="332" y="62">消息列表 · 输入框</text>
+<text class="s" x="332" y="80">话题栏 · 任务条</text>
+<text class="s" x="332" y="98">协商卡 · 依据标签</text>
+<text class="c" x="332" y="122">conversation/*</text>
+<rect class="box " x="500" y="20" width="165" height="112" rx="10"/>
+<text class="t" x="512" y="42">代理组页</text>
+<text class="s" x="512" y="62">代理卡 · 外部助手</text>
+<text class="s" x="512" y="80">资料 · 记忆</text>
+<text class="s" x="512" y="98">代答记录 · 对外政策</text>
+<text class="c" x="512" y="122">agents/*</text>
+<rect class="box " x="680" y="20" width="165" height="112" rx="10"/>
+<text class="t" x="692" y="42">状态与实时</text>
+<text class="s" x="692" y="62">全局 store</text>
+<text class="s" x="692" y="80">/ws 帧合并 · 断线补拉</text>
+<text class="s" x="692" y="98">ky 封装的 REST</text>
+<text class="c" x="692" y="122">lib/store · realtime</text>
+<rect class="box " x="860" y="20" width="165" height="112" rx="10"/>
+<text class="t" x="872" y="42">模拟台</text>
+<text class="s" x="872" y="62">一个浏览器多窗格</text>
+<text class="s" x="872" y="80">每格一个身份</text>
+<text class="s" x="872" y="98">剧本一键回放</text>
+<text class="c" x="872" y="122">app/sim</text>
+<text class="t" x="20" y="206">接入层</text>
+<text class="c" x="20" y="226">routes/</text>
+<rect class="box " x="140" y="180" width="165" height="112" rx="10"/>
+<text class="t" x="152" y="202">REST 路由</text>
+<text class="s" x="152" y="222">68 个端点</text>
+<text class="s" x="152" y="240">Zod 校验入参出参</text>
+<text class="s" x="152" y="258">统一错误体</text>
+<text class="c" x="152" y="282">routes/*.ts</text>
+<rect class="box " x="320" y="180" width="165" height="112" rx="10"/>
+<text class="t" x="332" y="202">浏览器推送</text>
+<text class="s" x="332" y="222">/ws 按主体登记连接</text>
+<text class="s" x="332" y="240">event · task · topic</text>
+<text class="s" x="332" y="258">work_item · presence</text>
+<text class="c" x="332" y="282">realtime/browser-*</text>
+<rect class="box " x="500" y="180" width="165" height="112" rx="10"/>
+<text class="t" x="512" y="202">Runner 连接</text>
+<text class="s" x="512" y="222">/runner/ws?token</text>
+<text class="s" x="512" y="240">hello 即在线 · 心跳</text>
+<text class="s" x="512" y="258">新连接顶掉旧连接</text>
+<text class="c" x="512" y="282">realtime/runner-ws</text>
+<rect class="box " x="680" y="180" width="165" height="112" rx="10"/>
+<text class="t" x="692" y="202">模型入口</text>
+<text class="s" x="692" y="222">/llm/v1 三种协议</text>
+<text class="s" x="692" y="240">+ /models</text>
+<text class="s" x="692" y="258">只认任务令牌</text>
+<text class="c" x="692" y="282">routes/llm.ts</text>
+<rect class="box " x="860" y="180" width="165" height="112" rx="10"/>
+<text class="t" x="872" y="202">前端反代</text>
+<text class="s" x="872" y="222">3930 同源挂到 8930</text>
+<text class="s" x="872" y="240">HTTP 与 HMR 的 WS</text>
+<text class="s" x="872" y="258">开发期只开一个端口</text>
+<text class="c" x="872" y="282">proxy.ts</text>
+<text class="t" x="20" y="412">代理层</text>
+<text class="c" x="20" y="432">agent/</text>
+<rect class="box " x="140" y="386" width="165" height="112" rx="10"/>
+<text class="t" x="152" y="408">触发规则</text>
+<text class="s" x="152" y="428">纯函数，不碰库</text>
+<text class="s" x="152" y="446">私聊：点名 · 问分身 · 忙</text>
+<text class="s" x="152" y="464">群聊：三条规则 + 轮次</text>
+<text class="c" x="152" y="488">triggers.ts</text>
+<rect class="box " x="320" y="386" width="165" height="112" rx="10"/>
+<text class="t" x="332" y="408">调度器</text>
+<text class="s" x="332" y="428">每个话题一条队列</text>
+<text class="s" x="332" y="446">新消息打断 · stop 中止</text>
+<text class="s" x="332" y="464">群聊 ≤4 轮 · 交接 ≤8</text>
+<text class="c" x="332" y="488">scheduler.ts</text>
+<rect class="box " x="500" y="386" width="165" height="112" rx="10"/>
+<text class="t" x="512" y="408">运行循环</text>
+<text class="s" x="512" y="428">提示 + 历史 → 模型 → 工具</text>
+<text class="s" x="512" y="446">每轮 ≤8 次模型调用</text>
+<text class="s" x="512" y="464">[M:…] 解析成依据</text>
+<text class="c" x="512" y="488">loop.ts · session.ts</text>
+<rect class="box " x="680" y="386" width="165" height="112" rx="10"/>
+<text class="t" x="692" y="408">上下文</text>
+<text class="s" x="692" y="428">只读本话题</text>
+<text class="s" x="692" y="446">压缩前先冲刷记忆</text>
+<text class="s" x="692" y="464">近期简报 ≤10 行</text>
+<text class="c" x="692" y="488">context.ts · prompt.ts</text>
+<rect class="box " x="860" y="386" width="165" height="112" rx="10"/>
+<text class="t" x="872" y="408">工具 12 个</text>
+<text class="s" x="872" y="428">memory_search · save</text>
+<text class="s" x="872" y="446">escalate · negotiate</text>
+<text class="s" x="872" y="464">delegate · device ×4</text>
+<text class="c" x="872" y="488">tools/*.ts</text>
+<text class="t" x="20" y="572">业务层</text>
+<text class="c" x="20" y="592">services/</text>
+<rect class="box " x="140" y="546" width="165" height="112" rx="10"/>
+<text class="t" x="152" y="568">事件与会话</text>
+<text class="s" x="152" y="588">events.ts 唯一写入口</text>
+<text class="s" x="152" y="606">只追加 · 16 种事件</text>
+<text class="s" x="152" y="624">会话 · 成员 · 话题</text>
+<text class="c" x="152" y="648">events · topics</text>
+<rect class="box " x="320" y="546" width="165" height="112" rx="10"/>
+<text class="t" x="332" y="568">主体与设置</text>
+<text class="s" x="332" y="588">人 · 代理 · 在线状态</text>
+<text class="s" x="332" y="606">引导建租户 · 目录</text>
+<text class="s" x="332" y="624">租户设置</text>
+<text class="c" x="332" y="648">agents · presence</text>
+<rect class="box " x="500" y="546" width="165" height="112" rx="10"/>
+<text class="t" x="512" y="568">工作对象</text>
+<text class="s" x="512" y="588">待办：上报 · 审批 · 确认</text>
+<text class="s" x="512" y="606">协商：judgeStep 判定</text>
+<text class="s" x="512" y="624">任务：A2A 状态迁移</text>
+<text class="c" x="512" y="648">work-items · tasks</text>
+<rect class="box " x="680" y="546" width="165" height="112" rx="10"/>
+<text class="t" x="692" y="568">运行与外部会话</text>
+<text class="s" x="692" y="588">每次运行一行 runs</text>
+<text class="s" x="692" y="606">每个话题一个 ACP 会话</text>
+<text class="s" x="692" y="624">审批 10 分钟未批即拒</text>
+<text class="c" x="692" y="648">external-sessions</text>
+<rect class="box " x="860" y="546" width="165" height="112" rx="10"/>
+<text class="t" x="872" y="568">设备与模型配置</text>
+<text class="s" x="872" y="588">配对码 · 设备吊销</text>
+<text class="s" x="872" y="606">厂商 key 加密 · 路由组</text>
+<text class="s" x="872" y="624">任务令牌只存哈希</text>
+<text class="c" x="872" y="648">gateway-tokens 等</text>
+<text class="t" x="20" y="732">平台层</text>
+<text class="c" x="20" y="752">memory/ 等</text>
+<rect class="box " x="140" y="706" width="165" height="112" rx="10"/>
+<text class="t" x="152" y="728">记忆写入</text>
+<text class="s" x="152" y="748">作业队列 · 15 秒拉取</text>
+<text class="s" x="152" y="766">提炼 → 校验 → 去重取代</text>
+<text class="s" x="152" y="784">画像按段重建</text>
+<text class="c" x="152" y="808">memory/worker · extract</text>
+<rect class="box " x="320" y="706" width="165" height="112" rx="10"/>
+<text class="t" x="332" y="728">记忆读取</text>
+<text class="s" x="332" y="748">visibilityFilter 唯一一处</text>
+<text class="s" x="332" y="766">字二元组 + 实体 + 时间</text>
+<text class="s" x="332" y="784">第三人规则 · 引用编号</text>
+<text class="c" x="332" y="808">memory/access · search</text>
+<rect class="box " x="500" y="706" width="165" height="112" rx="10"/>
+<text class="t" x="512" y="728">企业模型网关</text>
+<text class="s" x="512" y="748">3 个解析器 · 3 个生成器</text>
+<text class="s" x="512" y="766">直通或经中间结构互转</text>
+<text class="s" x="512" y="784">每次尝试计一行账</text>
+<text class="c" x="512" y="808">gateway/core · ir</text>
+<rect class="box " x="680" y="706" width="165" height="112" rx="10"/>
+<text class="t" x="692" y="728">能力总线</text>
+<text class="s" x="692" y="748">invoke 下发 · job 并行</text>
+<text class="s" x="692" y="766">60 秒超时 · 断线可续</text>
+<text class="s" x="692" y="784">acp_* 帧交给外部会话</text>
+<text class="c" x="692" y="808">realtime/runner-hub</text>
+<rect class="box " x="860" y="706" width="165" height="112" rx="10"/>
+<text class="t" x="872" y="728">数据访问</text>
+<text class="s" x="872" y="748">scoped(tenantId)</text>
+<text class="s" x="872" y="766">Drizzle · 迁移 0000–0005</text>
+<text class="s" x="872" y="784">key 用 AES-256-GCM</text>
+<text class="c" x="872" y="808">db/scope · secret</text>
+<rect class="box frame" x="140" y="304" width="885" height="42" rx="8"/>
+<text class="s" x="154" y="330">中间件  middleware/auth.ts：better-auth 会话或 Bearer → 成员校验 → 把 scoped(tenantId) 挂到请求上，之后所有查询都带租户条件</text>
+<line class="ln " x1="222" y1="132" x2="222" y2="178" marker-end="url(#mm)" marker-start="url(#mm)"/>
+<text class="lbl" x="232" y="160">REST · /ws</text>
+<line class="ln " x1="402" y1="346" x2="402" y2="384" marker-end="url(#mm)"/>
+<text class="lbl" x="412" y="370">onHumanMessage</text>
+<line class="ln " x1="582" y1="498" x2="582" y2="544" marker-end="url(#mm)"/>
+<text class="lbl" x="592" y="526">工具调用服务</text>
+<polyline class="ln m" points="222,546 222,512 222,500" marker-end="url(#mmM)"/>
+<text class="lbl" x="232" y="526">新事件唤起触发</text>
+<line class="ln " x1="942" y1="658" x2="942" y2="704" marker-end="url(#mm)"/>
+<text class="lbl" x="952" y="686">三种协议</text>
+<line class="ln " x1="762" y1="658" x2="762" y2="704" marker-end="url(#mm)"/>
+<text class="lbl" x="772" y="686">设备调用</text>
+<line class="ln " x1="402" y1="658" x2="402" y2="704" marker-end="url(#mm)"/>
+<text class="lbl" x="412" y="686">提炼 · 检索</text>
+<rect class="box " x="140" y="856" width="885" height="44" rx="8"/>
+<text class="s" x="154" y="883">PostgreSQL 16 · 25 张业务表 + 5 张鉴权表，全部带 tenant_id（见下方数据模型）</text>
+<line class="ln " x1="582" y1="818" x2="582" y2="854" marker-end="url(#mm)" marker-start="url(#mm)"/>
+<rect class="box frame" x="1040" y="20" width="100" height="880" rx="12"/>
+<text class="t" x="1052" y="46">共享协议</text>
+<text class="c" x="1052" y="64">packages/</text>
+<text class="c" x="1052" y="78">protocol</text>
+<text class="s" x="1052" y="112">Zod 模式</text>
+<text class="s" x="1052" y="134">REST 出入参</text>
+<text class="s" x="1052" y="156">事件 16 种</text>
+<text class="s" x="1052" y="178">/ws 帧</text>
+<text class="s" x="1052" y="200">Runner 帧</text>
+<text class="s" x="1052" y="222">ACP 适配器</text>
+<text class="s" x="1052" y="244">厂商预设</text>
+<text class="s" x="1052" y="266">记忆类别</text>
+<text class="s" x="1052" y="310">前端、服务端、</text>
+<text class="s" x="1052" y="332">Runner 共用</text>
+<text class="s" x="1052" y="376">只增不改</text>
+<text class="s" x="1052" y="398">新字段一律</text>
+<text class="s" x="1052" y="420">可选</text>
+</svg>
+			</div>
+			<figcaption>箭头只画层与层之间的主要调用。几条贯穿全局的约束：写事件只经 <code>services/events.ts</code>；可见性过滤只在 <code>memory/access.ts</code> 的 <code>visibilityFilter</code>；模型调用只经 <code>gateway/core.ts</code> 的同一个函数（代理引擎进程内调用、外部 agent 经 <code>/llm/v1</code>）；所有查询经 <code>scoped(tenantId)</code>。数字（68 个端点、12 个工具、16 种事件、30 张表）按 2026 年 9 月 27 日的代码统计。</figcaption>
+		</figure>
+	</section>
+
 	<section aria-labelledby="f2">
 		<h2 id="f2">一条消息怎么被分身处理</h2>
 		<p class="prose">以许诺在私聊里问林晓为例。私聊里同时有林晓本人和她的分身；分身只在三种情况下开口，开口后先查记忆、再判断是否在授权内。</p>
@@ -332,6 +543,91 @@
 		</figure>
 	</section>
 
+	<section aria-labelledby="fP">
+		<h2 id="fP">同一条消息在代码里走过的路径</h2>
+		<p class="prose">还是许诺问林晓的例子，这次问的是订单服务切流什么情况下重新评估。下图按时间从上到下，列出每一步经过的模块；蓝色虚线是经网关的模型调用，灰色虚线是返回。</p>
+		<figure>
+			<div class="scroll">
+<svg viewBox="0 0 1160 790" width="1160" role="img" aria-label="许诺在与林晓的私聊里提问的代码路径：浏览器调 REST 写事件并推送，同时排记忆提炼；调度器按触发规则让林晓的分身为许诺运行，运行循环经网关调用 DeepSeek，模型要求检索记忆，检索按第三人规则返回带编号的条目，第二次调用后回答落为带依据的消息并推送到两边界面。">
+<defs><marker id="mp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="mpA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="mpM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker><marker id="mpP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah p"/></marker></defs>
+<rect class="box " x="16" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="80" y="42" text-anchor="middle">许诺的浏览器</text>
+<text class="c" x="80" y="60" text-anchor="middle">web</text>
+<line class="ln m" x1="80" y1="70" x2="80" y2="770"/>
+<rect class="box " x="159" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="223" y="42" text-anchor="middle">REST 路由</text>
+<text class="c" x="223" y="60" text-anchor="middle">routes/</text>
+<line class="ln m" x1="223" y1="70" x2="223" y2="770"/>
+<rect class="box " x="302" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="366" y="42" text-anchor="middle">事件服务</text>
+<text class="c" x="366" y="60" text-anchor="middle">services/events</text>
+<line class="ln m" x1="366" y1="70" x2="366" y2="770"/>
+<rect class="box " x="445" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="509" y="42" text-anchor="middle">浏览器推送</text>
+<text class="c" x="509" y="60" text-anchor="middle">browser-hub</text>
+<line class="ln m" x1="509" y1="70" x2="509" y2="770"/>
+<rect class="box " x="588" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="652" y="42" text-anchor="middle">调度与循环</text>
+<text class="c" x="652" y="60" text-anchor="middle">agent/*</text>
+<line class="ln m" x1="652" y1="70" x2="652" y2="770"/>
+<rect class="box " x="731" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="795" y="42" text-anchor="middle">记忆检索</text>
+<text class="c" x="795" y="60" text-anchor="middle">memory/search</text>
+<line class="ln m" x1="795" y1="70" x2="795" y2="770"/>
+<rect class="box " x="874" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="938" y="42" text-anchor="middle">模型网关</text>
+<text class="c" x="938" y="60" text-anchor="middle">gateway/core</text>
+<line class="ln m" x1="938" y1="70" x2="938" y2="770"/>
+<rect class="box frame" x="1017" y="20" width="128" height="50" rx="8"/>
+<text class="t" x="1081" y="42" text-anchor="middle">DeepSeek</text>
+<text class="c" x="1081" y="60" text-anchor="middle">上游厂商</text>
+<line class="ln m" x1="1081" y1="70" x2="1081" y2="770"/>
+<line class="ln " x1="83" y1="102" x2="220" y2="102" marker-end="url(#mp)"/>
+<text class="lbl" x="88" y="96">1  POST /messages</text>
+<line class="ln " x1="226" y1="136" x2="363" y2="136" marker-end="url(#mp)"/>
+<text class="lbl" x="231" y="130">2  postMessage 写 message.posted</text>
+<polyline class="ln " points="366,164 388,164 388,178 370,178" marker-end="url(#mp)"/>
+<text class="lbl" x="396" y="175">3  排记忆提炼：10 分钟后，新消息顺延</text>
+<line class="ln " x1="369" y1="204" x2="506" y2="204" marker-end="url(#mp)"/>
+<text class="lbl" x="374" y="198">4  推 {t:&#x27;event&#x27;}</text>
+<line class="ln " x1="506" y1="238" x2="83" y2="238" marker-end="url(#mp)"/>
+<text class="lbl" x="88" y="232">5  两边界面同时出现</text>
+<line class="ln " x1="226" y1="272" x2="649" y2="272" marker-end="url(#mp)"/>
+<text class="lbl" x="231" y="266">6  scheduler.onHumanMessage</text>
+<polyline class="ln " points="652,300 674,300 674,314 656,314" marker-end="url(#mp)"/>
+<text class="lbl" x="682" y="311">7  triggers：林晓忙 → 分身为许诺办事</text>
+<polyline class="ln " points="652,334 674,334 674,348 656,348" marker-end="url(#mp)"/>
+<text class="lbl" x="682" y="345">8  context：本话题历史 + 检查点 + 简报</text>
+<line class="ln a" x1="655" y1="374" x2="935" y2="374" marker-end="url(#mpA)"/>
+<text class="lbl a" x="660" y="368">9  callGateway（进程内）</text>
+<line class="ln a" x1="941" y1="408" x2="1078" y2="408" marker-end="url(#mpA)"/>
+<text class="lbl a" x="946" y="402">10  同协议直通 · 流式</text>
+<line class="ln m" x1="1078" y1="442" x2="941" y2="442" marker-end="url(#mpM)"/>
+<text class="lbl" x="946" y="436">11  tool_call: memory_search</text>
+<line class="ln m" x1="935" y1="476" x2="655" y2="476" marker-end="url(#mpM)"/>
+<text class="lbl" x="660" y="470">12  流式返回 · 记一行 llm_requests</text>
+<line class="ln " x1="655" y1="510" x2="792" y2="510" marker-end="url(#mp)"/>
+<text class="lbl" x="660" y="504">13  memory_search(切流 重新评估)</text>
+<line class="ln m" x1="792" y1="544" x2="655" y2="544" marker-end="url(#mpM)"/>
+<text class="lbl" x="660" y="538">14  ≤8 条 · 第三人抹名 · [M:短编号]</text>
+<line class="ln " x1="649" y1="578" x2="369" y2="578" marker-end="url(#mp)"/>
+<text class="lbl" x="374" y="572">15  agent.action：查阅了 4 条记忆</text>
+<line class="ln a" x1="655" y1="612" x2="1078" y2="612" marker-end="url(#mpA)"/>
+<text class="lbl a" x="660" y="606">16  第二次调用：带上检索结果</text>
+<line class="ln m" x1="1078" y1="646" x2="655" y2="646" marker-end="url(#mpM)"/>
+<text class="lbl" x="660" y="640">17  最终文本，含 [M:…]</text>
+<line class="ln " x1="649" y1="680" x2="369" y2="680" marker-end="url(#mp)"/>
+<text class="lbl" x="374" y="674">18  message.posted：剥离引用，存 citations</text>
+<line class="ln " x1="369" y1="714" x2="506" y2="714" marker-end="url(#mp)"/>
+<text class="lbl" x="374" y="708">19  推送</text>
+<line class="ln " x1="506" y1="748" x2="83" y2="748" marker-end="url(#mp)"/>
+<text class="lbl" x="88" y="742">20  回答 + 依据标签</text>
+</svg>
+			</div>
+			<figcaption>第 3 步只排作业不等待：话题 10 分钟没有新的人类消息，后台提炼器才把这段对话整理成记忆，期间有新消息就顺延。第 7 步如果判定不该开口，流程到此结束，人和人正常聊。第 14 步的第三人规则：这条记忆来自林晓与周野的私聊，许诺不在场，所以返回的陈述抹去周野、出处写“来自与同事的交流”。第 18 步只认本轮检索真正给出过的编号，模型编造的编号被丢弃。这是 2026 年 9 月 27 日真实模型验收时的实际路径，两次模型调用。</figcaption>
+		</figure>
+	</section>
+
 	<section aria-labelledby="fT">
 		<h2 id="fT">一个代理，多条线：会话内话题</h2>
 		<p class="prose">每个代理和本人只有一个私聊，列表里只占一行。私聊里分话题，每个话题是一份独立上下文，外部 agent 每个话题对应一个自己的会话；任务就是带状态的话题。</p>
@@ -371,6 +667,186 @@
 		</figure>
 	</section>
 
+	<section aria-labelledby="fR">
+		<h2 id="fR">设备 Runner 与外部 agent</h2>
+		<p class="prose">员工电脑上跑一个 Runner：它主动连回服务端，执行四项设备能力，并用 ACP 驱动本机的 Claude Code、Codex 等外部 agent。每个话题对应一个 ACP 会话。</p>
+		<figure>
+			<div class="scroll">
+<svg viewBox="0 0 1160 522" width="1160" role="img" aria-label="设备 Runner 与外部 agent：服务端的外部会话服务经 Runner 主动连出的 WebSocket 下发 acp 帧，Runner 按话题起停 ACP 会话，起进程时清洗环境并只注入网关地址、任务令牌与模型引用，agent 进程经标准输入输出说 ACP，权限请求回到本人的审批待办，企业模式下 agent 用任务令牌调用网关。">
+<defs><marker id="rn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="rnA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="rnM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker><marker id="rnP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah p"/></marker></defs>
+<rect class="box frame" x="20" y="20" width="310" height="482" rx="14"/>
+<text class="t" x="36" y="46">服务端</text>
+<rect class="box " x="36" y="62" width="278" height="124" rx="10"/>
+<text class="t" x="48" y="84">外部会话</text>
+<text class="s" x="48" y="104">每个话题一个 ACP 会话槽</text>
+<text class="s" x="48" y="121">一轮一次运行 · 追问排队</text>
+<text class="s" x="48" y="138">文字汇成助手的消息</text>
+<text class="s" x="48" y="155">权限请求 → 话题里的审批卡</text>
+<text class="c" x="48" y="176">services/external-sessions</text>
+<rect class="box " x="36" y="198" width="278" height="88" rx="10"/>
+<text class="t" x="48" y="220">任务令牌</text>
+<text class="s" x="48" y="240">起会话时签发，库里只存哈希</text>
+<text class="s" x="48" y="257">会话关闭即吊销</text>
+<text class="c" x="48" y="276">services/gateway-tokens</text>
+<rect class="box " x="36" y="298" width="278" height="88" rx="10"/>
+<text class="t" x="48" y="320">能力总线</text>
+<text class="s" x="48" y="340">invoke：fs.list · fs.read</text>
+<text class="s" x="48" y="357">fs.write · shell.exec</text>
+<text class="c" x="48" y="376">realtime/runner-hub</text>
+<rect class="box alert" x="36" y="398" width="278" height="88" rx="10"/>
+<text class="t" x="48" y="420">审批</text>
+<text class="s" x="48" y="440">写、执行、agent 权限请求</text>
+<text class="s" x="48" y="457">都进本人的待办</text>
+<text class="c" x="48" y="476">services/work-items</text>
+<rect class="box frame" x="530" y="20" width="350" height="482" rx="14"/>
+<text class="t" x="546" y="46">设备 Runner（员工电脑）</text>
+<rect class="box " x="546" y="62" width="318" height="88" rx="10"/>
+<text class="t" x="558" y="84">连接桥</text>
+<text class="s" x="558" y="104">每次连上先发 hello · 1s→30s 退避重连</text>
+<text class="s" x="558" y="121">上下行都过协议校验</text>
+<text class="c" x="558" y="140">ws-bridge.ts</text>
+<rect class="box " x="546" y="162" width="318" height="106" rx="10"/>
+<text class="t" x="558" y="184">ACP 会话管理</text>
+<text class="s" x="558" y="204">按 taskId（=话题 id）起停会话</text>
+<text class="s" x="558" y="221">终端：同一命令刚批过就放行</text>
+<text class="s" x="558" y="238">打断 session/cancel，会话保留</text>
+<text class="c" x="558" y="258">acp/session · client</text>
+<rect class="box ok" x="546" y="280" width="318" height="106" rx="10"/>
+<text class="t" x="558" y="302">起进程（安全面）</text>
+<text class="s" x="558" y="322">清掉 runner 令牌与服务器地址</text>
+<text class="s" x="558" y="339">企业模式只注入：网关地址、</text>
+<text class="s" x="558" y="356">任务令牌、模型引用</text>
+<text class="c" x="558" y="376">acp/spawn · adapters</text>
+<rect class="box ok" x="546" y="398" width="318" height="88" rx="10"/>
+<text class="t" x="558" y="420">工作目录</text>
+<text class="s" x="558" y="440">realpath 校验，越界一律拒绝</text>
+<text class="s" x="558" y="457">shell 独立进程组 · 超时整组杀</text>
+<text class="c" x="558" y="476">workspace.ts</text>
+<line class="ln " x1="330" y1="104" x2="528" y2="104" marker-end="url(#rn)" marker-start="url(#rn)"/>
+<text class="lbl" x="344" y="84">WebSocket（Runner 主动连出）</text>
+<text class="lbl" x="344" y="124">下：acp_start · acp_prompt</text>
+<text class="lbl" x="344" y="140">acp_permission_reply</text>
+<text class="lbl" x="344" y="156">acp_interrupt · acp_cancel</text>
+<text class="lbl" x="344" y="176">上：acp_event · acp_turn_end</text>
+<text class="lbl" x="344" y="192">acp_permission</text>
+<line class="ln " x1="330" y1="340" x2="528" y2="340" marker-end="url(#rn)" marker-start="url(#rn)"/>
+<text class="lbl" x="344" y="330">下：invoke   上：result</text>
+<text class="lbl" x="344" y="360">hello · ping · capabilities</text>
+<rect class="box " x="930" y="120" width="210" height="220" rx="10"/>
+<text class="t" x="942" y="142">外部 agent 进程</text>
+<text class="s" x="942" y="162">Claude Code · Codex</text>
+<text class="s" x="942" y="179">pi · Hermes</text>
+<text class="s" x="942" y="196"></text>
+<text class="s" x="942" y="213">ACP：标准输入输出</text>
+<text class="s" x="942" y="230">上的 JSON-RPC</text>
+<text class="s" x="942" y="247">initialize · session/new</text>
+<text class="s" x="942" y="264">session/prompt · update</text>
+<text class="s" x="942" y="281">request_permission</text>
+<text class="s" x="942" y="298">fs/* · terminal/create</text>
+<line class="ln " x1="864" y1="210" x2="928" y2="210" marker-end="url(#rn)" marker-start="url(#rn)"/>
+<text class="lbl" x="870" y="200">stdio</text>
+<rect class="box " x="930" y="380" width="210" height="110" rx="10"/>
+<text class="t" x="942" y="402">企业模型网关</text>
+<text class="s" x="942" y="422">agent 用任务令牌</text>
+<text class="s" x="942" y="439">调 /llm/v1</text>
+<text class="s" x="942" y="456">计在话题当前任务名下</text>
+<line class="ln a" x1="1035" y1="340" x2="1035" y2="378" marker-end="url(#rnA)"/>
+<text class="lbl a" x="1045" y="364">企业模式</text>
+</svg>
+			</div>
+			<figcaption>服务端从不连进员工电脑。Runner 的设备令牌只在它自己的内存里；起 agent 进程时先清掉令牌与服务器地址，再按适配器表注入开关——企业模式下只多给网关地址、本会话的任务令牌和模型引用，不注入任何厂商 key，也不改用户的 <code>~/.claude</code>、<code>~/.codex</code> 全局配置。读操作直接做；写文件、执行命令、agent 的权限请求都变成本人待办里的审批卡，10 分钟未处理视为拒绝。</figcaption>
+		</figure>
+	</section>
+
+	<section aria-labelledby="fG">
+		<h2 id="fG">企业模型网关</h2>
+		<p class="prose">本租户所有模型调用的唯一出口。服务端自己的代理引擎和企业模式下的外部 agent 走同一个函数，所以计量只有一处。</p>
+		<figure>
+			<div class="scroll">
+<svg viewBox="0 0 1160 474" width="1160" role="img" aria-label="企业模型网关：代理引擎与三种外部 agent 以各自协议进入网关，入口按任务令牌鉴权，解析模型引用得到上游尝试顺序，上游支持同协议就直通，否则经中间结构互转，再发往厂商；每次尝试记一行账，失败按顺序切换下一个上游。">
+<defs><marker id="gw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="gwA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="gwM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker><marker id="gwP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah p"/></marker></defs>
+<rect class="box " x="20" y="30" width="190" height="70" rx="10"/>
+<text class="t" x="32" y="52">代理引擎</text>
+<text class="s" x="32" y="72">进程内 callGateway</text>
+<text class="s" x="32" y="89">OpenAI Chat 形态</text>
+<rect class="box " x="20" y="114" width="190" height="70" rx="10"/>
+<text class="t" x="32" y="136">Claude Code</text>
+<text class="s" x="32" y="156">Anthropic Messages</text>
+<text class="s" x="32" y="173">企业模式注入</text>
+<rect class="box " x="20" y="198" width="190" height="70" rx="10"/>
+<text class="t" x="32" y="220">Codex</text>
+<text class="s" x="32" y="240">OpenAI Responses</text>
+<text class="s" x="32" y="257">企业模式注入</text>
+<rect class="box " x="20" y="282" width="190" height="70" rx="10"/>
+<text class="t" x="32" y="304">其他 agent</text>
+<text class="s" x="32" y="324">OpenAI Chat</text>
+<text class="s" x="32" y="341">按适配器表</text>
+<rect class="box " x="260" y="114" width="190" height="154" rx="10"/>
+<text class="t" x="272" y="136">入口与鉴权</text>
+<text class="s" x="272" y="156">/llm/v1/chat/completions</text>
+<text class="s" x="272" y="173">/llm/v1/responses</text>
+<text class="s" x="272" y="190">/llm/v1/messages</text>
+<text class="s" x="272" y="207">任务令牌 → SHA-256 查表</text>
+<text class="s" x="272" y="224">→ 外部会话 · 助手 · 本人</text>
+<text class="s" x="272" y="241">进程内调用免令牌</text>
+<polyline class="ln " points="210,65 234,65 234,191 258,191" marker-end="url(#gw)"/>
+<polyline class="ln " points="210,149 234,149 234,191 258,191" marker-end="url(#gw)"/>
+<polyline class="ln " points="210,233 234,233 234,191 258,191" marker-end="url(#gw)"/>
+<polyline class="ln " points="210,317 234,317 234,191 258,191" marker-end="url(#gw)"/>
+<rect class="box " x="500" y="114" width="190" height="154" rx="10"/>
+<text class="t" x="512" y="136">解析模型引用</text>
+<text class="s" x="512" y="156">厂商/模型</text>
+<text class="s" x="512" y="173">或 group/&lt;id&gt;</text>
+<text class="s" x="512" y="190">路由组：order 按序</text>
+<text class="s" x="512" y="207">rotate 轮换起点</text>
+<text class="s" x="512" y="224">得到上游尝试顺序</text>
+<text class="s" x="512" y="241">租户默认模型兜底</text>
+<line class="ln " x1="450" y1="191" x2="498" y2="191" marker-end="url(#gw)"/>
+<rect class="box ok" x="740" y="40" width="200" height="110" rx="10"/>
+<text class="t" x="752" y="62">直通</text>
+<text class="s" x="752" y="82">上游有同协议端点</text>
+<text class="s" x="752" y="100">只换 key、改写 model</text>
+<text class="s" x="752" y="118">流式原样转发</text>
+<rect class="box review" x="740" y="200" width="200" height="150" rx="10"/>
+<text class="t" x="752" y="222">经中间结构互转</text>
+<text class="s" x="752" y="242">解析器：入口协议 → IR</text>
+<text class="s" x="752" y="260">生成器：IR → 上游协议</text>
+<text class="s" x="752" y="278">流式增量逆向转回</text>
+<text class="s" x="752" y="296">工具调用 · usage 对齐</text>
+<text class="s" x="752" y="314">3 + 3，不写两两转换</text>
+<polyline class="ln " points="690,170 715,170 715,95 738,95" marker-end="url(#gw)"/>
+<text class="lbl" x="700" y="86">同协议</text>
+<polyline class="ln " points="690,220 715,220 715,275 738,275" marker-end="url(#gw)"/>
+<text class="lbl" x="697" y="296">不同协议</text>
+<rect class="box frame" x="990" y="40" width="150" height="310" rx="10"/>
+<text class="t" x="1002" y="62">上游厂商</text>
+<text class="s" x="1002" y="82">DeepSeek</text>
+<text class="s" x="1002" y="100">（openai 与</text>
+<text class="s" x="1002" y="118">anthropic 两端点）</text>
+<text class="s" x="1002" y="136">Kimi · 智谱 · 通义</text>
+<text class="s" x="1002" y="154">Anthropic · OpenAI</text>
+<text class="s" x="1002" y="172">本机推理服务</text>
+<text class="s" x="1002" y="190"></text>
+<text class="s" x="1002" y="208">共 10 家预设</text>
+<text class="s" x="1002" y="226">key 解密后只进</text>
+<text class="s" x="1002" y="244">发往上游的请求头</text>
+<line class="ln " x1="940" y1="95" x2="988" y2="95" marker-end="url(#gw)"/>
+<line class="ln " x1="940" y1="275" x2="988" y2="275" marker-end="url(#gw)"/>
+<rect class="box frame" x="260" y="390" width="880" height="64" rx="10"/>
+<text class="t" x="272" y="412">计量  gateway/meter.ts → llm_requests</text>
+<text class="s" x="272" y="432">每次上游尝试一行：runId · taskId · 入口/上游协议 · tokens · 缓存命中 · 耗时 · 成本（微美元）；失败与中止也记</text>
+<polyline class="ln m" points="1065,350 1065,372 840,372 840,388" marker-end="url(#gwM)"/>
+<rect class="box alert" x="20" y="390" width="190" height="64" rx="10"/>
+<text class="t" x="32" y="412">失败切换</text>
+<text class="s" x="32" y="432">5xx · 429 · 超时</text>
+<text class="s" x="32" y="449">→ 换下一个上游</text>
+<polyline class="ln p" points="115,390 115,372 595,372 595,270" marker-end="url(#gwP)"/>
+</svg>
+			</div>
+			<figcaption>三种入口协议各有一个解析器、三种上游协议各有一个生成器，中间是统一的中间结构（IR），不写两两转换。上游本身支持入口协议时直通，只换 key、改写模型名；例如 Claude Code 企业模式接 DeepSeek 的 anthropic 兼容端点就是直通，Codex 的 Responses 请求则经中间结构转成 OpenAI Chat。厂商 key 以 AES-256-GCM 加密存库，接口与日志永不回显，上游错误信息回给调用方前也会抹掉 key。</figcaption>
+		</figure>
+	</section>
+
 	<section aria-labelledby="f3">
 		<h2 id="f3">记忆从哪来、到哪去</h2>
 		<p class="prose">不需要对分身说"记住"。原始证据本来就在存，记忆整理在会话告一段落、任务结束时自动提炼；本地 agent 做过的活随任务的过程记录一起进来。</p>
@@ -393,10 +869,13 @@
 					<rect class="box" x="36" y="192" width="238" height="38" rx="8"/>
 					<text class="s" x="50" y="216">人写的资料</text>
 
-					<rect class="box " x="340" y="92" width="190" height="84" rx="10"/>
-					<text class="t" x="356" y="118">记忆整理</text>
-					<text class="s" x="356" y="140">会话告一段落 · 任务结束</text>
-					<text class="s" x="356" y="160">便宜模型批量提炼</text>
+					<rect class="box " x="340" y="72" width="190" height="124" rx="10"/>
+					<text class="t" x="356" y="96">记忆整理</text>
+					<text class="s" x="356" y="118">话题闲置 10 分钟</text>
+					<text class="s" x="356" y="136">压缩前 · 任务结束</text>
+					<text class="s" x="356" y="154">经网关用默认模型提炼</text>
+					<text class="s" x="356" y="172">出处必须是本批真实事件</text>
+					<text class="s" x="356" y="190">答复与协商结果直接写入</text>
 					<line class="ln" x1="290" y1="134" x2="338" y2="134" marker-end="url(#cr)"/>
 
 					<rect class="box " x="580" y="60" width="270" height="148" rx="10"/>
@@ -427,14 +906,14 @@
 
 					<rect class="box " x="610" y="300" width="240" height="70" rx="10"/>
 					<text class="t" x="626" y="328">检索</text>
-					<text class="s" x="626" y="350">关键词 · 时间 · 人与项目</text>
+					<text class="s" x="626" y="350">字二元组 · 实体 · 时间衰减，≤8 条</text>
 					<line class="ln" x1="560" y1="335" x2="608" y2="335" marker-end="url(#cr)"/>
 					<line class="ln" x1="715" y1="298" x2="715" y2="210" marker-end="url(#cr)"/>
 					<line class="ln" x1="820" y1="298" x2="960" y2="190" marker-end="url(#cr)"/>
 
 					<rect class="box ok" x="900" y="300" width="240" height="70" rx="10"/>
 					<text class="t" x="916" y="328">回答附依据</text>
-					<text class="s" x="916" y="350">没依据就明说或上报</text>
+					<text class="s" x="916" y="350">[M:编号] → 消息下的依据标签</text>
 					<line class="ln" x1="850" y1="335" x2="898" y2="335" marker-end="url(#cr)"/>
 
 					<polyline class="ln m" points="1020,370 1020,392 520,392 520,220 596,208" marker-end="url(#crM)"/>
@@ -443,6 +922,122 @@
 			</div>
 			<figcaption>对外授权按类别，默认宽松：十四类中私人事务、薪酬、健康、家庭、人事评价、凭据与安全六类默认不对外，本人可在对外政策页逐类开关；本人在代答记录里点"不对"写入的更正优先于其他记忆；来自第三人私聊的内容只转述提炼后的事实，不引用原话、不透露来源。本地 agent 自己的记忆文件不接入，只用经 orgos 交办的过程记录。向量检索放到阶段二。</figcaption>
 		</figure>
+	</section>
+
+	<section aria-labelledby="fData">
+		<h2 id="fData">数据模型</h2>
+		<p class="prose">PostgreSQL 16，30 张表分五组。每张表都带 <code>tenant_id</code>，按租户隔离；<code>events</code> 与 <code>task_logs</code> 只追加。</p>
+		<figure>
+			<div class="scroll">
+<svg viewBox="0 0 1160 500" width="1160" role="img" aria-label="数据模型：身份与设备、会话、工作与运行、模型、记忆五组共 30 张表，每张表注明作用。">
+<rect class="box frame" x="20" y="20" width="215" height="460" rx="12"/>
+<text class="t" x="34" y="46">身份与设备</text>
+<rect class="box" x="32" y="62" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="82">user 等 5 张</text>
+<text class="s" x="44" y="100">better-auth：账号 · 会话</text>
+<rect class="box" x="32" y="120" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="140">tenants</text>
+<text class="s" x="44" y="158">租户；其余表都带 tenant_id</text>
+<rect class="box" x="32" y="178" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="198">members</text>
+<text class="s" x="44" y="216">账号在租户里的身份 · 角色</text>
+<rect class="box" x="32" y="236" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="256">principals</text>
+<text class="s" x="44" y="274">主体：人 · 代理 · 在线状态</text>
+<rect class="box" x="32" y="294" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="314">agents</text>
+<text class="s" x="44" y="332">代理配置 → 主体 · 设备</text>
+<rect class="box" x="32" y="352" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="372">runners</text>
+<text class="s" x="44" y="390">设备 · 在线 · 能力声明</text>
+<rect class="box" x="32" y="410" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="430">pairing_codes</text>
+<text class="s" x="44" y="448">一次性配对码</text>
+<rect class="box frame" x="247" y="20" width="215" height="460" rx="12"/>
+<text class="t" x="261" y="46">会话</text>
+<rect class="box" x="259" y="62" width="191" height="48" rx="8"/>
+<text class="c b" x="271" y="82">conversations</text>
+<text class="s" x="271" y="100">私聊 · 群聊 · 协商</text>
+<rect class="box" x="259" y="120" width="191" height="48" rx="8"/>
+<text class="c b" x="271" y="140">conversation_members</text>
+<text class="s" x="271" y="158">成员：人与分身</text>
+<rect class="box" x="259" y="178" width="191" height="48" rx="8"/>
+<text class="c b" x="271" y="198">topics</text>
+<text class="s" x="271" y="216">主线 · 话题 · 任务话题</text>
+<rect class="box" x="259" y="236" width="191" height="48" rx="8"/>
+<text class="c b" x="271" y="256">events</text>
+<text class="s" x="271" y="274">只追加 · 会话内 seq 连续</text>
+<rect class="box" x="259" y="294" width="191" height="48" rx="8"/>
+<text class="c b" x="271" y="314">compactions</text>
+<text class="s" x="271" y="332">压缩检查点 → 话题</text>
+<rect class="box frame" x="474" y="20" width="215" height="460" rx="12"/>
+<text class="t" x="488" y="46">工作与运行</text>
+<rect class="box" x="486" y="62" width="191" height="48" rx="8"/>
+<text class="c b" x="498" y="82">work_items</text>
+<text class="s" x="498" y="100">上报 · 审批 · 确认 · 决定</text>
+<rect class="box" x="486" y="120" width="191" height="48" rx="8"/>
+<text class="c b" x="498" y="140">tasks</text>
+<text class="s" x="498" y="158">A2A 状态 → 话题 · 设备</text>
+<rect class="box" x="486" y="178" width="191" height="48" rx="8"/>
+<text class="c b" x="498" y="198">task_logs</text>
+<text class="s" x="498" y="216">任务过程，只追加</text>
+<rect class="box" x="486" y="236" width="191" height="48" rx="8"/>
+<text class="c b" x="498" y="256">runs</text>
+<text class="s" x="498" y="274">每次运行 → 代理 · 话题 · 任务</text>
+<rect class="box frame" x="701" y="20" width="215" height="460" rx="12"/>
+<text class="t" x="715" y="46">模型</text>
+<rect class="box" x="713" y="62" width="191" height="48" rx="8"/>
+<text class="c b" x="725" y="82">tenant_settings</text>
+<text class="s" x="725" y="100">默认模型 · 外部 agent 模式</text>
+<rect class="box" x="713" y="120" width="191" height="48" rx="8"/>
+<text class="c b" x="725" y="140">model_providers</text>
+<text class="s" x="725" y="158">厂商 · key 密文</text>
+<rect class="box" x="713" y="178" width="191" height="48" rx="8"/>
+<text class="c b" x="725" y="198">model_groups</text>
+<text class="s" x="725" y="216">路由组：order · rotate</text>
+<rect class="box" x="713" y="236" width="191" height="48" rx="8"/>
+<text class="c b" x="725" y="256">gateway_tokens</text>
+<text class="s" x="725" y="274">任务令牌哈希 → 外部会话</text>
+<rect class="box" x="713" y="294" width="191" height="48" rx="8"/>
+<text class="c b" x="725" y="314">llm_requests</text>
+<text class="s" x="725" y="332">每次尝试一行 · 成本</text>
+<rect class="box frame" x="928" y="20" width="215" height="460" rx="12"/>
+<text class="t" x="942" y="46">记忆</text>
+<rect class="box" x="940" y="62" width="191" height="48" rx="8"/>
+<text class="c b" x="952" y="82">notes</text>
+<text class="s" x="952" y="100">资料：私有或共享</text>
+<rect class="box" x="940" y="120" width="191" height="48" rx="8"/>
+<text class="c b" x="952" y="140">memory_items</text>
+<text class="s" x="952" y="158">条目 · 出处 · 可见范围</text>
+<rect class="box" x="940" y="178" width="191" height="48" rx="8"/>
+<text class="c b" x="952" y="198">memory_profiles</text>
+<text class="s" x="952" y="216">画像分段 → 条目</text>
+<rect class="box" x="940" y="236" width="191" height="48" rx="8"/>
+<text class="c b" x="952" y="256">memory_jobs</text>
+<text class="s" x="952" y="274">提炼作业 · 已提炼到哪</text>
+<rect class="box" x="940" y="294" width="191" height="48" rx="8"/>
+<text class="c b" x="952" y="314">disclosure_rules</text>
+<text class="s" x="952" y="332">本人的类别授权</text>
+</svg>
+			</div>
+			<figcaption>主干关系：主体（<code>principals</code>）是人和代理的统一身份，会话、事件、运行、记忆都指向它；话题（<code>topics</code>）是上下文边界，事件、任务、运行、压缩检查点和提炼作业都挂在话题上；记忆条目的出处指回 <code>events</code> 等第 0 层证据。迁移共 6 个（<code>0000_init</code> 到 <code>0005_memory_layer</code>），都可重复执行。</figcaption>
+		</figure>
+	</section>
+
+	<section aria-labelledby="fW">
+		<h2 id="fW">连接与协议</h2>
+		<div class="tscroll">
+			<table>
+				<thead><tr><th>连接</th><th>端点</th><th>内容</th><th>凭据</th></tr></thead>
+				<tbody>
+					<tr><td class="k">浏览器 → 服务端</td><td><code>/api/*</code>（68 个）· <code>/ws</code></td><td>下行帧：event · task · topic · work_item · presence · draft · status · runner · ping</td><td>better-auth 会话或 Bearer</td></tr>
+					<tr><td class="k">Runner → 服务端</td><td><code>/runner/ws</code></td><td>上行：hello · capabilities · result · acp_event · acp_permission · acp_turn_end<br>下行：invoke · acp_start · acp_prompt · acp_permission_reply · acp_interrupt · acp_cancel</td><td>设备令牌（配对码换取）</td></tr>
+					<tr><td class="k">外部 agent → 服务端</td><td><code>/llm/v1/chat/completions</code> · <code>/responses</code> · <code>/messages</code> · <code>/models</code></td><td>OpenAI Chat、OpenAI Responses、Anthropic Messages 三种协议</td><td>任务令牌（随会话吊销）</td></tr>
+					<tr><td class="k">Runner → 本机 agent</td><td>标准输入输出</td><td>ACP（JSON-RPC）：initialize · session/new · session/prompt · session/update · session/request_permission · session/cancel · fs/read_text_file · fs/write_text_file · terminal/create</td><td>无；子进程环境已清洗</td></tr>
+					<tr><td class="k">服务端 → 厂商</td><td>厂商端点</td><td>同上三种协议，直通或经中间结构转换</td><td>厂商 key，只在请求头里</td></tr>
+				</tbody>
+			</table>
+		</div>
 	</section>
 
 	<section aria-labelledby="f4">
