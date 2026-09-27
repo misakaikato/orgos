@@ -1,16 +1,23 @@
 "use client";
 
 import type { Event } from "@orgos/protocol";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-	AgentMessage,
-	DayDivider,
-	EventLine,
-	HumanMessage,
+	type ReactNode,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
+import { EscalationCard, OutcomeCard } from "@/components/conversation/cards";
+import {
+	ActionsRow,
+	Bubble,
+	StampDivider,
+	SystemLine,
 	UnreadDivider,
 } from "@/components/conversation/message-item";
 import { IconArrowDown } from "@/components/icons";
-import { EmptyState } from "@/components/ui/states";
 import type { PrincipalMap } from "@/lib/principals";
 import { buildThreadRows, type ThreadRow } from "@/lib/thread";
 
@@ -25,46 +32,62 @@ function scrollToBottom(el: HTMLElement | null): void {
 	if (el) el.scrollTop = el.scrollHeight;
 }
 
-function Row({
-	row,
-	map,
-	meId,
-	handles,
-}: {
-	row: ThreadRow;
+type RowContext = {
 	map: PrincipalMap;
 	meId: string;
 	handles: ReadonlySet<string>;
-}) {
+	isGroup: boolean;
+	/** 我还有确认待办的协商会话 id。 */
+	confirmPending: boolean;
+};
+
+function Row({ row, ctx }: { row: ThreadRow; ctx: RowContext }) {
+	const { map, meId } = ctx;
 	switch (row.kind) {
-		case "day":
-			return <DayDivider at={row.at} />;
+		case "stamp":
+			return <StampDivider at={row.at} />;
 		case "unread":
 			return (
 				<div data-unread-divider>
 					<UnreadDivider />
 				</div>
 			);
-		case "human":
+		case "bubble":
 			return (
-				<HumanMessage
+				<Bubble
 					event={row.event}
+					side={row.side}
 					continued={row.continued}
+					actions={row.actions}
 					map={map}
-					handles={handles}
+					meId={meId}
+					handles={ctx.handles}
+					isGroup={ctx.isGroup}
 				/>
 			);
-		case "agent":
+		case "actions":
 			return (
-				<AgentMessage
+				<ActionsRow actorId={row.actorId} actions={row.actions} map={map} />
+			);
+		case "escalation":
+			return (
+				<EscalationCard
 					event={row.event}
-					continued={row.continued}
+					resolved={row.resolved}
 					map={map}
-					handles={handles}
+					meId={meId}
 				/>
 			);
-		case "line":
-			return <EventLine event={row.event} map={map} meId={meId} />;
+		case "outcome":
+			return (
+				<OutcomeCard
+					event={row.event}
+					confirmPending={ctx.confirmPending}
+					map={map}
+				/>
+			);
+		case "system":
+			return <SystemLine event={row.event} map={map} meId={meId} />;
 	}
 }
 
@@ -78,16 +101,24 @@ export function MessageList({
 	meId,
 	unreadAfter,
 	handles,
+	isGroup,
+	confirmPending,
 	onBottomChange,
-	emptyText,
+	empty,
+	footer,
 }: {
 	events: readonly Event[];
 	map: PrincipalMap;
 	meId: string;
 	unreadAfter: number | null;
 	handles: ReadonlySet<string>;
+	isGroup: boolean;
+	confirmPending: boolean;
 	onBottomChange: (atBottom: boolean) => void;
-	emptyText: string;
+	/** 没有任何事件时显示。 */
+	empty: ReactNode;
+	/** 消息列末尾的附加内容（"正在工作"指示）。 */
+	footer?: ReactNode;
 }) {
 	const scroller = useRef<HTMLDivElement>(null);
 	const atBottom = useRef(true);
@@ -99,6 +130,7 @@ export function MessageList({
 		() => buildThreadRows(events, map, meId, unreadAfter),
 		[events, map, meId, unreadAfter],
 	);
+	const ctx: RowContext = { map, meId, handles, isGroup, confirmPending };
 
 	// 首次定位 + 新消息跟随（布局完成后、绘制前执行，避免跳动）。
 	useLayoutEffect(() => {
@@ -154,17 +186,12 @@ export function MessageList({
 				aria-live="polite"
 				aria-label="消息"
 			>
-				<div className="max-w-thread px-4 pt-2 pb-6 md:px-6">
-					{rows.length === 0 ? <EmptyState text={emptyText} /> : null}
+				<div className="mx-auto w-full max-w-thread px-4 pt-2 pb-6 md:px-6">
+					{rows.length === 0 ? empty : null}
 					{rows.map((row) => (
-						<Row
-							key={row.key}
-							row={row}
-							map={map}
-							meId={meId}
-							handles={handles}
-						/>
+						<Row key={row.key} row={row} ctx={ctx} />
 					))}
+					{footer}
 				</div>
 			</div>
 			{hasNewBelow ? (
@@ -174,7 +201,7 @@ export function MessageList({
 						scrollToBottom(scroller.current);
 						setHasNewBelow(false);
 					}}
-					className="absolute bottom-4 left-4 inline-flex h-8 items-center gap-2 rounded-capsule border border-pop-border bg-surface px-3 text-13 text-ink shadow-popover md:left-6"
+					className="absolute bottom-3 left-1/2 inline-flex h-8 -translate-x-1/2 animate-pop-in items-center gap-1.5 rounded-pill bg-bg px-3 text-13 font-medium text-accent shadow-float"
 				>
 					<IconArrowDown size={16} />
 					有新消息

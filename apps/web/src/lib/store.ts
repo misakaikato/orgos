@@ -9,6 +9,7 @@ import type {
 	DirectoryResponse,
 	Event,
 	MeResponse,
+	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
 import { ApiError, api, fetchEventsAfter } from "@/lib/api";
@@ -42,6 +43,9 @@ export type State = {
 	/** 正在查看且停在底部的会话：新消息直接算已读。 */
 	activeId: string | null;
 	connection: ConnectionState;
+	/** 我是处理人、仍未处理的待办（null = 还没加载过）。 */
+	workItems: WorkItem[] | null;
+	workItemsStatus: LoadStatus | null;
 };
 
 const initialState: State = {
@@ -55,6 +59,8 @@ const initialState: State = {
 	reportedRead: {},
 	activeId: null,
 	connection: "connecting",
+	workItems: null,
+	workItemsStatus: null,
 };
 
 let state = initialState;
@@ -199,12 +205,45 @@ function mergeInto(conversationId: string, incoming: Event[]): void {
 	});
 }
 
+// ─────────────────────────── 待办 ───────────────────────────
+
+let workItemsLoad: Promise<void> | null = null;
+
+/** 拉取我的未处理待办；并发调用共用同一次请求。 */
+export function loadWorkItems(): Promise<void> {
+	workItemsLoad ??= doLoadWorkItems().finally(() => {
+		workItemsLoad = null;
+	});
+	return workItemsLoad;
+}
+
+async function doLoadWorkItems(): Promise<void> {
+	set((s) => ({
+		workItemsStatus: s.workItems ? s.workItemsStatus : "loading",
+	}));
+	try {
+		const { items } = await api.workItems("open");
+		set({ workItems: items, workItemsStatus: "ready" });
+	} catch {
+		set((s) => ({ workItemsStatus: s.workItems ? "ready" : "error" }));
+	}
+}
+
+/** 会产生或了结待办的事件类型：收到时重拉待办。 */
+const WORK_ITEM_EVENTS: ReadonlySet<Event["type"]> = new Set([
+	"escalation.created",
+	"escalation.resolved",
+	"negotiation.ended",
+	"confirmation.resolved",
+]);
+
 /** WS 推来的事件：并入已加载的事件列表与会话摘要；未知会话或成员变化时重拉列表。 */
 export function applyEvent(event: Event): void {
 	const cid = event.conversationId;
 	const meId = state.me?.principal.id;
 	if (!cid || !meId) return;
 	mergeInto(cid, [event]);
+	if (WORK_ITEM_EVENTS.has(event.type)) void loadWorkItems();
 	const read = state.activeId === cid;
 	const next = applyEventToSummaries(state.conversations, event, meId, read);
 	if (next === null || event.type === "member.joined") {
@@ -217,6 +256,7 @@ export function applyEvent(event: Event): void {
 /** 断线重连后：重拉会话列表，并按已知最大 seq 补齐每个已加载的会话。 */
 export async function resync(): Promise<void> {
 	await refreshConversations();
+	void loadWorkItems();
 	const loaded = Object.entries(state.events);
 	await Promise.all(
 		loaded.map(async ([cid, list]) => {

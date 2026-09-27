@@ -195,7 +195,7 @@ describe("resetDemo（seed:demo）", () => {
 	});
 });
 
-describe("/api/dev/* 与 /sim", () => {
+describe("/api/dev/*、/sim 与 /dev/*", () => {
 	it("ORGOS_DEV 未设置时一律 404", async () => {
 		vi.stubEnv("ORGOS_DEV", "");
 		await expectError(
@@ -221,6 +221,11 @@ describe("/api/dev/* 与 /sim", () => {
 			"NOT_FOUND",
 		);
 		await expectError(await anonymous.request("GET", "/sim"), 404, "NOT_FOUND");
+		await expectError(
+			await anonymous.request("GET", "/dev/mascots"),
+			404,
+			"NOT_FOUND",
+		);
 	});
 
 	it("info：有 key 且未设 MOCK_LLM 为 real，否则 mock", async () => {

@@ -3,24 +3,35 @@
 
 /*
  * 把 tokens.css 映射为 Tailwind 工具类。清空默认调色板、字号、圆角与投影，
- * 组件只能用这里列出的名字（bg-surface、text-muted、rounded-box、text-15 …）。
+ * 组件只能用这里列出的名字（bg-sidebar、text-muted、rounded-bubble、text-15 …）。
  */
 @theme inline {
 	--color-*: initial;
 	--color-bg: var(--bg);
-	--color-surface: var(--surface);
+	--color-sidebar: var(--sidebar);
 	--color-surface-2: var(--surface-2);
-	--color-agent-surface: var(--agent-surface);
+	--color-line: var(--line);
 	--color-ink: var(--ink);
 	--color-muted: var(--muted);
-	--color-line: var(--line);
 	--color-accent: var(--accent);
 	--color-accent-soft: var(--accent-soft);
+	--color-on-accent: var(--on-accent);
 	--color-pending: var(--pending);
 	--color-pending-soft: var(--pending-soft);
+	--color-pending-ink: var(--pending-ink);
+	--color-on-pending: var(--on-pending);
+	--color-good: var(--good);
 	--color-danger: var(--danger);
-	--color-pop-border: var(--pop-border);
+	--color-on-color: var(--on-color);
 	--color-scrim: var(--scrim);
+	--color-mascot-1-ink: var(--mascot-1-ink);
+	--color-mascot-2-ink: var(--mascot-2-ink);
+	--color-mascot-3-ink: var(--mascot-3-ink);
+	--color-mascot-4-ink: var(--mascot-4-ink);
+	--color-mascot-5-ink: var(--mascot-5-ink);
+	--color-mascot-6-ink: var(--mascot-6-ink);
+	--color-mascot-7-ink: var(--mascot-7-ink);
+	--color-mascot-8-ink: var(--mascot-8-ink);
 	--color-avatar-1: var(--avatar-1);
 	--color-avatar-2: var(--avatar-2);
 	--color-avatar-3: var(--avatar-3);
@@ -30,10 +41,11 @@
 
 	--font-*: initial;
 	--font-sans: var(--font-ui);
-	--font-code: var(--font-mono);
-	--font-display: var(--font-title);
+	--font-code: var(--font-code);
 
 	--text-*: initial;
+	--text-11: var(--fs-11);
+	--text-11--line-height: 1.3;
 	--text-12: var(--fs-12);
 	--text-12--line-height: 1.5;
 	--text-13: var(--fs-13);
@@ -41,25 +53,71 @@
 	--text-14: var(--fs-14);
 	--text-14--line-height: 1.6;
 	--text-15: var(--fs-15);
-	--text-15--line-height: 1.65;
-	--text-18: var(--fs-18);
-	--text-18--line-height: 1.4;
-	--text-22: var(--fs-22);
-	--text-22--line-height: 1.3;
+	--text-15--line-height: 1.6;
+	--text-16: var(--fs-16);
+	--text-16--line-height: 1.4;
+	--text-20: var(--fs-20);
+	--text-20--line-height: 1.35;
 
 	--radius-*: initial;
-	--radius-box: var(--radius-lg);
-	--radius-capsule: var(--radius-pill);
-	--radius-square: var(--radius-agent);
+	--radius-bubble: var(--radius-bubble);
+	--radius-card: var(--radius-card);
+	--radius-row: var(--radius-row);
+	--radius-pill: var(--radius-pill);
 
 	--shadow-*: initial;
-	--shadow-popover: var(--shadow-pop);
+	--shadow-float: var(--shadow-float);
+	--shadow-card-hover: var(--shadow-card-hover);
 
 	--spacing-rail: var(--rail-w);
 	--spacing-list: var(--list-w);
 	--spacing-inspector: var(--inspector-w);
+	--spacing-card: var(--card-w);
+	--spacing-row: var(--row-h);
+	--spacing-header: var(--header-h);
+	--spacing-tabbar: var(--tabbar-h);
 	--spacing-control: var(--control-h);
 	--container-thread: var(--thread-max);
+
+	--animate-mascot-bounce: mascot-bounce 1.2s ease-in-out infinite;
+	--animate-typing-dot: typing-dot 1.2s ease-in-out infinite;
+	--animate-pop-in: pop-in 160ms ease-out;
+}
+
+/* 团子工作时的弹跳（DESIGN.md §4）：上下 2px。 */
+@keyframes mascot-bounce {
+	0%,
+	100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-2px);
+	}
+}
+
+/* "正在工作"气泡里的三个圆点。 */
+@keyframes typing-dot {
+	0%,
+	60%,
+	100% {
+		transform: translateY(0);
+		opacity: 0.45;
+	}
+	30% {
+		transform: translateY(-3px);
+		opacity: 1;
+	}
+}
+
+@keyframes pop-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 @layer base {

@@ -1,17 +1,9 @@
 import type { Principal } from "@orgos/protocol";
-import { IconGroup } from "@/components/icons";
+import { Mascot, type MascotState } from "@/components/mascot";
 import { cx } from "@/lib/cx";
-import { avatarTone, initialOf } from "@/lib/principals";
+import { avatarText, avatarTone, hashString } from "@/lib/principals";
 
-export type AvatarSize = "sm" | "md" | "lg";
-
-const sizes: Record<AvatarSize, string> = {
-	sm: "size-6 text-12",
-	md: "size-8 text-13",
-	lg: "size-10 text-15",
-};
-
-const tones = [
+const TONES = [
 	"bg-avatar-1",
 	"bg-avatar-2",
 	"bg-avatar-3",
@@ -20,55 +12,89 @@ const tones = [
 	"bg-avatar-6",
 ] as const;
 
-/**
- * 形状是区分人机的第一信号：人 = 圆形实心底；代理 = 圆角方形、--agent-surface 底加描边、等宽首字。
- * 代理首字取其本人名字的首字（"林晓的幕僚长" → 林）。
- */
-export function Avatar({
+/** 头像里文字的字号：随尺寸缩放，只用字号刻度里的值。 */
+function textSize(size: number): string {
+	if (size >= 72) return "text-20";
+	if (size >= 40) return "text-14";
+	if (size >= 32) return "text-12";
+	return "text-11";
+}
+
+/** 人的头像：正圆、--avatar-N 底、白字，名字最后两个字（DESIGN.md §4）。 */
+export function PersonAvatar({
 	principal,
-	size = "md",
+	size = 40,
 	className,
 }: {
-	principal: Pick<Principal, "kind" | "handle" | "displayName">;
-	size?: AvatarSize;
+	principal: Pick<Principal, "handle" | "displayName">;
+	size?: number;
 	className?: string;
 }) {
-	const isAgent = principal.kind === "agent";
 	return (
 		<span
 			aria-hidden="true"
+			style={{ width: size, height: size }}
 			className={cx(
-				"inline-flex shrink-0 select-none items-center justify-center font-medium text-ink",
-				sizes[size],
-				isAgent
-					? "rounded-square border border-line bg-agent-surface font-code"
-					: cx("rounded-full", tones[avatarTone(principal.handle) - 1]),
+				"inline-flex shrink-0 select-none items-center justify-center rounded-pill font-semibold leading-none text-on-color",
+				TONES[avatarTone(principal.handle) - 1],
+				textSize(size),
 				className,
 			)}
 		>
-			{initialOf(principal.displayName)}
+			{size < 28
+				? Array.from(avatarText(principal.displayName)).at(-1)
+				: avatarText(principal.displayName)}
 		</span>
 	);
 }
 
-/** 群聊头像：既不是人也不是代理，用中性方块加群组图标。 */
-export function GroupAvatar({
-	size = "md",
+/**
+ * 主体头像：人 = 正圆头像；代理 = 团子。自由轮廓 vs 正圆是人机区分的第一信号。
+ */
+export function Avatar({
+	principal,
+	size = 40,
+	state,
 	className,
 }: {
-	size?: AvatarSize;
+	principal: Pick<Principal, "id" | "kind" | "handle" | "displayName">;
+	size?: number;
+	/** 只对代理有效。 */
+	state?: MascotState;
 	className?: string;
 }) {
+	return principal.kind === "agent" ? (
+		<Mascot id={principal.id} size={size} state={state} className={className} />
+	) : (
+		<PersonAvatar principal={principal} size={size} className={className} />
+	);
+}
+
+/** 群头像：圆角方块（与人的正圆、团子的自由轮廓都不同），群名前两个字。 */
+export function GroupAvatar({
+	id,
+	title,
+	size = 40,
+	className,
+}: {
+	id: string;
+	title: string;
+	size?: number;
+	className?: string;
+}) {
+	const text = Array.from(title.replace(/\s+/g, "")).slice(0, 2).join("");
 	return (
 		<span
 			aria-hidden="true"
+			style={{ width: size, height: size }}
 			className={cx(
-				"inline-flex shrink-0 items-center justify-center rounded-box bg-surface-2 text-muted",
-				sizes[size],
+				"inline-flex shrink-0 select-none items-center justify-center rounded-card font-semibold leading-none text-on-color",
+				TONES[hashString(id) % TONES.length],
+				textSize(size),
 				className,
 			)}
 		>
-			<IconGroup size={size === "sm" ? 14 : 18} />
+			{text || "群"}
 		</span>
 	);
 }

@@ -9,6 +9,8 @@ const config: NextConfig = {
 	allowedDevOrigins: ["127.0.0.1", "localhost"],
 	// 不让 next dev 往仓库里写 AGENTS.md / CLAUDE.md。
 	agentRules: false,
+	// 开发角标会盖住导航轨底部的本人头像。
+	devIndicators: false,
 };
 
 export default config;

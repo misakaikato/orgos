@@ -7,7 +7,16 @@ import { IconButton } from "@/components/ui/button";
 import { cx } from "@/lib/cx";
 import { type Scene, type ScriptStep, SIM_SCRIPT } from "@/lib/sim-script";
 
-function CopyLine({ text, hint }: { text: string; hint?: string }) {
+function CopyLine({
+	text,
+	hint,
+	command,
+}: {
+	text: string;
+	hint?: string;
+	/** 指令或终端命令：用等宽体（DESIGN.md §3 允许的场景）。 */
+	command?: boolean;
+}) {
 	const [copied, setCopied] = useState(false);
 	const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	useEffect(
@@ -17,12 +26,15 @@ function CopyLine({ text, hint }: { text: string; hint?: string }) {
 		[],
 	);
 	return (
-		<div className="mt-2 flex items-start gap-2 rounded-box bg-surface-2 px-3 py-2">
+		<div className="mt-2 flex items-start gap-2 rounded-row bg-surface-2 px-3 py-2">
 			<span className="min-w-0 flex-1">
-				{hint ? (
-					<span className="block font-code text-12 text-muted">{hint}</span>
-				) : null}
-				<span className="block text-13 break-words text-ink [overflow-wrap:anywhere]">
+				{hint ? <span className="block text-12 text-muted">{hint}</span> : null}
+				<span
+					className={cx(
+						"block break-words text-ink [overflow-wrap:anywhere]",
+						command ? "font-code text-12" : "text-13",
+					)}
+				>
 					{text}
 				</span>
 			</span>
@@ -38,7 +50,7 @@ function CopyLine({ text, hint }: { text: string; hint?: string }) {
 						})
 						.catch(() => {});
 				}}
-				className="inline-flex h-6 shrink-0 items-center gap-1 rounded-capsule border border-line px-2 text-12 text-muted transition-colors duration-150 hover:bg-surface hover:text-ink"
+				className="inline-flex h-6 shrink-0 items-center gap-1 rounded-pill bg-bg px-2 text-12 text-muted transition-colors duration-150 hover:text-ink"
 			>
 				{copied ? <IconCheck size={14} /> : null}
 				{copied ? "已复制" : "复制"}
@@ -60,9 +72,7 @@ function StepItem({
 }) {
 	return (
 		<li className="grid grid-cols-[20px_1fr] gap-x-2">
-			<span className="pt-px font-code text-12 tabular-nums text-muted">
-				{index + 1}
-			</span>
+			<span className="pt-px text-12 tabular-nums text-muted">{index + 1}</span>
 			<div className="min-w-0">
 				<p className="text-13 text-ink">
 					<span className="font-medium">
@@ -71,9 +81,9 @@ function StepItem({
 					<span className="text-muted"> · </span>
 					{step.action}
 				</p>
-				{step.say ? <CopyLine text={step.say} /> : null}
+				{step.say ? <CopyLine text={step.say} command={!step.who} /> : null}
 				{step.mock && mockMode ? (
-					<CopyLine text={step.mock} hint="假模型下改发" />
+					<CopyLine text={step.mock} hint="假模型下改发" command />
 				) : null}
 			</div>
 		</li>
@@ -97,10 +107,12 @@ function SceneBlock({
 			)}
 		>
 			<h3 className="flex items-center gap-2 text-14 font-medium text-ink">
-				<span className="font-code text-12 text-muted">{scene.id}</span>
+				<span className="inline-flex h-5 items-center rounded-pill bg-accent-soft px-2 text-12 font-semibold text-accent">
+					{scene.id}
+				</span>
 				{scene.title}
 				{scene.upcoming ? (
-					<span className="ml-auto rounded-capsule border border-line px-2 text-12 font-normal text-muted">
+					<span className="ml-auto rounded-pill bg-surface-2 px-2 text-12 font-normal text-muted">
 						即将开放
 					</span>
 				) : null}
@@ -142,10 +154,10 @@ export function ScriptPanel({
 	return (
 		<aside
 			aria-label="剧本"
-			className={cx("flex min-h-0 flex-col bg-surface", className)}
+			className={cx("flex min-h-0 flex-col bg-bg", className)}
 		>
 			<header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-4">
-				<h2 className="flex-1 text-14 font-medium text-ink">剧本</h2>
+				<h2 className="flex-1 text-16 font-semibold text-ink">剧本</h2>
 				<IconButton label="收起剧本" onClick={onClose}>
 					<IconClose />
 				</IconButton>

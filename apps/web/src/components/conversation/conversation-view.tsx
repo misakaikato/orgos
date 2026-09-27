@@ -11,7 +11,14 @@ import { IconButton } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/ui/states";
 import { appHref } from "@/lib/auth-mode";
 import { useMediaQuery, usePrincipalMap } from "@/lib/hooks";
-import { conversationTitle, dmPeer, ownerOf } from "@/lib/principals";
+import {
+	agentRoleLine,
+	conversationAvatar,
+	conversationFacet,
+	conversationTitle,
+	frontAgentIds,
+	othersOf,
+} from "@/lib/principals";
 import {
 	ensureEvents,
 	loadEvents,
@@ -35,9 +42,18 @@ export function ConversationView({
 	);
 	const events = useStore((s) => s.events[conversationId]);
 	const status = useStore((s) => s.eventsStatus[conversationId]);
+	const directory = useStore((s) => s.directory);
+	const confirmPending = useStore(
+		(s) =>
+			s.workItems?.some(
+				(w) =>
+					w.kind === "confirmation" &&
+					w.payload.negotiationConversationId === conversationId,
+			) ?? false,
+	);
 	const map = usePrincipalMap();
 	const wide = useMediaQuery(WIDE);
-	const [panelWide, setPanelWide] = useState(true);
+	const [panelWide, setPanelWide] = useState(false);
 	const [panelDrawer, setPanelDrawer] = useState(false);
 	const [missing, setMissing] = useState(false);
 	const atBottom = useRef(false);
@@ -108,39 +124,55 @@ export function ConversationView({
 		);
 	}
 
-	const peer = dmPeer(item, meId);
+	const avatar = conversationAvatar(item, meId);
 	const title = conversationTitle(item, meId);
-	const owner = peer ? ownerOf(peer, map) : null;
-	const subtitle = peer
-		? `@${peer.handle}${peer.kind === "agent" ? ` · 代理 · 代${owner?.id === meId ? "你" : (owner?.displayName ?? "")}` : ""}`
-		: `${item.members.length} 位成员`;
+	const facet = conversationFacet(item, meId);
+	const kind = item.conversation.kind;
+	const myAgentHere = othersOf(item, meId).find(
+		(p) => p.kind === "agent" && p.ownerId === meId,
+	);
+	const subtitle =
+		facet.tag === "代理在对外" && myAgentHere
+			? `${myAgentHere.displayName}在代你回复`
+			: kind === "negotiation"
+				? `代理协商 · ${item.members.length} 位成员`
+				: kind === "group"
+					? `${item.members.length} 位成员`
+					: avatar?.kind === "agent"
+						? agentRoleLine(avatar, map, meId, frontAgentIds(me, directory))
+						: avatar
+							? `@${avatar.handle}`
+							: "";
 	const showPanel = wide ? panelWide : panelDrawer;
 	const togglePanel = () =>
 		wide ? setPanelWide((v) => !v) : setPanelDrawer((v) => !v);
 	const closePanel = () => (wide ? setPanelWide(false) : setPanelDrawer(false));
-	const emptyText = peer
-		? peer.kind === "agent"
-			? `和${peer.displayName}说点什么吧。`
-			: `和${peer.displayName}打个招呼吧。`
-		: "群里还没有人说话。";
+	const emptyText =
+		kind !== "dm"
+			? "群里还没有人说话，打个招呼吧。"
+			: avatar?.kind === "agent"
+				? `和${avatar.displayName}说点什么吧，它会替你查资料、记事、分派活。`
+				: `和${avatar?.displayName ?? "对方"}打个招呼吧。`;
 
 	return (
 		<div className="flex min-h-0 flex-1">
-			<section className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
-				<header className="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4 md:px-6">
+			<section className="flex min-h-0 min-w-0 flex-1 flex-col bg-bg">
+				<header className="flex h-header shrink-0 items-center gap-3 border-b border-line px-3 md:px-5">
 					<Link
 						href={appHref("/")}
 						aria-label="返回会话列表"
-						className="-ml-2 inline-flex size-8 items-center justify-center rounded-capsule text-muted hover:bg-surface-2 hover:text-ink md:hidden"
+						className="inline-flex size-8 items-center justify-center rounded-pill text-ink hover:bg-surface-2 md:hidden"
 					>
 						<IconBack />
 					</Link>
-					{peer ? <Avatar principal={peer} /> : <GroupAvatar />}
+					{avatar ? (
+						<Avatar principal={avatar} size={28} />
+					) : (
+						<GroupAvatar id={item.conversation.id} title={title} size={28} />
+					)}
 					<div className="flex min-w-0 flex-1 flex-col">
-						<h1 className="truncate text-15 font-medium leading-tight text-ink">
-							{title}
-						</h1>
-						<p className="truncate font-code text-12 text-muted">{subtitle}</p>
+						<h1 className="truncate text-16 font-semibold text-ink">{title}</h1>
+						<p className="truncate text-12 text-muted">{subtitle}</p>
 					</div>
 					<IconButton
 						label={showPanel ? "收起成员" : "查看成员"}
@@ -156,7 +188,10 @@ export function ConversationView({
 						onRetry={() => void loadEvents(conversationId)}
 					/>
 				) : !events ? (
-					<LoadingRows rows={5} className="max-w-thread flex-1" />
+					<LoadingRows
+						rows={5}
+						className="mx-auto w-full max-w-thread flex-1"
+					/>
 				) : (
 					<MessageList
 						events={events}
@@ -164,14 +199,24 @@ export function ConversationView({
 						meId={meId}
 						unreadAfter={unreadAfter}
 						handles={handles}
+						isGroup={kind !== "dm"}
+						confirmPending={confirmPending}
 						onBottomChange={onBottomChange}
-						emptyText={emptyText}
+						empty={
+							<EmptyState
+								mascotId={
+									avatar?.kind === "agent" ? avatar.id : item.conversation.id
+								}
+								text={emptyText}
+							/>
+						}
 					/>
 				)}
 				<Composer
 					key={conversationId}
 					members={item.members}
 					meId={meId}
+					map={map}
 					placeholder={`发给 ${title}`}
 					onSend={(text, mentions) =>
 						sendMessage(conversationId, text, mentions)
@@ -179,7 +224,7 @@ export function ConversationView({
 				/>
 			</section>
 			{showPanel && wide ? (
-				<aside className="w-inspector shrink-0 border-l border-line bg-surface">
+				<aside className="w-inspector shrink-0 border-l border-line bg-bg">
 					<Inspector item={item} map={map} meId={meId} onClose={closePanel} />
 				</aside>
 			) : null}
@@ -191,7 +236,7 @@ export function ConversationView({
 						className="flex-1 bg-scrim"
 						onClick={closePanel}
 					/>
-					<aside className="h-full w-inspector max-w-full border-l border-pop-border bg-surface shadow-popover">
+					<aside className="h-full w-inspector max-w-full animate-pop-in bg-bg shadow-float">
 						<Inspector item={item} map={map} meId={meId} onClose={closePanel} />
 					</aside>
 				</div>

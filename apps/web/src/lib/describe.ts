@@ -1,18 +1,18 @@
 /**
- * 非消息事件的一行文字描述（会话里的紧凑灰字、列表预览共用）。
+ * 事件的一行文字描述（会话里的系统行、卡片副标题与列表预览共用）。
  */
 import type { Event, NEGOTIATION_OUTCOMES } from "@orgos/protocol";
-import type { PrincipalMap } from "@/lib/principals";
+import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
 
 type NegotiationOutcome = (typeof NEGOTIATION_OUTCOMES)[number];
 
-const OUTCOME_LABEL: Record<NegotiationOutcome, string> = {
+export const OUTCOME_LABEL: Record<NegotiationOutcome, string> = {
 	agreed: "已谈妥，等双方本人确认",
 	rejected: "未谈成",
 	exhausted: "步数用尽，未谈成",
 };
 
-function nameOf(id: string, map: PrincipalMap, meId: string): string {
+export function nameOf(id: string, map: PrincipalMap, meId: string): string {
 	if (id === meId) return "你";
 	return map.get(id)?.displayName ?? "某人";
 }
@@ -29,21 +29,25 @@ export function describeEvent(
 		case "member.joined": {
 			const who = nameOf(event.payload.principalId, map, meId);
 			return event.payload.principalId === event.actorId
-				? `${who} 加入了会话`
-				: `${actor} 邀请 ${who} 加入了会话`;
+				? `${who}加入了会话`
+				: `${actor}邀请${who}加入了会话`;
 		}
 		case "agent.action":
-			return `↳ ${event.payload.summary}`;
-		case "escalation.created":
-			return `${actor} 已转给本人：${event.payload.question}`;
+			return `${actor}${event.payload.summary}`;
+		case "escalation.created": {
+			const agent = map.get(event.actorId);
+			const owner = agent ? onBehalfLabel(agent, map, meId) : null;
+			const to = owner === "你" ? "你" : `${owner ?? ""}本人`;
+			return `${actor}已转给${to}：${event.payload.question}`;
+		}
 		case "escalation.resolved":
-			return `${actor} 已答复转来的问题`;
+			return `${actor}已答复转来的问题`;
 		case "negotiation.step":
 			return `协商第 ${event.payload.step} 步：${event.payload.message}`;
 		case "negotiation.ended":
 			return `协商结束：${OUTCOME_LABEL[event.payload.outcome]}`;
 		case "confirmation.resolved":
-			return `${actor} ${event.payload.action === "confirm" ? "确认了" : "驳回了"}协商结果`;
+			return `${actor}${event.payload.action === "confirm" ? "确认了" : "驳回了"}协商结果`;
 	}
 }
 

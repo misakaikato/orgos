@@ -3,9 +3,11 @@
 import type { DemoPerson, DevInfoResponse } from "@orgos/protocol";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCheck } from "@/components/icons";
+import { Mascot } from "@/components/mascot";
 import { ScriptPanel } from "@/components/sim/script-panel";
 import { type PaneSession, SimPane } from "@/components/sim/sim-pane";
 import { ThemeToggle } from "@/components/theme";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ErrorState, LoadingRows } from "@/components/ui/states";
 import { api, devApi } from "@/lib/api";
@@ -23,7 +25,14 @@ function messageOf(e: unknown): string {
 function ModelBadge({ info }: { info: DevInfoResponse | null }) {
 	if (!info) return null;
 	return (
-		<span className="inline-flex h-6 shrink-0 items-center rounded-capsule border border-line px-2 font-code text-12 text-muted">
+		<span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-pill bg-surface-2 px-2.5 text-12 text-muted">
+			<span
+				aria-hidden="true"
+				className={cx(
+					"size-1.5 rounded-pill",
+					info.modelMode === "real" ? "bg-good" : "bg-pending",
+				)}
+			/>
 			{info.modelMode === "real" ? `真实模型 ${info.model}` : "假模型"}
 		</span>
 	);
@@ -56,14 +65,15 @@ function PeoplePicker({
 						}
 						onClick={() => onToggle(p.handle)}
 						className={cx(
-							"inline-flex h-8 items-center gap-1 rounded-capsule border px-3 text-13 transition-colors duration-150 disabled:cursor-not-allowed",
+							"inline-flex h-8 items-center gap-1.5 rounded-pill pr-3 pl-1 text-13 transition-colors duration-150 disabled:cursor-not-allowed",
 							on
-								? "border-transparent bg-accent-soft font-medium text-ink"
-								: "border-line text-muted hover:bg-surface-2 hover:text-ink",
+								? "bg-accent-soft font-medium text-accent"
+								: "bg-surface-2 text-muted hover:text-ink",
 						)}
 					>
-						{on ? <IconCheck size={14} /> : null}
+						<PersonAvatar principal={p} size={24} />
 						{p.displayName}
+						{on ? <IconCheck size={14} /> : null}
 					</button>
 				);
 			})}
@@ -85,7 +95,7 @@ function PeopleTabs({
 		<div
 			role="tablist"
 			aria-label="切换人物"
-			className="flex items-center gap-1 overflow-x-auto rounded-capsule bg-surface-2 p-1"
+			className="flex items-center gap-1 overflow-x-auto rounded-pill bg-surface-2 p-1"
 		>
 			{people.map((p) => (
 				<button
@@ -95,9 +105,9 @@ function PeopleTabs({
 					aria-selected={p.handle === focused}
 					onClick={() => onFocus(p.handle)}
 					className={cx(
-						"inline-flex h-8 flex-1 items-center justify-center rounded-capsule px-3 text-13 whitespace-nowrap transition-colors duration-150",
+						"inline-flex h-8 flex-1 items-center justify-center rounded-pill px-3 text-13 whitespace-nowrap transition-colors duration-150",
 						p.handle === focused
-							? "bg-accent-soft font-medium text-ink"
+							? "bg-bg font-medium text-ink shadow-card-hover"
 							: "text-muted hover:text-ink",
 					)}
 				>
@@ -242,17 +252,20 @@ export default function SimPage() {
 	}
 	if (!people) {
 		return (
-			<div className="h-dvh bg-bg">
+			<div className="h-dvh bg-sidebar">
 				<LoadingRows rows={4} />
 			</div>
 		);
 	}
 
 	return (
-		<div className="flex h-dvh flex-col overflow-hidden bg-bg text-ink">
-			<header className="flex shrink-0 flex-col gap-2 border-b border-line bg-surface px-4 py-2">
+		<div className="flex h-dvh flex-col overflow-hidden bg-sidebar text-ink">
+			<header className="flex shrink-0 flex-col gap-2 px-4 pt-3 pb-1">
 				<div className="flex flex-wrap items-center gap-3">
-					<h1 className="font-display text-18 text-ink">模拟台</h1>
+					<h1 className="flex items-center gap-2 text-16 font-semibold text-ink">
+						<Mascot id="orgos" size={28} />
+						模拟台
+					</h1>
 					{wide ? (
 						<PeoplePicker
 							people={people}
@@ -284,9 +297,9 @@ export default function SimPage() {
 					</p>
 				) : null}
 			</header>
-			<div className="flex min-h-0 flex-1">
+			<div className="flex min-h-0 flex-1 gap-3 p-3">
 				<div
-					className="grid min-h-0 min-w-0 flex-1 divide-x divide-line"
+					className="grid min-h-0 min-w-0 flex-1 gap-3"
 					style={{
 						gridTemplateColumns: `repeat(${Math.max(ordered.length, 1)}, minmax(0, 1fr))`,
 					}}
@@ -307,7 +320,7 @@ export default function SimPage() {
 						onClose={() => setScriptChoice(false)}
 						className={
 							wide
-								? "w-inspector shrink-0 border-l border-line"
+								? "w-inspector shrink-0 overflow-hidden rounded-card shadow-float"
 								: "fixed inset-0 z-10"
 						}
 					/>

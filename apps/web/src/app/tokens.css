@@ -3,63 +3,103 @@
  * 组件只经 globals.css 映射出的 Tailwind 工具类或 var(--*) 使用这些值，不写字面色值。
  *
  * 主题：默认跟随系统（prefers-color-scheme）；<html data-theme="light|dark"> 可覆盖。
+ * 深色值写两遍（系统深色 / 手动深色），两处必须保持一致。
  */
 
 :root {
 	color-scheme: light;
 
 	/* 色板（DESIGN.md §2） */
-	--bg: #f4f6f3;
-	--surface: #ffffff;
-	--surface-2: #ecefeb;
-	--agent-surface: #eef3f0;
-	--ink: #16201b;
-	--muted: #5b6861;
-	--line: #dce2dc;
-	--accent: #1b6f5a;
-	--accent-soft: #e1efe9;
-	--pending: #a8611a;
-	--pending-soft: #f7ecdf;
-	--danger: #b23a3a;
+	--bg: #ffffff;
+	--sidebar: #f5f6f8;
+	--surface-2: #eef0f3;
+	--line: #e4e6eb;
+	--ink: #1f2329;
+	--muted: #646a73;
+	--accent: #2b6cf6;
+	--accent-soft: #e6eefe;
+	--pending: #e0820b;
+	--pending-soft: #fff3e3;
+	--good: #1f9d63;
+	--danger: #c93636;
 
-	/* 人的头像底色：按 handle 哈希取其一，文字用 --ink */
-	--avatar-1: #d6e2da;
-	--avatar-2: #e4ddd1;
-	--avatar-3: #d4dde3;
-	--avatar-4: #e3d7da;
-	--avatar-5: #dbdbe5;
-	--avatar-6: #d2e0df;
+	/* 实色底上的文字：品牌色底、待办色底、头像底 */
+	--on-accent: #ffffff;
+	--on-pending: #2a1a00;
+	--on-color: #ffffff;
+	/* --pending-soft 底上的文字（--pending 本身在浅底上对比不足 4.5:1） */
+	--pending-ink: #a15d08;
 
-	/* 浮层：浅色用投影，深色改为描边 */
-	--shadow-pop: 0 8px 24px rgb(16 24 20 / 0.12);
-	--pop-border: transparent;
+	/* 团子身体色（两套主题相同）与名字色（浅色下加深到 ≥4.5:1） */
+	--mascot-1: #ff7a59;
+	--mascot-2: #ffb020;
+	--mascot-3: #6cc266;
+	--mascot-4: #2ec4b6;
+	--mascot-5: #4da3ff;
+	--mascot-6: #9b7bff;
+	--mascot-7: #ff6fa8;
+	--mascot-8: #c9935a;
+	--mascot-1-ink: #c4461f;
+	--mascot-2-ink: #9a6400;
+	--mascot-3-ink: #3b7f36;
+	--mascot-4-ink: #177a71;
+	--mascot-5-ink: #1f6fd1;
+	--mascot-6-ink: #7452e6;
+	--mascot-7-ink: #c2366f;
+	--mascot-8-ink: #93642f;
+
+	/* 团子五官与体积：画在团子色上，两套主题相同 */
+	--mascot-eye: #2b2724;
+	--mascot-shine: #ffffff;
+	--mascot-blush: #ff8fa8;
+	--mascot-shade: rgb(40 20 10 / 0.16);
+	--mascot-gloss: rgb(255 255 255 / 0.32);
+
+	/* 人的头像底色：低饱和，白字 ≥4.5:1 */
+	--avatar-1: #56789c;
+	--avatar-2: #7563a0;
+	--avatar-3: #3a8177;
+	--avatar-4: #97684a;
+	--avatar-5: #647a40;
+	--avatar-6: #a35d74;
+
+	/* 投影（DESIGN.md §6）：深色主题改为 1px --line 描边 */
+	--shadow-float:
+		0 6px 24px rgb(31 35 41 / 0.08), 0 1px 3px rgb(31 35 41 / 0.06);
+	--shadow-card-hover: 0 2px 8px rgb(31 35 41 / 0.08);
 	/* 抽屉背后的遮罩 */
-	--scrim: rgb(16 24 20 / 0.24);
+	--scrim: rgb(31 35 41 / 0.28);
 
-	/* 字体（DESIGN.md §3）；--font-instrument / --font-jetbrains 由 next/font 注入 */
+	/* 字体（DESIGN.md §3）：系统栈，不加载网络字体 */
 	--font-ui:
-		var(--font-instrument), "PingFang SC", "Noto Sans SC", "Microsoft YaHei",
-		sans-serif;
-	--font-title: "Songti SC", "STSong", "Noto Serif SC", serif;
-	--font-mono: var(--font-jetbrains), "SF Mono", Menlo, monospace;
+		-apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue",
+		"Microsoft YaHei", sans-serif;
+	--font-code: "SF Mono", Menlo, Consolas, monospace;
 
+	/* 字号：11 只用于导航轨图标下的文字（DESIGN.md §4 导航轨） */
+	--fs-11: 11px;
 	--fs-12: 12px;
 	--fs-13: 13px;
 	--fs-14: 14px;
 	--fs-15: 15px;
-	--fs-18: 18px;
-	--fs-22: 22px;
+	--fs-16: 16px;
+	--fs-20: 20px;
 
-	/* 圆角（DESIGN.md §7）：容器 16px，控件胶囊，代理头像 30% */
-	--radius-lg: 16px;
+	/* 圆角（DESIGN.md §6） */
+	--radius-bubble: 18px;
+	--radius-card: 12px;
+	--radius-row: 10px;
 	--radius-pill: 999px;
-	--radius-agent: 30%;
 
 	/* 布局（DESIGN.md §5） */
 	--rail-w: 64px;
-	--list-w: 288px;
+	--list-w: 300px;
 	--inspector-w: 320px;
-	--thread-max: 760px;
+	--thread-max: 800px;
+	--card-w: 360px;
+	--row-h: 64px;
+	--header-h: 56px;
+	--tabbar-h: 56px;
 	--control-h: 32px;
 }
 
@@ -67,28 +107,34 @@
 	:root:not([data-theme="light"]) {
 		color-scheme: dark;
 
-		--bg: #111614;
-		--surface: #181e1b;
-		--surface-2: #202824;
-		--agent-surface: #1c2521;
-		--ink: #e4eae6;
-		--muted: #94a29a;
-		--line: #2b3530;
-		--accent: #5fc4a2;
-		--accent-soft: #173129;
-		--pending: #e0a15e;
-		--pending-soft: #2e2317;
-		--danger: #e07a7a;
+		--bg: #16181c;
+		--sidebar: #1d2025;
+		--surface-2: #262a31;
+		--line: #30343c;
+		--ink: #ebedf0;
+		--muted: #9aa0aa;
+		--accent: #5b8fff;
+		--accent-soft: #22324f;
+		--pending: #f2a541;
+		--pending-soft: #3a2c18;
+		--good: #46c488;
+		--danger: #f07171;
 
-		--avatar-1: #2c3a32;
-		--avatar-2: #3a3328;
-		--avatar-3: #2a343a;
-		--avatar-4: #3a2d31;
-		--avatar-5: #32323d;
-		--avatar-6: #283838;
+		--on-accent: #0e1a33;
+		--on-pending: #2a1a00;
+		--pending-ink: #f2a541;
 
-		--shadow-pop: none;
-		--pop-border: var(--line);
+		--mascot-1-ink: #ff7a59;
+		--mascot-2-ink: #ffb020;
+		--mascot-3-ink: #6cc266;
+		--mascot-4-ink: #2ec4b6;
+		--mascot-5-ink: #4da3ff;
+		--mascot-6-ink: #9b7bff;
+		--mascot-7-ink: #ff6fa8;
+		--mascot-8-ink: #c9935a;
+
+		--shadow-float: 0 0 0 1px var(--line);
+		--shadow-card-hover: 0 0 0 1px var(--line);
 		--scrim: rgb(0 0 0 / 0.5);
 	}
 }
@@ -96,27 +142,33 @@
 :root[data-theme="dark"] {
 	color-scheme: dark;
 
-	--bg: #111614;
-	--surface: #181e1b;
-	--surface-2: #202824;
-	--agent-surface: #1c2521;
-	--ink: #e4eae6;
-	--muted: #94a29a;
-	--line: #2b3530;
-	--accent: #5fc4a2;
-	--accent-soft: #173129;
-	--pending: #e0a15e;
-	--pending-soft: #2e2317;
-	--danger: #e07a7a;
+	--bg: #16181c;
+	--sidebar: #1d2025;
+	--surface-2: #262a31;
+	--line: #30343c;
+	--ink: #ebedf0;
+	--muted: #9aa0aa;
+	--accent: #5b8fff;
+	--accent-soft: #22324f;
+	--pending: #f2a541;
+	--pending-soft: #3a2c18;
+	--good: #46c488;
+	--danger: #f07171;
 
-	--avatar-1: #2c3a32;
-	--avatar-2: #3a3328;
-	--avatar-3: #2a343a;
-	--avatar-4: #3a2d31;
-	--avatar-5: #32323d;
-	--avatar-6: #283838;
+	--on-accent: #0e1a33;
+	--on-pending: #2a1a00;
+	--pending-ink: #f2a541;
 
-	--shadow-pop: none;
-	--pop-border: var(--line);
+	--mascot-1-ink: #ff7a59;
+	--mascot-2-ink: #ffb020;
+	--mascot-3-ink: #6cc266;
+	--mascot-4-ink: #2ec4b6;
+	--mascot-5-ink: #4da3ff;
+	--mascot-6-ink: #9b7bff;
+	--mascot-7-ink: #ff6fa8;
+	--mascot-8-ink: #c9935a;
+
+	--shadow-float: 0 0 0 1px var(--line);
+	--shadow-card-hover: 0 0 0 1px var(--line);
 	--scrim: rgb(0 0 0 / 0.5);
 }

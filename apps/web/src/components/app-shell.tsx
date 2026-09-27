@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 import { ConversationList } from "@/components/conversation-list";
-import { NavRail } from "@/components/nav-rail";
+import { BottomTabs, NavRail, navKeyOf } from "@/components/nav-rail";
 import { ErrorState, LoadingRows } from "@/components/ui/states";
 import { bearerToken } from "@/lib/auth-mode";
 import { cx } from "@/lib/cx";
@@ -11,10 +11,10 @@ import { startRealtime } from "@/lib/realtime";
 import { loadSession, useStore } from "@/lib/store";
 
 /**
- * 主界面骨架：导航轨 ｜ 列表栏 ｜ 主区（会话页自带检查器）。
+ * 主界面骨架（DESIGN.md §5、§8）：导航轨 64 ｜ 会话列表 300 ｜ 主区（会话页自带检查器）。
  *
- * - ≥1024：导航轨 64px 独立一栏；<1024 并入列表栏顶部。
- * - <768：单栏。根路径显示列表，其余路径显示主区，靠前进 / 返回切换。
+ * - ≥768：导航轨常驻；"消息"分区显示会话列表栏，其他分区主区独占。
+ * - <768：单栏 + 底部标签栏。会话列表在根路径，进入会话后隐藏标签栏、输入框贴底。
  */
 export function AppShell({ children }: { children: ReactNode }) {
 	const router = useRouter();
@@ -57,34 +57,44 @@ export function AppShell({ children }: { children: ReactNode }) {
 	if (session !== "ready") {
 		return (
 			<div className="flex h-dvh bg-bg">
-				<div className="hidden w-rail border-r border-line bg-surface lg:block" />
-				<div className="w-full border-r border-line bg-surface md:w-list">
+				<div className="hidden w-rail bg-sidebar md:block" />
+				<div className="w-full bg-sidebar md:w-list">
 					<LoadingRows rows={6} />
 				</div>
 			</div>
 		);
 	}
 
+	const section = navKeyOf(pathname);
+	const chats = section === "chats";
 	const atRoot = pathname === "/";
+	const showTabs = !chats || atRoot;
 	return (
 		<div className="flex h-dvh overflow-hidden bg-bg text-ink">
-			<NavRail className="hidden lg:flex" />
-			<aside
-				className={cx(
-					"min-h-0 w-full flex-col border-r border-line bg-surface md:w-list md:shrink-0",
-					atRoot ? "flex" : "hidden md:flex",
-				)}
-			>
-				<ConversationList />
-			</aside>
-			<main
-				className={cx(
-					"min-h-0 min-w-0 flex-1 flex-col",
-					atRoot ? "hidden md:flex" : "flex",
-				)}
-			>
-				{children}
-			</main>
+			<NavRail className="hidden border-r border-line md:flex" />
+			<div className="flex min-w-0 flex-1 flex-col">
+				<div className="flex min-h-0 flex-1">
+					{chats ? (
+						<aside
+							className={cx(
+								"min-h-0 w-full flex-col bg-sidebar md:w-list md:shrink-0",
+								atRoot ? "flex" : "hidden md:flex",
+							)}
+						>
+							<ConversationList />
+						</aside>
+					) : null}
+					<main
+						className={cx(
+							"min-h-0 min-w-0 flex-1 flex-col bg-bg",
+							chats && atRoot ? "hidden md:flex" : "flex",
+						)}
+					>
+						{children}
+					</main>
+				</div>
+				{showTabs ? <BottomTabs className="md:hidden" /> : null}
+			</div>
 		</div>
 	);
 }

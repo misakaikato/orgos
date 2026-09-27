@@ -1,7 +1,7 @@
 "use client";
 
 import type { DemoPerson, Principal } from "@orgos/protocol";
-import { Avatar } from "@/components/ui/avatar";
+import { PersonAvatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState, LoadingRows } from "@/components/ui/states";
 import { appHref } from "@/lib/auth-mode";
@@ -34,20 +34,14 @@ export function SimPane({
 	return (
 		<section
 			aria-label={`${person.displayName}的窗格`}
-			className={cx("flex min-h-0 min-w-0 flex-col", className)}
+			className={cx(
+				"flex min-h-0 min-w-0 flex-col overflow-hidden rounded-card bg-bg shadow-float",
+				className,
+			)}
 		>
-			<header className="flex h-10 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-				<Avatar
-					size="sm"
-					principal={
-						ready?.principal ?? {
-							kind: "human",
-							handle: person.handle,
-							displayName: person.displayName,
-						}
-					}
-				/>
-				<span className="truncate text-13 font-medium text-ink">
+			<header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-line px-3">
+				<PersonAvatar principal={person} size={28} />
+				<span className="truncate text-14 font-semibold text-ink">
 					{person.displayName}
 				</span>
 				<span className="truncate text-12 text-muted">{person.title}</span>

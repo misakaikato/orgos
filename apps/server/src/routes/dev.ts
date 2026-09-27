@@ -1,5 +1,5 @@
 /**
- * 模拟台接口，仅 ORGOS_DEV=1 时存在；否则与未知路由一样返回 404。
+ * 模拟台接口与开发预览页（/sim、/dev/*），仅 ORGOS_DEV=1 时存在；否则与未知路由一样返回 404。
  */
 import {
 	DEFAULT_AGENT_MODEL,
@@ -26,6 +26,7 @@ export function registerDevRoutes(app: Hono<AppEnv>): void {
 	app.use("/api/dev/*", requireDevMode);
 	app.use("/sim", requireDevMode);
 	app.use("/sim/*", requireDevMode);
+	app.use("/dev/*", requireDevMode);
 
 	app.get("/api/dev/info", (c) => {
 		const mode = modelMode();

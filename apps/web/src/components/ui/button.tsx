@@ -1,16 +1,25 @@
+"use client";
+
 import Link from "next/link";
-import type { ButtonHTMLAttributes, ComponentProps } from "react";
+import {
+	type ButtonHTMLAttributes,
+	type ComponentProps,
+	type ReactNode,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { cx } from "@/lib/cx";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
 const base =
-	"inline-flex h-control shrink-0 items-center justify-center gap-2 rounded-capsule px-4 text-13 font-medium whitespace-nowrap transition-[background-color,box-shadow,color] duration-150 disabled:cursor-not-allowed disabled:opacity-50";
+	"inline-flex h-control shrink-0 items-center justify-center gap-1.5 rounded-pill px-4 text-13 font-medium whitespace-nowrap transition-[background-color,color,opacity,filter] duration-150 disabled:cursor-not-allowed disabled:opacity-50";
 
 const variants: Record<ButtonVariant, string> = {
-	primary: "bg-accent text-surface hover:ring-4 hover:ring-accent-soft",
-	secondary: "border border-line text-ink hover:bg-surface-2",
-	danger: "border border-danger text-danger hover:bg-surface-2",
+	primary: "bg-accent text-on-accent hover:brightness-110",
+	secondary: "bg-surface-2 text-ink hover:bg-line",
+	danger: "bg-surface-2 text-danger hover:bg-line",
 	ghost: "text-muted hover:bg-surface-2 hover:text-ink",
 };
 
@@ -25,7 +34,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 	variant?: ButtonVariant;
 };
 
-/** 胶囊按钮，高 32px。每个区域最多一个 primary。 */
+/** 胶囊按钮，高 32px（DESIGN.md §4）。每个区域最多一个 primary。 */
 export function Button({
 	variant = "secondary",
 	className,
@@ -54,7 +63,7 @@ type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 	active?: boolean;
 };
 
-/** 只有图标的方形胶囊按钮；label 作为无障碍名称与提示。 */
+/** 只有图标的圆形按钮；label 作为无障碍名称与提示。 */
 export function IconButton({
 	label,
 	active,
@@ -68,7 +77,7 @@ export function IconButton({
 			aria-label={label}
 			title={label}
 			className={cx(
-				"inline-flex size-8 shrink-0 items-center justify-center rounded-capsule transition-colors duration-150",
+				"inline-flex size-8 shrink-0 items-center justify-center rounded-pill transition-colors duration-150",
 				active
 					? "bg-surface-2 text-ink"
 					: "text-muted hover:bg-surface-2 hover:text-ink",
@@ -76,5 +85,54 @@ export function IconButton({
 			)}
 			{...rest}
 		/>
+	);
+}
+
+const SOON_MS = 1_600;
+
+/**
+ * 尚未接通的操作：外观与普通按钮一致，点击后在上方浮出"即将开放"。
+ */
+export function SoonButton({
+	variant = "secondary",
+	className,
+	children,
+	note = "即将开放",
+}: {
+	variant?: ButtonVariant;
+	className?: string;
+	children: ReactNode;
+	note?: string;
+}) {
+	const [shown, setShown] = useState(false);
+	const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	useEffect(
+		() => () => {
+			if (timer.current) clearTimeout(timer.current);
+		},
+		[],
+	);
+	return (
+		<span className="relative inline-flex">
+			<button
+				type="button"
+				className={buttonClass(variant, className)}
+				onClick={() => {
+					setShown(true);
+					if (timer.current) clearTimeout(timer.current);
+					timer.current = setTimeout(() => setShown(false), SOON_MS);
+				}}
+			>
+				{children}
+			</button>
+			{shown ? (
+				<span
+					role="status"
+					className="absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 animate-pop-in rounded-pill bg-ink px-3 py-1 text-12 whitespace-nowrap text-bg"
+				>
+					{note}
+				</span>
+			) : null}
+		</span>
 	);
 }

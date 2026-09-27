@@ -45,7 +45,7 @@ export default function LoginPage() {
 					还没有账号？{" "}
 					<Link
 						href="/register"
-						className="font-medium text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
+						className="font-medium text-accent hover:underline"
 					>
 						注册
 					</Link>

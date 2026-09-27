@@ -59,7 +59,7 @@ export default function RegisterPage() {
 					已有账号？{" "}
 					<Link
 						href="/login"
-						className="font-medium text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
+						className="font-medium text-accent hover:underline"
 					>
 						登录
 					</Link>

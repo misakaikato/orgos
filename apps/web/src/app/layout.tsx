@@ -1,20 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 import { ThemeScript } from "@/components/theme";
 import "./globals.css";
-
-const instrument = Instrument_Sans({
-	subsets: ["latin"],
-	variable: "--font-instrument",
-	display: "swap",
-});
-
-const jetbrains = JetBrains_Mono({
-	subsets: ["latin"],
-	variable: "--font-jetbrains",
-	display: "swap",
-});
 
 export const metadata: Metadata = {
 	title: "orgos",
@@ -24,15 +11,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
 	width: "device-width",
 	initialScale: 1,
+	viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
 	return (
-		<html
-			lang="zh-CN"
-			className={`${instrument.variable} ${jetbrains.variable}`}
-			suppressHydrationWarning
-		>
+		<html lang="zh-CN" suppressHydrationWarning>
 			<head>
 				<ThemeScript />
 			</head>

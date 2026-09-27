@@ -79,7 +79,7 @@ export default function OnboardingPage() {
 			<div
 				role="tablist"
 				aria-label="入驻方式"
-				className="flex gap-1 rounded-capsule bg-surface-2 p-1"
+				className="flex gap-1 rounded-pill bg-surface-2 p-1"
 			>
 				{MODES.map((m) => (
 					<button
@@ -89,9 +89,9 @@ export default function OnboardingPage() {
 						aria-selected={mode === m.mode}
 						onClick={() => setMode(m.mode)}
 						className={cx(
-							"h-8 flex-1 rounded-capsule text-13 font-medium transition-colors duration-150",
+							"h-8 flex-1 rounded-pill text-13 font-medium transition-colors duration-150",
 							mode === m.mode
-								? "bg-surface text-ink"
+								? "bg-bg text-ink shadow-card-hover"
 								: "text-muted hover:text-ink",
 						)}
 					>
@@ -108,7 +108,7 @@ export default function OnboardingPage() {
 			) : (
 				<Field
 					label="邀请码"
-					className="[&_input]:font-code [&_input]:uppercase"
+					className="[&_input]:uppercase"
 					value={inviteCode}
 					error={codeError}
 					onChange={(e) => setInviteCode(e.target.value)}
@@ -122,7 +122,6 @@ export default function OnboardingPage() {
 			/>
 			<Field
 				label="Handle"
-				className="[&_input]:font-code"
 				autoCapitalize="none"
 				spellCheck={false}
 				hint={

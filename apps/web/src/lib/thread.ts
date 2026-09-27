@@ -1,20 +1,64 @@
 /**
- * 会话消息列的行模型：日期分隔、未读分隔、人的消息（5 分钟内同一人合并）、代理消息、事件行。
+ * 会话消息列的行模型（DESIGN.md §4）：
+ * - 时间分隔：第一条、跨天或与上一条间隔超过 10 分钟时插入；
+ * - 未读分隔：打开会话时已读位置之后第一条他人消息前；
+ * - 气泡：消息与协商步骤；同一发送者 3 分钟内连续的合并（只有第一条带头像与名字）；
+ * - 代理动作不单独成行，折叠进该代理下一条气泡；没有下一条时在分隔前或末尾单列一行；
+ * - 卡片：上报（带是否已答复）、协商结果；
+ * - 系统行：成员加入、上报已答复、确认结果。
  */
 import type { Event } from "@orgos/protocol";
 import { sameDay } from "@/lib/format";
 import type { PrincipalMap } from "@/lib/principals";
 
-export const MERGE_WINDOW_MS = 5 * 60 * 1000;
+export const MERGE_WINDOW_MS = 3 * 60 * 1000;
+export const STAMP_GAP_MS = 10 * 60 * 1000;
 
-export type MessageEvent = Extract<Event, { type: "message.posted" }>;
+type EventOf<T extends Event["type"]> = Extract<Event, { type: T }>;
+export type MessageEvent = EventOf<"message.posted">;
+export type StepEvent = EventOf<"negotiation.step">;
+export type ActionEvent = EventOf<"agent.action">;
+export type EscalationEvent = EventOf<"escalation.created">;
+export type EscalationResolvedEvent = EventOf<"escalation.resolved">;
+export type OutcomeEvent = EventOf<"negotiation.ended">;
+export type SystemEvent = EventOf<
+	"member.joined" | "escalation.resolved" | "confirmation.resolved"
+>;
+
+/** 气泡的归属：我 / 其他人 / 代理。 */
+export type BubbleSide = "me" | "human" | "agent";
 
 export type ThreadRow =
-	| { kind: "day"; key: string; at: string }
+	| { kind: "stamp"; key: string; at: string }
 	| { kind: "unread"; key: string }
-	| { kind: "human"; key: string; event: MessageEvent; continued: boolean }
-	| { kind: "agent"; key: string; event: MessageEvent; continued: boolean }
-	| { kind: "line"; key: string; event: Event };
+	| {
+			kind: "bubble";
+			key: string;
+			event: MessageEvent | StepEvent;
+			side: BubbleSide;
+			/** 与上一条同一发送者合并（不再显示头像与名字）。 */
+			continued: boolean;
+			/** 折叠进这条气泡的代理动作（发生在它之前、尚未归属的）。 */
+			actions: ActionEvent[];
+	  }
+	| { kind: "actions"; key: string; actorId: string; actions: ActionEvent[] }
+	| {
+			kind: "escalation";
+			key: string;
+			event: EscalationEvent;
+			resolved: EscalationResolvedEvent | null;
+	  }
+	| { kind: "outcome"; key: string; event: OutcomeEvent }
+	| { kind: "system"; key: string; event: SystemEvent };
+
+function keyOf(event: Event): string {
+	return String(event.seq ?? `id-${event.id}`);
+}
+
+function sideOf(actorId: string, map: PrincipalMap, meId: string): BubbleSide {
+	if (actorId === meId) return "me";
+	return map.get(actorId)?.kind === "agent" ? "agent" : "human";
+}
 
 /**
  * @param unreadAfter 打开会话时的已读位置；其后第一条他人消息前插入未读分隔（null 不插）。
@@ -26,14 +70,45 @@ export function buildThreadRows(
 	unreadAfter: number | null,
 ): ThreadRow[] {
 	const rows: ThreadRow[] = [];
-	let prev: Event | null = null;
-	let unreadPlaced = unreadAfter === null;
-	for (const event of events) {
-		const key = String(event.seq ?? event.id);
-		if (!prev || !sameDay(prev.createdAt, event.createdAt)) {
-			rows.push({ kind: "day", key: `day-${key}`, at: event.createdAt });
-			prev = null;
+	const resolvedBy = new Map<string, EscalationResolvedEvent>();
+	for (const e of events)
+		if (e.type === "escalation.resolved")
+			resolvedBy.set(e.payload.workItemId, e);
+
+	/** 各代理尚未归属到气泡的动作，按首次出现排序。 */
+	const pending = new Map<string, ActionEvent[]>();
+	const flushActions = () => {
+		for (const [actorId, actions] of pending) {
+			const first = actions[0];
+			if (first)
+				rows.push({
+					kind: "actions",
+					key: `actions-${keyOf(first)}`,
+					actorId,
+					actions,
+				});
 		}
+		pending.clear();
+	};
+
+	let prevAt: string | null = null;
+	/** 上一个气泡（用于合并）；任何分隔、卡片、系统行都会打断合并。 */
+	let lastBubble: { actorId: string; at: string } | null = null;
+	let unreadPlaced = unreadAfter === null;
+
+	for (const event of events) {
+		const key = keyOf(event);
+		const gap =
+			prevAt === null ||
+			!sameDay(prevAt, event.createdAt) ||
+			Date.parse(event.createdAt) - Date.parse(prevAt) > STAMP_GAP_MS;
+		if (gap) {
+			flushActions();
+			rows.push({ kind: "stamp", key: `stamp-${key}`, at: event.createdAt });
+			lastBubble = null;
+		}
+		prevAt = event.createdAt;
+
 		if (
 			!unreadPlaced &&
 			event.seq !== null &&
@@ -43,21 +118,58 @@ export function buildThreadRows(
 		) {
 			rows.push({ kind: "unread", key: "unread" });
 			unreadPlaced = true;
-			prev = null;
+			lastBubble = null;
 		}
-		if (event.type === "message.posted") {
-			const continued =
-				prev?.type === "message.posted" &&
-				prev.actorId === event.actorId &&
-				Date.parse(event.createdAt) - Date.parse(prev.createdAt) <=
-					MERGE_WINDOW_MS;
-			const isAgent = map.get(event.actorId)?.kind === "agent";
-			rows.push({ kind: isAgent ? "agent" : "human", key, event, continued });
-		} else {
-			rows.push({ kind: "line", key, event });
+
+		switch (event.type) {
+			case "agent.action": {
+				const list = pending.get(event.actorId) ?? [];
+				list.push(event);
+				pending.set(event.actorId, list);
+				break;
+			}
+			case "message.posted":
+			case "negotiation.step": {
+				const continued =
+					lastBubble !== null &&
+					lastBubble.actorId === event.actorId &&
+					Date.parse(event.createdAt) - Date.parse(lastBubble.at) <=
+						MERGE_WINDOW_MS;
+				const actions = pending.get(event.actorId) ?? [];
+				pending.delete(event.actorId);
+				rows.push({
+					kind: "bubble",
+					key,
+					event,
+					side: sideOf(event.actorId, map, meId),
+					continued,
+					actions,
+				});
+				lastBubble = { actorId: event.actorId, at: event.createdAt };
+				break;
+			}
+			case "escalation.created":
+				rows.push({
+					kind: "escalation",
+					key,
+					event,
+					resolved: resolvedBy.get(event.payload.workItemId) ?? null,
+				});
+				lastBubble = null;
+				break;
+			case "negotiation.ended":
+				rows.push({ kind: "outcome", key, event });
+				lastBubble = null;
+				break;
+			case "member.joined":
+			case "escalation.resolved":
+			case "confirmation.resolved":
+				rows.push({ kind: "system", key, event });
+				lastBubble = null;
+				break;
 		}
-		prev = event;
 	}
+	flushActions();
 	return rows;
 }
 

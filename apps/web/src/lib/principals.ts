@@ -1,5 +1,5 @@
 /**
- * 主体相关的显示逻辑：名字、"替谁说话"、头像色、会话标题与侧栏分组。
+ * 主体相关的显示逻辑：名字、"替谁说话"、头像与团子外形、会话标题、列表筛选。
  */
 import type {
 	ConversationSummary,
@@ -35,26 +35,110 @@ export function isAgent(p: Principal): boolean {
 }
 
 /** 代理的本人（找不到时为 null）。 */
-export function ownerOf(p: Principal, map: PrincipalMap): Principal | null {
+export function ownerOf(
+	p: Pick<Principal, "ownerId">,
+	map: PrincipalMap,
+): Principal | null {
 	return p.ownerId ? (map.get(p.ownerId) ?? null) : null;
 }
 
-/** 代理消息顶部的标签：`林晓的幕僚长 · 代林晓`。 */
-export function agentByline(p: Principal, map: PrincipalMap): string {
+/** 代理的"代谁"：本人是我时为"你"。 */
+export function onBehalfLabel(
+	p: Pick<Principal, "ownerId">,
+	map: PrincipalMap,
+	meId: string,
+): string | null {
 	const owner = ownerOf(p, map);
-	return owner ? `${p.displayName} · 代${owner.displayName}` : p.displayName;
+	if (!owner) return null;
+	return owner.id === meId ? "你" : owner.displayName;
+}
+
+/** 各人的对外代表（幕僚长）id：我的取自 me.agents，同事的取自通讯录。 */
+export function frontAgentIds(
+	me: MeResponse | null,
+	directory: readonly Person[],
+): ReadonlySet<string> {
+	const ids = new Set(directory.map((p) => p.front.id));
+	for (const a of me?.agents ?? [])
+		if (a.role === "front") ids.add(a.principal.id);
+	return ids;
+}
+
+/** 代理的一句身份说明：`林晓的代理 · 对外代表林晓` / `你的代理 · 组内专员`。 */
+export function agentRoleLine(
+	p: Principal,
+	map: PrincipalMap,
+	meId: string,
+	fronts: ReadonlySet<string>,
+): string {
+	const owner = onBehalfLabel(p, map, meId);
+	if (!owner) return "代理";
+	return fronts.has(p.id)
+		? `${owner}的代理 · 对外代表${owner}`
+		: `${owner}的代理 · 组内专员`;
 }
 
 /** 人的头像底色：按 handle 哈希取 6 个预设之一（返回 1–6）。 */
 export function avatarTone(handle: string): number {
-	let h = 0;
-	for (const ch of handle) h = (h * 31 + (ch.codePointAt(0) ?? 0)) >>> 0;
-	return (h % 6) + 1;
+	return (hashString(handle) % 6) + 1;
 }
 
-/** 头像里的一个字：显示名的首字。 */
-export function initialOf(name: string): string {
-	return Array.from(name.trim())[0]?.toUpperCase() ?? "?";
+/**
+ * 人的头像文字：中文名取最后两个字（"林晓""周野"）；
+ * 拉丁字母名取各词首字母大写（最多两个，"Alice Wang" → "AW"）。
+ */
+export function avatarText(name: string): string {
+	const trimmed = name.trim();
+	if (!trimmed) return "?";
+	if (/^[\x20-\x7e]+$/.test(trimmed)) {
+		const words = trimmed.split(/[\s._-]+/).filter(Boolean);
+		return words
+			.slice(0, 2)
+			.map((w) => w[0]?.toUpperCase() ?? "")
+			.join("");
+	}
+	return Array.from(trimmed.replace(/\s+/g, "")).slice(-2).join("");
+}
+
+/** FNV-1a 32 位哈希：同一字符串永远得到同一个值。 */
+export function hashString(s: string): number {
+	let h = 0x811c9dc5;
+	for (const ch of s) {
+		h ^= ch.codePointAt(0) ?? 0;
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h;
+}
+
+export type MascotShape = "round" | "pear" | "bean" | "sprout";
+export type MascotEyes = "dot" | "smile" | "oval";
+
+export type MascotTraits = {
+	shape: MascotShape;
+	eyes: MascotEyes;
+	blush: boolean;
+	/** 团子色 1–8，对应 --mascot-N。 */
+	tone: number;
+};
+
+const MASCOT_SHAPES: readonly MascotShape[] = [
+	"round",
+	"pear",
+	"bean",
+	"sprout",
+];
+const MASCOT_EYES: readonly MascotEyes[] = ["dot", "smile", "oval"];
+
+/** 团子外形：由代理 id 确定性选取（DESIGN.md §4），各维度取哈希的不同位段。 */
+export function mascotTraits(id: string): MascotTraits {
+	const h = hashString(id);
+	const mix = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
+	return {
+		shape: MASCOT_SHAPES[h % 4] ?? "round",
+		eyes: MASCOT_EYES[(h >>> 8) % 3] ?? "dot",
+		blush: (mix >>> 4) % 3 !== 0,
+		tone: ((mix >>> 12) % 8) + 1,
+	};
 }
 
 /** 除我以外的成员。 */
@@ -90,30 +174,52 @@ export function dmPeer(
 	);
 }
 
-export type ListGroups = {
-	agents: ConversationSummary[];
-	colleagues: ConversationSummary[];
-	negotiations: ConversationSummary[];
+export type ListFilter = "all" | "agents" | "colleagues";
+
+export type ConversationFacet = {
+	/** 归入哪个筛选胶囊（"全部"之外）。 */
+	filter: Exclude<ListFilter, "all">;
+	/** 行内小标签。 */
+	tag: "代理在对外" | "协商" | null;
 };
 
 /**
- * 侧栏分组：只含我自己代理的会话 → 我的代理组；协商会话 → 协商；其余 → 同事。
+ * 会话列表的筛选与行内标签（DESIGN.md §5）：
+ * - 协商会话 → 代理，标"协商"；
+ * - 同事找我的代理（我在其中旁听）→ 代理，标"代理在对外"；
+ * - 对方或成员里有代理 → 代理；其余 → 同事。
  */
-export function groupConversations(
-	items: readonly ConversationSummary[],
+export function conversationFacet(
+	item: ConversationSummary,
 	meId: string,
-): ListGroups {
-	const groups: ListGroups = { agents: [], colleagues: [], negotiations: [] };
-	for (const item of items) {
-		if (item.conversation.kind === "negotiation") {
-			groups.negotiations.push(item);
-			continue;
-		}
-		const others = othersOf(item, meId);
-		const onlyMyAgents =
-			others.length > 0 &&
-			others.every((p) => p.kind === "agent" && p.ownerId === meId);
-		(onlyMyAgents ? groups.agents : groups.colleagues).push(item);
+): ConversationFacet {
+	if (item.conversation.kind === "negotiation")
+		return { filter: "agents", tag: "协商" };
+	const others = othersOf(item, meId);
+	const myAgentOutside =
+		item.conversation.kind === "dm" &&
+		others.some((p) => p.kind === "agent" && p.ownerId === meId) &&
+		others.some((p) => p.kind === "human");
+	if (myAgentOutside) return { filter: "agents", tag: "代理在对外" };
+	const peer = dmPeer(item, meId);
+	if (peer)
+		return {
+			filter: peer.kind === "agent" ? "agents" : "colleagues",
+			tag: null,
+		};
+	const onlyAgents =
+		others.length > 0 && others.every((p) => p.kind === "agent");
+	return { filter: onlyAgents ? "agents" : "colleagues", tag: null };
+}
+
+/** 列表行与会话头的头像主体：私聊是对方；协商是对方的代理；群聊为 null（用群头像）。 */
+export function conversationAvatar(
+	item: ConversationSummary,
+	meId: string,
+): Principal | null {
+	if (item.conversation.kind === "negotiation") {
+		const agents = item.members.filter((p) => p.kind === "agent");
+		return agents.find((p) => p.ownerId !== meId) ?? agents[0] ?? null;
 	}
-	return groups;
+	return dmPeer(item, meId);
 }

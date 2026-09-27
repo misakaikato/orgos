@@ -8,7 +8,8 @@ export default function HomePage() {
 	return (
 		<div className="flex flex-1 items-center justify-center">
 			<EmptyState
-				text="从左侧选一个会话，或从通讯录找同事和他们的幕僚长。"
+				mascotId="orgos-home"
+				text="从左侧选一个会话，或去通讯录找同事和他们的幕僚长。"
 				action={{ label: "打开通讯录", href: appHref("/contacts") }}
 			/>
 		</div>
