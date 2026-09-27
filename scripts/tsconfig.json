@@ -5,7 +5,9 @@
 		"noEmit": true,
 		"baseUrl": ".",
 		"paths": {
-			"@/*": ["../apps/server/src/*"]
+			"@/*": ["../apps/server/src/*"],
+			"@tests/*": ["../apps/server/tests/*"],
+			"@orgos/protocol": ["../packages/protocol/src/index.ts"]
 		}
 	},
 	"include": ["./**/*.ts"]

@@ -7,43 +7,22 @@
  * `deepseek.key` 这一个字段注入子进程环境（不打印、不写文件、不碰其他字段——该文件里还有别的令牌）；
  * 仍没有则 MOCK_LLM=1。
  */
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { resolveDeepseekKey } from "./deepseek-key";
 
-async function deepseekKeyFromPi(): Promise<string | null> {
-	const file = Bun.file(join(homedir(), ".pi", "agent", "auth.json"));
-	if (!(await file.exists())) return null;
-	try {
-		const parsed: unknown = JSON.parse(await file.text());
-		const deepseek =
-			parsed && typeof parsed === "object"
-				? (parsed as Record<string, unknown>).deepseek
-				: undefined;
-		const key =
-			deepseek && typeof deepseek === "object"
-				? (deepseek as Record<string, unknown>).key
-				: undefined;
-		return typeof key === "string" && key.trim() ? key.trim() : null;
-	} catch {
-		return null;
-	}
-}
-
-const deepseekKey =
-	process.env.DEEPSEEK_API_KEY || (await deepseekKeyFromPi()) || null;
+const deepseek = await resolveDeepseekKey();
 
 const env: Record<string, string | undefined> = {
 	...process.env,
 	ORGOS_DEV: "1",
 	NO_PROXY: "localhost,127.0.0.1",
 	no_proxy: "localhost,127.0.0.1",
-	...(deepseekKey ? { DEEPSEEK_API_KEY: deepseekKey } : { MOCK_LLM: "1" }),
+	...(deepseek ? { DEEPSEEK_API_KEY: deepseek.key } : { MOCK_LLM: "1" }),
 };
 
 console.log(
 	env.MOCK_LLM === "1"
 		? "[dev] 假模型（MOCK_LLM=1）"
-		: process.env.DEEPSEEK_API_KEY
+		: deepseek?.source === "env"
 			? "[dev] 真实模型（DEEPSEEK_API_KEY 来自环境）"
 			: "[dev] 真实模型（DEEPSEEK_API_KEY 来自 ~/.pi/agent/auth.json）",
 );

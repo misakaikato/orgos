@@ -7,7 +7,7 @@
  * 企业模式（默认）下 agent 子进程拿到网关地址与任务令牌、经网关调用的账记在这一轮的运行与任务名下，
  * 任务结束后同一话题沿用同一外部会话与令牌、话题归档即吊销；个人模式下不注入。
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import {
 	mkdir,
 	mkdtemp,
@@ -18,7 +18,6 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
 	AgentResponseSchema,
 	CreatePairingCodeResponseSchema,
@@ -47,14 +46,21 @@ import {
 	type FakeUpstream,
 	startFakeUpstream,
 } from "./fake-upstream";
+import {
+	exited,
+	type Http,
+	type Person,
+	person,
+	runCli,
+	type ServerProcess,
+	startServer,
+	until,
+} from "./process-harness";
 
 const PORT = 8935;
 const BASE = `http://localhost:${PORT}`;
-const SERVER_DIR = fileURLToPath(new URL("../", import.meta.url));
-const RUNNER_DIR = path.resolve(SERVER_DIR, "../runner");
-const NO_PROXY = "localhost,127.0.0.1";
 
-let server: ChildProcess;
+let server: ServerProcess;
 let runner: ChildProcess | null = null;
 let runnerLog = "";
 let fakeLlm: FakeUpstream | null = null;
@@ -62,90 +68,6 @@ const FAKE_KEY = "sk-fake-e2e-upstream-3d9a";
 let tmp: string;
 let home: string;
 let workspace: string;
-
-type Http = {
-	request(method: string, p: string, body?: unknown): Promise<Response>;
-};
-
-function http(cookie = ""): Http {
-	return {
-		request: (method, p, body) =>
-			fetch(`${BASE}${p}`, {
-				method,
-				headers: {
-					"content-type": "application/json",
-					origin: BASE,
-					...(cookie ? { cookie } : {}),
-				},
-				body: body === undefined ? undefined : JSON.stringify(body),
-			}),
-	};
-}
-
-async function until<T>(
-	what: string,
-	fn: () => Promise<T | null | undefined | false>,
-	timeoutMs = 15_000,
-): Promise<T> {
-	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		const v = await fn().catch(() => null);
-		if (v) return v;
-		if (Date.now() > deadline) throw new Error(`等待超时：${what}`);
-		await new Promise((r) => setTimeout(r, 100));
-	}
-}
-
-async function person(name: string, inviteCode?: string) {
-	const email = `${name.toLowerCase()}-${Date.now()}@orgos.test`;
-	const anon = http();
-	await anon.request("POST", "/api/auth/sign-up/email", {
-		email,
-		password: "test-password-123",
-		name,
-	});
-	const res = await anon.request("POST", "/api/auth/sign-in/email", {
-		email,
-		password: "test-password-123",
-	});
-	const cookie = res.headers
-		.getSetCookie()
-		.map((c) => c.split(";")[0])
-		.join("; ");
-	const client = http(cookie);
-	const handle = `${name.toLowerCase()}${Date.now().toString(36)}`;
-	const onboard = await client.request(
-		"POST",
-		"/api/onboarding",
-		inviteCode
-			? { mode: "join", inviteCode, displayName: name, handle }
-			: { mode: "create", orgName: `acp-${handle}`, displayName: name, handle },
-	);
-	expect(onboard.status).toBe(201);
-	const me = MeResponseSchema.parse(
-		await (await client.request("GET", "/api/me")).json(),
-	);
-	return { client, me };
-}
-
-function runCli(args: string[], extraEnv: Record<string, string> = {}) {
-	return spawn("bun", ["run", "src/main.ts", ...args], {
-		cwd: RUNNER_DIR,
-		env: {
-			...process.env,
-			ORGOS_RUNNER_HOME: home,
-			ORGOS_DEV: "1",
-			NO_PROXY,
-			no_proxy: NO_PROXY,
-			...extraEnv,
-		},
-		stdio: ["ignore", "pipe", "pipe"],
-	});
-}
-
-function exited(child: ChildProcess): Promise<number | null> {
-	return new Promise((r) => child.once("exit", (code) => r(code)));
-}
 
 beforeAll(async () => {
 	tmp = await mkdtemp(path.join(tmpdir(), "orgos-acp-e2e-"));
@@ -156,38 +78,23 @@ beforeAll(async () => {
 		path.join(workspace, "proj", "calc.py"),
 		"def add(a, b):\n\treturn a + b\n",
 	);
-	server = spawn("bun", ["src/serve.ts"], {
-		cwd: SERVER_DIR,
-		env: {
-			...process.env,
-			PORT: String(PORT),
-			DATABASE_URL: TEST_DATABASE_URL,
-			BETTER_AUTH_URL: BASE,
-			MOCK_LLM: "1",
-			ORGOS_DEV: "1",
-			NO_PROXY,
-			no_proxy: NO_PROXY,
-		},
-		stdio: ["ignore", "ignore", "inherit"],
+	server = await startServer({
+		port: PORT,
+		databaseUrl: TEST_DATABASE_URL,
+		env: { MOCK_LLM: "1", ORGOS_DEV: "1" },
 	});
-	await until("服务端启动", async () => (await fetch(`${BASE}/healthz`)).ok);
 }, 30_000);
 
 afterAll(async () => {
 	await fakeLlm?.close();
 	runner?.kill("SIGTERM");
-	server?.kill("SIGTERM");
-	await Promise.all(
-		[runner, server].flatMap((c) =>
-			c && c.exitCode === null ? [exited(c)] : [],
-		),
-	);
+	await Promise.all([runner ? exited(runner) : null, server?.stop()]);
 	await rm(tmp, { recursive: true, force: true });
 });
 
 describe("外部助手（fake 适配器）全链路", () => {
-	let alice: Awaited<ReturnType<typeof person>>;
-	let bob: Awaited<ReturnType<typeof person>>;
+	let alice: Person;
+	let bob: Person;
 	let runnerId: string;
 	let token: string;
 	let ext: { id: string; handle: string };
@@ -237,14 +144,24 @@ describe("外部助手（fake 适配器）全链路", () => {
 	}
 
 	beforeAll(async () => {
-		alice = await person("Alice");
-		bob = await person("Bob", alice.me.tenant.inviteCode);
+		alice = await person(BASE, { name: "Alice" });
+		bob = await person(BASE, {
+			name: "Bob",
+			inviteCode: alice.me.tenant.inviteCode,
+		});
 		const res = await alice.client.request(
 			"POST",
 			"/api/runners/pairing-codes",
 		);
 		const { code } = CreatePairingCodeResponseSchema.parse(await res.json());
-		const pair = runCli(["pair", code, "--server", BASE, "--name", "测试Mac"]);
+		const pair = runCli(home, [
+			"pair",
+			code,
+			"--server",
+			BASE,
+			"--name",
+			"测试Mac",
+		]);
 		expect(await exited(pair)).toBe(0);
 		const config = JSON.parse(
 			await readFile(path.join(home, "runner.json"), "utf8"),
@@ -252,10 +169,15 @@ describe("外部助手（fake 适配器）全链路", () => {
 		runnerId = config.runnerId;
 		token = config.token;
 		// Runner 进程的环境里混进 token 与服务器地址：外部助手的子进程必须一个都看不到。
-		runner = runCli(["serve", "--workspace", workspace, "--adapters", "fake"], {
-			ORGOS_RUNNER_TOKEN: token,
-			ORGOS_SERVER_URL: BASE,
-		});
+		runner = runCli(
+			home,
+			["serve", "--workspace", workspace, "--adapters", "fake"],
+			{
+				ORGOS_DEV: "1",
+				ORGOS_RUNNER_TOKEN: token,
+				ORGOS_SERVER_URL: BASE,
+			},
+		);
 		runner.stderr?.on("data", (d: Buffer) => {
 			runnerLog += d.toString();
 		});

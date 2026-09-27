@@ -4,7 +4,7 @@
  * 越界读被拒、吊销后连接以 4003 断开且重连握手被 401 拒绝。
  * 临时 ORGOS_RUNNER_HOME 与工作目录，结束后清理。
  */
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import {
 	mkdir,
 	mkdtemp,
@@ -13,141 +13,39 @@ import {
 	stat,
 	writeFile,
 } from "node:fs/promises";
-import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
 	CreateConversationResponseSchema,
 	CreatePairingCodeResponseSchema,
 	type Event,
 	EventsResponseSchema,
-	MeResponseSchema,
 	RunnerListResponseSchema,
 	type WorkItem,
 	WorkItemListResponseSchema,
 } from "@orgos/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { TEST_DATABASE_URL } from "../vitest.config";
+import {
+	exited,
+	type Person,
+	person,
+	runCli,
+	type ServerProcess,
+	startServer,
+	until,
+	wsHandshakeStatus,
+} from "./process-harness";
 
 const PORT = 8934;
 const BASE = `http://localhost:${PORT}`;
-const SERVER_DIR = fileURLToPath(new URL("../", import.meta.url));
-const RUNNER_DIR = path.resolve(SERVER_DIR, "../runner");
-const NO_PROXY = "localhost,127.0.0.1";
 
-let server: ChildProcess;
+let server: ServerProcess;
 let runner: ChildProcess | null = null;
 let runnerLog = "";
 let tmp: string;
 let home: string;
 let workspace: string;
-
-type Http = {
-	request(method: string, p: string, body?: unknown): Promise<Response>;
-};
-
-function http(cookie = ""): Http {
-	return {
-		request: (method, p, body) =>
-			fetch(`${BASE}${p}`, {
-				method,
-				headers: {
-					"content-type": "application/json",
-					origin: BASE,
-					...(cookie ? { cookie } : {}),
-				},
-				body: body === undefined ? undefined : JSON.stringify(body),
-			}),
-	};
-}
-
-async function until<T>(
-	what: string,
-	fn: () => Promise<T | null | undefined | false>,
-	timeoutMs = 15_000,
-): Promise<T> {
-	const deadline = Date.now() + timeoutMs;
-	for (;;) {
-		const v = await fn().catch(() => null);
-		if (v) return v;
-		if (Date.now() > deadline) throw new Error(`等待超时：${what}`);
-		await new Promise((r) => setTimeout(r, 100));
-	}
-}
-
-async function person(name: string, inviteCode?: string) {
-	const email = `${name.toLowerCase()}-${Date.now()}@orgos.test`;
-	const anon = http();
-	await anon.request("POST", "/api/auth/sign-up/email", {
-		email,
-		password: "test-password-123",
-		name,
-	});
-	const res = await anon.request("POST", "/api/auth/sign-in/email", {
-		email,
-		password: "test-password-123",
-	});
-	const cookie = res.headers
-		.getSetCookie()
-		.map((c) => c.split(";")[0])
-		.join("; ");
-	const client = http(cookie);
-	const handle = `${name.toLowerCase()}${Date.now().toString(36)}`;
-	const onboard = await client.request(
-		"POST",
-		"/api/onboarding",
-		inviteCode
-			? { mode: "join", inviteCode, displayName: name, handle }
-			: { mode: "create", orgName: `e2e-${handle}`, displayName: name, handle },
-	);
-	expect(onboard.status).toBe(201);
-	const me = MeResponseSchema.parse(
-		await (await client.request("GET", "/api/me")).json(),
-	);
-	return { client, me };
-}
-
-/** 发一次 WS 升级握手，返回 HTTP 状态码（101 表示升级成功）。 */
-function wsHandshakeStatus(p: string): Promise<number> {
-	return new Promise((resolve, reject) => {
-		const req = httpRequest(`${BASE}${p}`, {
-			headers: {
-				connection: "Upgrade",
-				upgrade: "websocket",
-				"sec-websocket-version": "13",
-				"sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
-			},
-		});
-		req.on("upgrade", (res, socket) => {
-			socket.destroy();
-			resolve(res.statusCode ?? 101);
-		});
-		req.on("response", (res) => {
-			res.resume();
-			resolve(res.statusCode ?? 0);
-		});
-		req.on("error", reject);
-		req.end();
-	});
-}
-
-function runCli(args: string[]): ChildProcess {
-	return spawn("bun", ["run", "src/main.ts", ...args], {
-		cwd: RUNNER_DIR,
-		env: {
-			...process.env,
-			ORGOS_RUNNER_HOME: home,
-			NO_PROXY,
-			no_proxy: NO_PROXY,
-		},
-		stdio: ["ignore", "pipe", "pipe"],
-	});
-}
-
-function exited(child: ChildProcess): Promise<number | null> {
-	return new Promise((r) => child.once("exit", (code) => r(code)));
-}
 
 beforeAll(async () => {
 	tmp = await mkdtemp(path.join(tmpdir(), "orgos-runner-e2e-"));
@@ -156,35 +54,21 @@ beforeAll(async () => {
 	await mkdir(workspace);
 	await writeFile(path.join(workspace, "readme.md"), "# 测试工作目录\n");
 	await writeFile(path.join(workspace, "todo.txt"), "买牛奶\n");
-	server = spawn("bun", ["src/serve.ts"], {
-		cwd: SERVER_DIR,
-		env: {
-			...process.env,
-			PORT: String(PORT),
-			DATABASE_URL: TEST_DATABASE_URL,
-			BETTER_AUTH_URL: BASE,
-			MOCK_LLM: "1",
-			NO_PROXY,
-			no_proxy: NO_PROXY,
-		},
-		stdio: ["ignore", "ignore", "inherit"],
+	server = await startServer({
+		port: PORT,
+		databaseUrl: TEST_DATABASE_URL,
+		env: { MOCK_LLM: "1" },
 	});
-	await until("服务端启动", async () => (await fetch(`${BASE}/healthz`)).ok);
 }, 30_000);
 
 afterAll(async () => {
 	runner?.kill("SIGTERM");
-	server?.kill("SIGTERM");
-	await Promise.all(
-		[runner, server].flatMap((c) =>
-			c && c.exitCode === null ? [exited(c)] : [],
-		),
-	);
+	await Promise.all([runner ? exited(runner) : null, server?.stop()]);
 	await rm(tmp, { recursive: true, force: true });
 });
 
 describe("真实 Runner 子进程", () => {
-	let alice: Awaited<ReturnType<typeof person>>;
+	let alice: Person;
 	let ops: string;
 	let dm: string;
 	let token: string;
@@ -225,7 +109,7 @@ describe("真实 Runner 子进程", () => {
 	}
 
 	beforeAll(async () => {
-		alice = await person("Alice");
+		alice = await person(BASE, { name: "Alice" });
 		ops =
 			alice.me.agents.find((a) => a.role === "specialist")?.principal.id ?? "";
 	}, 30_000);
@@ -236,7 +120,14 @@ describe("真实 Runner 子进程", () => {
 			"/api/runners/pairing-codes",
 		);
 		const { code } = CreatePairingCodeResponseSchema.parse(await res.json());
-		const child = runCli(["pair", code, "--server", BASE, "--name", "测试Mac"]);
+		const child = runCli(home, [
+			"pair",
+			code,
+			"--server",
+			BASE,
+			"--name",
+			"测试Mac",
+		]);
 		expect(await exited(child)).toBe(0);
 		const file = path.join(home, "runner.json");
 		expect((await stat(file)).mode & 0o777).toBe(0o600);
@@ -248,12 +139,18 @@ describe("真实 Runner 子进程", () => {
 		expect(config.server).toBe(BASE);
 		token = config.token;
 		runnerId = config.runnerId;
-		const again = runCli(["pair", code, "--server", BASE, "--name", "x"]);
+		const again = runCli(home, ["pair", code, "--server", BASE, "--name", "x"]);
 		expect(await exited(again)).toBe(1);
 	}, 30_000);
 
 	it("serve：连上后在线并声明四项设备能力与 agent.acp；绑定执行助手", async () => {
-		runner = runCli(["serve", "--workspace", workspace, "--adapters", "none"]);
+		runner = runCli(home, [
+			"serve",
+			"--workspace",
+			workspace,
+			"--adapters",
+			"none",
+		]);
 		runner.stderr?.on("data", (d: Buffer) => {
 			runnerLog += d.toString();
 		});
@@ -338,6 +235,7 @@ describe("真实 Runner 子进程", () => {
 		expect(res.status).toBe(204);
 		await until("Runner 收到 4003", async () => runnerLog.includes("4003"));
 		const handshake = await wsHandshakeStatus(
+			BASE,
 			`/runner/ws?token=${encodeURIComponent(token)}`,
 		);
 		expect(handshake).toBe(401);
