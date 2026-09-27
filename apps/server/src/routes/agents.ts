@@ -17,8 +17,12 @@ import {
 	updateAgentProfile,
 } from "@/services/agents";
 import { usageByAgent } from "@/services/llm-requests";
+import { requireOwnRunner } from "@/services/runners";
 
-/** 我的代理组与用量。只能管理自己的代理：别人的 403，跨租户或不存在 404。 */
+/**
+ * 我的代理组与用量。只能管理自己的代理：别人的 403，跨租户或不存在 404。
+ * 助手只能绑定本人未吊销的设备（别人的、不存在的 404）。
+ */
 export function registerAgentRoutes(app: Hono<AppEnv>): void {
 	app.use("/api/agents", requireAuth, requireMember);
 	app.use("/api/agents/*", requireAuth, requireMember);
@@ -50,6 +54,11 @@ export function registerAgentRoutes(app: Hono<AppEnv>): void {
 		if (req.delegationPolicy !== undefined && agent.role !== "front") {
 			throw badRequest("只有分身有对外政策");
 		}
+		if (req.runnerId !== undefined && agent.role === "front") {
+			throw badRequest("分身不操作设备，请把设备绑给助手");
+		}
+		if (req.runnerId)
+			await requireOwnRunner(s, c.get("principal"), req.runnerId);
 		const body: AgentResponse = {
 			agent: await updateAgentProfile(s, agent.principal.id, req),
 		};

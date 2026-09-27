@@ -1,5 +1,18 @@
 {
 	"name": "@orgos/runner",
 	"private": true,
-	"type": "module"
+	"type": "module",
+	"scripts": {
+		"start": "NO_PROXY=localhost,127.0.0.1 bun run src/main.ts",
+		"test": "NO_PROXY=localhost,127.0.0.1 bun test",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@orgos/protocol": "workspace:*",
+		"zod": "4.4.3"
+	},
+	"devDependencies": {
+		"@types/bun": "1.3.14",
+		"typescript": "5.9.3"
+	}
 }

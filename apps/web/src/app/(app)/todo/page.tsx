@@ -8,8 +8,9 @@ import { ProposalBlock } from "@/components/conversation/message-item";
 import { IconChevronRight } from "@/components/icons";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
-import { SoonButton } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/ui/states";
+import { ApprovalActions } from "@/components/work-items/approval-actions";
+import { ApprovalDetails } from "@/components/work-items/approval-details";
 import { ConfirmationActions } from "@/components/work-items/confirmation-actions";
 import { DecisionForm } from "@/components/work-items/decision-form";
 import { appHref } from "@/lib/auth-mode";
@@ -27,17 +28,11 @@ const KIND_LABEL: Record<WorkItem["kind"], string> = {
 	commitment: "你答应过的事",
 };
 
-/** 卡片底部的处理动作：协商确认可处理；审批尚未接通。 */
+/** 卡片底部的处理动作：协商确认与设备审批。 */
 function ItemActions({ item }: { item: WorkItem }) {
 	if (item.kind === "confirmation")
 		return <ConfirmationActions workItemId={item.id} />;
-	if (item.kind === "approval")
-		return (
-			<>
-				<SoonButton variant="primary">批准</SoonButton>
-				<SoonButton variant="danger">拒绝</SoonButton>
-			</>
-		);
+	if (item.kind === "approval") return <ApprovalActions workItemId={item.id} />;
 	return null;
 }
 
@@ -64,7 +59,12 @@ function WorkItemCard({
 			actions={actions}
 		>
 			<p className="font-semibold break-words">{item.title}</p>
-			{item.body && item.body !== item.title ? (
+			{item.kind === "approval" ? (
+				<ApprovalDetails
+					capability={item.payload.capability}
+					args={item.payload.args}
+				/>
+			) : item.body && item.body !== item.title ? (
 				<p className="mt-1 text-14 whitespace-pre-wrap break-words text-muted">
 					{item.body}
 				</p>

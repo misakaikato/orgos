@@ -148,6 +148,26 @@ export const DecisionResolutionSchema = z.object({
 });
 export type DecisionResolution = z.infer<typeof DecisionResolutionSchema>;
 
+/**
+ * approval 待办的结局：本人批准 / 拒绝，10 分钟无人处理即过期，
+ * 等待中的运行被本人的新消息或"停止"打断即取消。
+ */
+export const APPROVAL_OUTCOMES = [
+	"approve",
+	"deny",
+	"expired",
+	"cancelled",
+] as const;
+export type ApprovalOutcome = (typeof APPROVAL_OUTCOMES)[number];
+/** 审批待办从建立起最长等待本人处理的时间。 */
+export const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** approval 待办了结后的 `work_items.resolution`。 */
+export const ApprovalResolutionSchema = z.object({
+	outcome: z.enum(APPROVAL_OUTCOMES),
+});
+export type ApprovalResolution = z.infer<typeof ApprovalResolutionSchema>;
+
 /** confirmation 待办被本人处理后的 `work_items.resolution`（另一方驳回而作废的待办没有 resolution）。 */
 export const ConfirmationResolutionSchema = z.object({
 	action: z.enum(["confirm", "reject"]),

@@ -16,8 +16,6 @@ export type Scene = {
 	id: string;
 	title: string;
 	summary: string;
-	/** 功能尚未开放时的说明。 */
-	upcoming?: string;
 	steps: ScriptStep[];
 };
 
@@ -146,28 +144,39 @@ export const SIM_SCRIPT: Scene[] = [
 		title: "让代理用自己的电脑",
 		summary:
 			"把电脑配对成设备，执行助手在上面读文件、跑命令，有风险的先问本人。",
-		upcoming: "设备配对上线后可用。",
 		steps: [
 			{
 				who: "linxiao",
-				action: "在「设备」页点「添加设备」，拿到配对码。",
+				action:
+					"在「设备」页点「添加设备」，拿到配对码和两条命令（10 分钟内有效）。",
 			},
 			{
 				who: null,
-				action: "在自己电脑的终端里配对并启动：",
-				say: "bun run --cwd apps/runner start pair <配对码> --name 林晓的MacBook",
+				action: "在本机终端里（仓库目录下）先配对：",
+				say: "bun run --cwd apps/runner start pair <配对码> --server http://localhost:8930 --name 林晓的MacBook",
+			},
+			{
+				who: null,
+				action: "再启动 Runner，工作目录是助手唯一能访问的地方：",
+				say: "bun run --cwd apps/runner start serve --workspace ~/orgos-workspace",
 			},
 			{
 				who: "linxiao",
-				action: "把执行助手绑定到这台设备，然后对执行助手说：",
+				action: "在「代理组」把执行助手绑定到这台设备，然后对执行助手说：",
 				say: "列出工作目录里的文件。",
 				mock: "#ls .",
 			},
 			{
 				who: "linxiao",
-				action: "让它执行命令，会先出现审批卡片，批准后才执行：",
-				say: "在工作目录里执行 git status。",
-				mock: "#exec git status",
+				action: "让它执行命令：先出现审批卡片，点「允许」后才执行：",
+				say: "在工作目录里执行 echo hello。",
+				mock: "#exec echo hello",
+			},
+			{
+				who: "linxiao",
+				action: "再让它执行一条命令，这次在审批卡片上点「拒绝」：",
+				say: "把工作目录里的 todo.txt 删掉。",
+				mock: "#exec rm todo.txt",
 			},
 		],
 	},

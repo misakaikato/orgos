@@ -100,27 +100,14 @@ function SceneBlock({
 	mockMode: boolean;
 }) {
 	return (
-		<section
-			className={cx(
-				"border-b border-line px-4 py-4 last:border-b-0",
-				scene.upcoming ? "opacity-70" : null,
-			)}
-		>
+		<section className="border-b border-line px-4 py-4 last:border-b-0">
 			<h3 className="flex items-center gap-2 text-14 font-medium text-ink">
 				<span className="inline-flex h-5 items-center rounded-pill bg-accent-soft px-2 text-12 font-semibold text-accent">
 					{scene.id}
 				</span>
 				{scene.title}
-				{scene.upcoming ? (
-					<span className="ml-auto rounded-pill bg-surface-2 px-2 text-12 font-normal text-muted">
-						即将开放
-					</span>
-				) : null}
 			</h3>
-			<p className="mt-1 text-12 text-muted">
-				{scene.summary}
-				{scene.upcoming ? ` ${scene.upcoming}` : null}
-			</p>
+			<p className="mt-1 text-12 text-muted">{scene.summary}</p>
 			<ol className="mt-3 flex flex-col gap-3">
 				{scene.steps.map((step, i) => (
 					<StepItem

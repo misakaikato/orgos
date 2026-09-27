@@ -1,14 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {
-	type ButtonHTMLAttributes,
-	type ComponentProps,
-	type ReactNode,
-	useEffect,
-	useRef,
-	useState,
-} from "react";
+import type { ButtonHTMLAttributes, ComponentProps } from "react";
 import { cx } from "@/lib/cx";
 
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
@@ -85,54 +78,5 @@ export function IconButton({
 			)}
 			{...rest}
 		/>
-	);
-}
-
-const SOON_MS = 1_600;
-
-/**
- * 尚未接通的操作：外观与普通按钮一致，点击后在上方浮出"即将开放"。
- */
-export function SoonButton({
-	variant = "secondary",
-	className,
-	children,
-	note = "即将开放",
-}: {
-	variant?: ButtonVariant;
-	className?: string;
-	children: ReactNode;
-	note?: string;
-}) {
-	const [shown, setShown] = useState(false);
-	const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	useEffect(
-		() => () => {
-			if (timer.current) clearTimeout(timer.current);
-		},
-		[],
-	);
-	return (
-		<span className="relative inline-flex">
-			<button
-				type="button"
-				className={buttonClass(variant, className)}
-				onClick={() => {
-					setShown(true);
-					if (timer.current) clearTimeout(timer.current);
-					timer.current = setTimeout(() => setShown(false), SOON_MS);
-				}}
-			>
-				{children}
-			</button>
-			{shown ? (
-				<span
-					role="status"
-					className="absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 animate-pop-in rounded-pill bg-ink px-3 py-1 text-12 whitespace-nowrap text-bg"
-				>
-					{note}
-				</span>
-			) : null}
-		</span>
 	);
 }

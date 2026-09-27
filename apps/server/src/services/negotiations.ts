@@ -292,6 +292,13 @@ export async function appendNegotiationStep(
 	return { state: next, outcome, event };
 }
 
+const CONFIRMATION_MATTER_CHARS = 40;
+
+function headOf(text: string, chars: number): string {
+	const all = Array.from(text);
+	return `${all.slice(0, chars).join("")}${all.length > chars ? "…" : ""}`;
+}
+
 /** proposal 的一句话写法：值都是简单类型的对象取各值，其余用 JSON。 */
 export function describeProposal(proposal: unknown): string {
 	if (proposal && typeof proposal === "object" && !Array.isArray(proposal)) {
@@ -353,7 +360,7 @@ export async function endNegotiation(
 	outcome: NegotiationOutcome,
 	at?: Date,
 ): Promise<WorkItem[]> {
-	const { row, state } = await requireNegotiation(s, conversationId);
+	const { state } = await requireNegotiation(s, conversationId);
 	if (state.state === "ended") throw badRequest("协商已结束");
 	const initiator = await requireAgentPrincipal(s, state.initiatorAgentId);
 	const responder = await requireAgentPrincipal(s, state.responderAgentId);
@@ -373,16 +380,28 @@ export async function endNegotiation(
 		});
 		await saveState(tx, conversationId, { ...state, state: "ended" });
 		if (outcome !== "agreed") return [];
+		const owners = new Map(
+			await Promise.all(
+				[initiator.ownerId, responder.ownerId].map(
+					async (id) => [id, await requireHuman(tx, id)] as const,
+				),
+			),
+		);
+		const matter = headOf(
+			describeProposal(proposal),
+			CONFIRMATION_MATTER_CHARS,
+		);
 		const items: WorkItem[] = [];
 		for (const [self, other] of [
 			[initiator, responder],
 			[responder, initiator],
 		] as const) {
+			const otherName = owners.get(other.ownerId)?.displayName ?? "对方";
 			items.push(
 				await createWorkItem(tx, {
 					kind: "confirmation",
 					payload: { negotiationConversationId: conversationId, proposal },
-					title: `确认协商结果：${row.title ?? state.goal}`,
+					title: `确认与${otherName}的约定：${matter}`,
 					body: `${other.displayName}与${self.displayName}已谈妥：${describeProposal(proposal)}`,
 					ownerId: self.ownerId,
 					requesterId: other.id,

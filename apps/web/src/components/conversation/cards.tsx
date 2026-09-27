@@ -3,12 +3,20 @@
 import type { ReactNode } from "react";
 import { fallbackPrincipal } from "@/components/conversation/message-item";
 import { Avatar } from "@/components/ui/avatar";
+import { ApprovalActions } from "@/components/work-items/approval-actions";
+import { ApprovalDetails } from "@/components/work-items/approval-details";
 import { DecisionForm } from "@/components/work-items/decision-form";
 import { cx } from "@/lib/cx";
+import { APPROVAL_OUTCOME_LABEL, capabilityLabel } from "@/lib/device";
 import { formatClock } from "@/lib/format";
 import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
 import { useStore } from "@/lib/store";
-import type { EscalationEvent, EscalationResolvedEvent } from "@/lib/thread";
+import type {
+	ApprovalEvent,
+	ApprovalResolvedEvent,
+	EscalationEvent,
+	EscalationResolvedEvent,
+} from "@/lib/thread";
 
 /**
  * 飞书式消息卡片（DESIGN.md §4）：宽 360、圆角 12、1px 描边、白底；
@@ -159,6 +167,69 @@ export function EscalationCard({
 								? `${agentName}会在这里接着回复`
 								: `${agentName}转来，${ownerName}答复后会在这里接着回复`}
 					</p>
+				)}
+			</MessageCard>
+		</CardRow>
+	);
+}
+
+const APPROVAL_NOTE = {
+	approve: "已允许，",
+	deny: "已拒绝，没有执行。",
+	expired: "10 分钟内没有处理，已过期，没有执行。",
+	cancelled: "等待期间有了新消息或运行被停止，已取消，没有执行。",
+} as const;
+
+/**
+ * 设备审批卡片：代理要在本人的设备上写文件或执行命令。显示设备名、能力与完整参数；
+ * 本人看到"允许 / 拒绝"，其他成员只看到等待状态。状态由会话事件派生——有对应的
+ * approval.resolved 即为完成态。
+ */
+export function ApprovalCard({
+	event,
+	resolved,
+	map,
+	meId,
+}: {
+	event: ApprovalEvent;
+	resolved: ApprovalResolvedEvent | null;
+	map: PrincipalMap;
+	meId: string;
+}) {
+	const { workItemId, runnerName, capability, args } = event.payload;
+	const mine = event.onBehalfOfId === meId;
+	const agentName = map.get(event.actorId)?.displayName ?? "代理";
+	const ownerName = event.onBehalfOfId
+		? (map.get(event.onBehalfOfId)?.displayName ?? "本人")
+		: "本人";
+	const outcome = resolved?.payload.outcome ?? null;
+	const title = outcome
+		? `${APPROVAL_OUTCOME_LABEL[outcome]}：${capabilityLabel(capability)}`
+		: mine
+			? "需要你批准"
+			: `等${ownerName}批准`;
+	return (
+		<CardRow actorId={event.actorId} map={map}>
+			<MessageCard
+				pending={!resolved}
+				title={title}
+				meta={formatClock((resolved ?? event).createdAt)}
+				actions={
+					!resolved && mine ? <ApprovalActions workItemId={workItemId} /> : null
+				}
+			>
+				<p className="break-words">
+					{agentName}想在“{runnerName}”上{capabilityLabel(capability)}
+				</p>
+				<ApprovalDetails capability={capability} args={args} />
+				{outcome ? (
+					<p className="mt-2 text-12 text-muted">
+						{outcome === "approve"
+							? `${APPROVAL_NOTE.approve}${agentName}会在这里给出结果。`
+							: APPROVAL_NOTE[outcome]}
+					</p>
+				) : mine ? null : (
+					<p className="mt-2 text-12 text-muted">{ownerName}允许后才会执行。</p>
 				)}
 			</MessageCard>
 		</CardRow>

@@ -4,7 +4,7 @@
  * - 未读分隔：打开会话时已读位置之后第一条他人消息前；
  * - 气泡：消息；同一发送者 3 分钟内连续的合并（只有第一条带头像与名字）；
  * - 代理动作不单独成行，折叠进该代理下一条气泡；没有下一条时在分隔前或末尾单列一行；
- * - 卡片：上报（带是否已答复）、协商（两人私聊里的 negotiation.started，过程在协商会话里）；
+ * - 卡片：上报（带是否已答复）、设备审批（带结局）、协商（两人私聊里的 negotiation.started，过程在协商会话里）；
  * - 系统行：成员加入、上报已答复。
  * 协商的每一步、结果与确认属于协商会话本身，由协商卡片读取，不进消息列。
  */
@@ -22,6 +22,8 @@ export type ActionEvent = EventOf<"agent.action">;
 export type EscalationEvent = EventOf<"escalation.created">;
 export type EscalationResolvedEvent = EventOf<"escalation.resolved">;
 export type NegotiationStartedEvent = EventOf<"negotiation.started">;
+export type ApprovalEvent = EventOf<"approval.requested">;
+export type ApprovalResolvedEvent = EventOf<"approval.resolved">;
 export type SystemEvent = EventOf<"member.joined" | "escalation.resolved">;
 
 /** 气泡的归属：我 / 其他人 / 代理。 */
@@ -47,6 +49,12 @@ export type ThreadRow =
 			event: EscalationEvent;
 			resolved: EscalationResolvedEvent | null;
 	  }
+	| {
+			kind: "approval";
+			key: string;
+			event: ApprovalEvent;
+			resolved: ApprovalResolvedEvent | null;
+	  }
 	| { kind: "negotiation"; key: string; event: NegotiationStartedEvent }
 	| { kind: "system"; key: string; event: SystemEvent };
 
@@ -70,9 +78,12 @@ export function buildThreadRows(
 ): ThreadRow[] {
 	const rows: ThreadRow[] = [];
 	const resolvedBy = new Map<string, EscalationResolvedEvent>();
-	for (const e of events)
+	const approvedBy = new Map<string, ApprovalResolvedEvent>();
+	for (const e of events) {
 		if (e.type === "escalation.resolved")
 			resolvedBy.set(e.payload.workItemId, e);
+		if (e.type === "approval.resolved") approvedBy.set(e.payload.workItemId, e);
+	}
 
 	/** 各代理尚未归属到气泡的动作，按首次出现排序。 */
 	const pending = new Map<string, ActionEvent[]>();
@@ -155,6 +166,15 @@ export function buildThreadRows(
 				});
 				lastBubble = null;
 				break;
+			case "approval.requested":
+				rows.push({
+					kind: "approval",
+					key,
+					event,
+					resolved: approvedBy.get(event.payload.workItemId) ?? null,
+				});
+				lastBubble = null;
+				break;
 			case "negotiation.started":
 				rows.push({ kind: "negotiation", key, event });
 				lastBubble = null;
@@ -167,6 +187,7 @@ export function buildThreadRows(
 			case "negotiation.step":
 			case "negotiation.ended":
 			case "confirmation.resolved":
+			case "approval.resolved":
 				break;
 		}
 	}

@@ -363,7 +363,7 @@ describe("POST /api/work-items/:id/resolve", () => {
 		);
 	});
 
-	it("审批待办的处理尚未接通 → 400 NOT_IMPLEMENTED", async () => {
+	it("审批待办用 approve / deny 处理：批准后置 done 并记下结局，再处理 → 409；用 answer → 400", async () => {
 		const approval = await createWorkItem(tenant(), {
 			kind: "approval",
 			payload: {
@@ -376,15 +376,21 @@ describe("POST /api/work-items/:id/resolve", () => {
 			ownerId: alice.me.principal.id,
 			requesterId: alice.me.principal.id,
 		});
-		for (const action of ["approve", "deny"] as const) {
-			await expectError(
-				await resolve(alice.client, approval.id, { action }),
-				400,
-				"NOT_IMPLEMENTED",
-			);
-		}
-		const open = await openItems(alice.client);
-		expect(open.map((w) => w.id)).toContain(approval.id);
+		await expectError(
+			await resolve(alice.client, approval.id, { action: "answer", text: "x" }),
+			400,
+			"WORK_ITEM_ACTION_MISMATCH",
+		);
+		const ok = await resolve(alice.client, approval.id, { action: "approve" });
+		expect(ok.status).toBe(200);
+		expect(
+			WorkItemResponseSchema.parse(await ok.json()).workItem,
+		).toMatchObject({ status: "done", resolution: { outcome: "approve" } });
+		await expectError(
+			await resolve(alice.client, approval.id, { action: "deny" }),
+			409,
+			"WORK_ITEM_NOT_OPEN",
+		);
 	});
 
 	it("已处理的待办再处理 → 409", async () => {

@@ -10,6 +10,7 @@ import {
 	type CreateConversationRequest,
 	CreateConversationResponseSchema,
 	type CreateNoteRequest,
+	CreatePairingCodeResponseSchema,
 	DemoPeopleResponseSchema,
 	DevInfoResponseSchema,
 	DevSessionResponseSchema,
@@ -27,6 +28,7 @@ import {
 	PostMessageResponseSchema,
 	ResetDemoResponseSchema,
 	type ResolveWorkItemRequest,
+	RunnerListResponseSchema,
 	type UpdateAgentRequest,
 	type UpdateNoteRequest,
 	type UpdateStatusRequest,
@@ -192,6 +194,17 @@ export const api = {
 				})
 				.json(WorkItemListResponseSchema),
 		),
+	runners: () =>
+		run(() => http.get("/api/runners").json(RunnerListResponseSchema)),
+	createPairingCode: () =>
+		run(() =>
+			http
+				.post("/api/runners/pairing-codes")
+				.json(CreatePairingCodeResponseSchema),
+		),
+	/** 吊销设备：token 立即失效、在线连接断开、绑定它的代理解绑。 */
+	revokeRunner: (id: string) => noContent(http.delete(`/api/runners/${id}`)),
+
 	resolveWorkItem: (id: string, req: ResolveWorkItemRequest) =>
 		run(() =>
 			http

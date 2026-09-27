@@ -9,7 +9,12 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { cx } from "@/lib/cx";
-import { refreshMyAgents, setMyAgents, useStore } from "@/lib/store";
+import {
+	loadRunners,
+	refreshMyAgents,
+	setMyAgents,
+	useStore,
+} from "@/lib/store";
 
 type Tab = "agents" | "notes";
 
@@ -58,6 +63,7 @@ function AgentsPanel({
 
 	useEffect(() => {
 		void refreshMyAgents().catch(() => {});
+		void loadRunners();
 		void api
 			.usage()
 			.then(({ byAgent }) =>

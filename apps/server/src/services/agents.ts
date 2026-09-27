@@ -126,7 +126,7 @@ export async function listDirectory(
 		.sort((x, y) => x.principal.handle.localeCompare(y.principal.handle));
 }
 
-/** 改代理的资料与对外政策；不存在或跨租户 → 404。调用方负责"只能改自己的代理"。 */
+/** 改代理的资料、对外政策与绑定的设备；不存在或跨租户 → 404。调用方负责"只能改自己的代理"与设备归属。 */
 export async function updateAgentProfile(
 	s: Scoped,
 	principalId: string,
@@ -134,6 +134,7 @@ export async function updateAgentProfile(
 		displayName?: string;
 		description?: string;
 		delegationPolicy?: string;
+		runnerId?: string | null;
 	},
 ): Promise<Agent> {
 	const principal = await s.first(principals, eq(principals.id, principalId));

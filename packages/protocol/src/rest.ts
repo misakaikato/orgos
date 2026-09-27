@@ -17,6 +17,7 @@ import {
 	WorkItemSchema,
 } from "./entities";
 import { EventSchema, MESSAGE_MAX_LENGTH } from "./events";
+import { DEVICE_NAME_MAX_LENGTH, RunnerSchema } from "./runner";
 
 /** 统一错误体：`{ error: { code, message } }`。 */
 export const ErrorBodySchema = z.object({
@@ -41,6 +42,7 @@ export const ERROR_CODES = {
 	WORK_ITEM_NOT_OPEN: "WORK_ITEM_NOT_OPEN",
 	WORK_ITEM_ACTION_MISMATCH: "WORK_ITEM_ACTION_MISMATCH",
 	NOT_IMPLEMENTED: "NOT_IMPLEMENTED",
+	PAIRING_CODE_INVALID: "PAIRING_CODE_INVALID",
 	INTERNAL: "INTERNAL",
 } as const;
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -261,11 +263,44 @@ export const UpdateAgentRequestSchema = z.object({
 		.trim()
 		.max(DELEGATION_POLICY_MAX_LENGTH)
 		.optional(),
+	/** 仅助手：绑定到本人的一台设备（null 解绑）。 */
+	runnerId: z.uuid().nullable().optional(),
 });
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
 
 export const AgentResponseSchema = z.object({ agent: AgentSchema });
 export type AgentResponse = z.infer<typeof AgentResponseSchema>;
+
+// ─────────────────────────── 设备 ───────────────────────────
+
+export const CreatePairingCodeResponseSchema = z.object({
+	code: z.string(),
+	expiresAt: z.iso.datetime(),
+	/** 服务端所在仓库的目录：设备页据此给出可直接复制的 Runner 命令。 */
+	repoDir: z.string(),
+});
+export type CreatePairingCodeResponse = z.infer<
+	typeof CreatePairingCodeResponseSchema
+>;
+
+/** `POST /api/runners/pair`：凭配对码，无需登录。 */
+export const PairRunnerRequestSchema = z.object({
+	code: z.string().trim().min(1).max(64),
+	name: z.string().trim().min(1).max(DEVICE_NAME_MAX_LENGTH),
+	os: z.string().trim().min(1).max(64),
+});
+export type PairRunnerRequest = z.infer<typeof PairRunnerRequestSchema>;
+
+export const PairRunnerResponseSchema = z.object({
+	runnerId: z.uuid(),
+	token: z.string(),
+});
+export type PairRunnerResponse = z.infer<typeof PairRunnerResponseSchema>;
+
+export const RunnerListResponseSchema = z.object({
+	items: z.array(RunnerSchema),
+});
+export type RunnerListResponse = z.infer<typeof RunnerListResponseSchema>;
 
 // ─────────────────────────── 资料 ───────────────────────────
 

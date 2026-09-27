@@ -224,6 +224,81 @@ describe("buildThreadRows", () => {
 	});
 });
 
+describe("设备审批", () => {
+	it("approval.requested 成为审批卡片行并带上结局；结局本身不单独成行", () => {
+		seq = 0;
+		const WORK = "88888888-8888-4888-8888-888888888888";
+		const RUNNER = "99999999-9999-4999-8999-999999999999";
+		const base = { tenantId: TENANT, conversationId: CONV };
+		const events: Event[] = [
+			{
+				...base,
+				id: 1,
+				seq: 1,
+				actorId: TWIN,
+				onBehalfOfId: ME,
+				type: "approval.requested",
+				payload: {
+					workItemId: WORK,
+					runnerId: RUNNER,
+					runnerName: "我的 Mac",
+					capability: "shell.exec",
+					args: { command: "echo hi" },
+				},
+				createdAt: "2026-09-26T09:00:00.000Z",
+			},
+			{
+				...base,
+				id: 2,
+				seq: 2,
+				actorId: ME,
+				onBehalfOfId: null,
+				type: "approval.resolved",
+				payload: { workItemId: WORK, outcome: "approve" },
+				createdAt: "2026-09-26T09:00:30.000Z",
+			},
+			msg(TWIN, "2026-09-26T09:00:40.000Z"),
+		];
+		const rows = buildThreadRows(events, map, ME, null);
+		expect(rows.map((r) => r.kind)).toEqual(["stamp", "approval", "bubble"]);
+		const card = rows[1];
+		expect(
+			card?.kind === "approval" ? card.resolved?.payload.outcome : null,
+		).toBe("approve");
+	});
+
+	it("还没有结局时 resolved 为 null", () => {
+		seq = 0;
+		const rows = buildThreadRows(
+			[
+				{
+					tenantId: TENANT,
+					conversationId: CONV,
+					id: 1,
+					seq: 1,
+					actorId: TWIN,
+					onBehalfOfId: ME,
+					type: "approval.requested",
+					payload: {
+						workItemId: "88888888-8888-4888-8888-888888888888",
+						runnerId: "99999999-9999-4999-8999-999999999999",
+						runnerName: "我的 Mac",
+						capability: "fs.write",
+						args: { path: "a.txt", content: "x" },
+					},
+					createdAt: "2026-09-26T09:00:00.000Z",
+				},
+			],
+			map,
+			ME,
+			null,
+		);
+		const card = rows[1];
+		expect(card?.kind).toBe("approval");
+		expect(card?.kind === "approval" ? card.resolved : "x").toBeNull();
+	});
+});
+
 describe("提及", () => {
 	it("只高亮会话成员的 handle", () => {
 		const parts = splitMentions("请 @bob 看下，@nobody 不算", new Set(["bob"]));

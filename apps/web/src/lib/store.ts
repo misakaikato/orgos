@@ -13,6 +13,7 @@ import type {
 	MeResponse,
 	PrincipalStatus,
 	ResolveWorkItemRequest,
+	Runner,
 	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
@@ -58,6 +59,9 @@ export type State = {
 	workItemsStatus: LoadStatus | null;
 	/** 正在工作的代理（状态行与流式草稿），按会话、按代理。 */
 	activity: ActivityMap;
+	/** 我的设备（null = 还没加载过）。 */
+	runners: Runner[] | null;
+	runnersStatus: LoadStatus | null;
 };
 
 const initialState: State = {
@@ -74,6 +78,8 @@ const initialState: State = {
 	workItems: null,
 	workItemsStatus: null,
 	activity: {},
+	runners: null,
+	runnersStatus: null,
 };
 
 let state = initialState;
@@ -248,6 +254,8 @@ const WORK_ITEM_EVENTS: ReadonlySet<Event["type"]> = new Set([
 	"escalation.resolved",
 	"negotiation.ended",
 	"confirmation.resolved",
+	"approval.requested",
+	"approval.resolved",
 ]);
 
 /** 只发生在协商会话里的事件：协商会话不在会话列表中，由私聊里的协商卡片读取。 */
@@ -318,6 +326,7 @@ export async function resync(): Promise<void> {
 	if (mine?.principal.status)
 		applyPresence(mine.principal.id, mine.principal.status);
 	void loadWorkItems();
+	if (state.runners) void loadRunners();
 	const loaded = Object.entries(state.events);
 	await Promise.all(
 		loaded.map(async ([cid, list]) => {
@@ -325,6 +334,53 @@ export async function resync(): Promise<void> {
 			mergeInto(cid, items);
 		}),
 	);
+}
+
+// ─────────────────────────── 设备 ───────────────────────────
+
+let runnersLoad: Promise<void> | null = null;
+
+/** 拉取我的设备；并发调用共用同一次请求。 */
+export function loadRunners(): Promise<void> {
+	runnersLoad ??= doLoadRunners().finally(() => {
+		runnersLoad = null;
+	});
+	return runnersLoad;
+}
+
+async function doLoadRunners(): Promise<void> {
+	set((s) => ({ runnersStatus: s.runners ? s.runnersStatus : "loading" }));
+	try {
+		const { items } = await api.runners();
+		set({ runners: items, runnersStatus: "ready" });
+	} catch {
+		set((s) => ({ runnersStatus: s.runners ? "ready" : "error" }));
+	}
+}
+
+/**
+ * 我的设备新增、上下线或被吊销：并入列表（吊销的移出）。
+ * 吊销会解绑代理，随即刷新本人的代理组。
+ */
+export function applyRunner(runner: Runner): void {
+	set((s) => {
+		if (!s.runners) return {};
+		const rest = s.runners.filter((r) => r.id !== runner.id);
+		if (runner.revoked) return { runners: rest };
+		const known = s.runners.some((r) => r.id === runner.id);
+		return {
+			runners: known
+				? s.runners.map((r) => (r.id === runner.id ? runner : r))
+				: [...rest, runner],
+		};
+	});
+	if (runner.revoked) void refreshMyAgents().catch(() => {});
+}
+
+export async function revokeRunner(id: string): Promise<void> {
+	await api.revokeRunner(id);
+	set((s) => ({ runners: s.runners?.filter((r) => r.id !== id) ?? null }));
+	await refreshMyAgents();
 }
 
 // ─────────────────────────── 动作 ───────────────────────────

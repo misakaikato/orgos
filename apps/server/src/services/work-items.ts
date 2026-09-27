@@ -2,6 +2,9 @@
  * 待办（"待我处理"）：处理人必为人。写入只经本文件，写入前按 kind 校验载荷。
  */
 import {
+	APPROVAL_TIMEOUT_MS,
+	type ApprovalOutcome,
+	type ApprovalResolution,
 	type ConfirmationResolution,
 	type DecisionResolution,
 	ERROR_CODES,
@@ -11,6 +14,7 @@ import {
 	type WORK_ITEM_STATUSES,
 	type WorkItem,
 	type WorkItemDraft,
+	type WorkItemPayload,
 } from "@orgos/protocol";
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { events, principals, workItems } from "@/db/schema";
@@ -170,12 +174,13 @@ function noteTitleOf(question: string): string {
 
 /**
  * 本人处理一条待办。不存在、跨租户、不是我的 → 404；动作与 kind 不符 → 400；
- * 已处理 → 409。approval 的 approve / deny 返回 400 NOT_IMPLEMENTED。提交后推 work_item 帧。
+ * 已处理 → 409。提交后推 work_item 帧。
  *
  * - decision：待办置 done 并写入 resolution；answer 且 saveAsNote 时以本人为作者写一条共享资料
  *   （标题取问题前 30 字）；在原会话落 `escalation.resolved`。恢复上报代理的运行由调用方交给调度器。
  * - confirmation：在协商会话落 `confirmation.resolved`，待办置 done；reject 时同一协商里
  *   另一方仍未处理的确认待办置 cancelled。同一协商的处理经协商会话的行锁串行。
+ * - approval：待办置 done 并在会话里落 `approval.resolved`，再把决定交给正在等待的代理运行。
  */
 export async function resolveWorkItem(
 	s: Scoped,
@@ -210,10 +215,19 @@ export async function resolveWorkItem(
 		(req.action === "confirm" || req.action === "reject")
 	)
 		return resolveConfirmation(s, me, item, req.action);
+	if (
+		item.kind === "approval" &&
+		(req.action === "approve" || req.action === "deny")
+	) {
+		const settled = await settleApproval(s, item, req.action, me.id);
+		if (!settled) throw notOpen();
+		deliverApproval(item.id, req.action);
+		return settled;
+	}
 	throw new AppError(
 		400,
-		ERROR_CODES.NOT_IMPLEMENTED,
-		"这类待办的处理还未开放",
+		ERROR_CODES.WORK_ITEM_ACTION_MISMATCH,
+		`这类待办不能执行 ${req.action}`,
 	);
 }
 
@@ -221,15 +235,16 @@ function notOpen(): AppError {
 	return new AppError(409, ERROR_CODES.WORK_ITEM_NOT_OPEN, "待办已处理");
 }
 
-/** 把仍为 open 的待办置为 done；已被别人或并发请求处理过 → 409。 */
-async function closeOpen(
+/** 把仍为 open 的待办置为 status；已被别人或并发请求处理过 → null。 */
+async function closeIfOpen(
 	tx: Scoped,
 	id: string,
 	resolution: unknown,
-): Promise<WorkItem> {
+	status: Exclude<WorkItemStatus, "open"> = "done",
+): Promise<WorkItem | null> {
 	const [updated] = await tx.executor
 		.update(workItems)
-		.set({ status: "done", resolution })
+		.set({ status, resolution })
 		.where(
 			tx.where(
 				workItems,
@@ -237,8 +252,18 @@ async function closeOpen(
 			),
 		)
 		.returning();
-	if (!updated) throw notOpen();
-	return toWorkItem(updated);
+	return updated ? toWorkItem(updated) : null;
+}
+
+/** 同 closeIfOpen，但已处理过 → 409。 */
+async function closeOpen(
+	tx: Scoped,
+	id: string,
+	resolution: unknown,
+): Promise<WorkItem> {
+	const closed = await closeIfOpen(tx, id, resolution);
+	if (!closed) throw notOpen();
+	return closed;
 }
 
 async function resolveDecision(
@@ -326,4 +351,140 @@ async function resolveConfirmation(
 	);
 	for (const w of [mine, ...cancelled]) notifyWorkItem(w);
 	return mine;
+}
+
+// ─────────────────────────── 审批 ───────────────────────────
+
+/** 正在等本人决定的代理运行（进程内）：待办 id → 交付决定。 */
+const approvalWaiters = new Map<string, (outcome: ApprovalOutcome) => void>();
+
+function deliverApproval(workItemId: string, outcome: ApprovalOutcome): void {
+	approvalWaiters.get(workItemId)?.(outcome);
+}
+
+type ApprovalItem = Extract<WorkItem, { kind: "approval" }>;
+
+/**
+ * 了结一条仍为 open 的审批待办并在会话里落 `approval.resolved`，提交后推给本人。
+ * 批准与拒绝置 done（actor 为本人），过期与取消置 cancelled（actor 为发起的代理）。
+ * 已被了结（并发的处理、过期或取消）→ null。
+ */
+async function settleApproval(
+	s: Scoped,
+	item: ApprovalItem,
+	outcome: ApprovalOutcome,
+	actorId: string,
+): Promise<WorkItem | null> {
+	const resolution: ApprovalResolution = { outcome };
+	const settled = await transactWithEvents(s, async (tx, append) => {
+		const closed = await closeIfOpen(
+			tx,
+			item.id,
+			resolution,
+			outcome === "approve" || outcome === "deny" ? "done" : "cancelled",
+		);
+		if (!closed) return null;
+		if (item.conversationId) {
+			const byAgent = actorId === item.requesterId;
+			await append({
+				conversationId: item.conversationId,
+				actorId,
+				onBehalfOfId: byAgent ? item.ownerId : null,
+				type: "approval.resolved",
+				payload: { workItemId: item.id, outcome },
+			});
+		}
+		return closed;
+	});
+	if (settled) notifyWorkItem(settled);
+	return settled;
+}
+
+export type ApprovalRequest = {
+	agentId: string;
+	conversationId: string;
+	runnerId: string;
+	runnerName: string;
+	capability: WorkItemPayload<"approval">["capability"];
+	args: unknown;
+	title: string;
+	body: string;
+	sourceEventId?: number | null;
+	/** 等待中触发即取消（本人发了新消息或停止了运行）。 */
+	signal: AbortSignal;
+	timeoutMs?: number;
+};
+
+/**
+ * 代理请本人批准一次有风险的设备操作（审批的唯一入口）：一个事务内建 approval 待办
+ * （处理人 = 代理的本人，提问人 = 代理）并在会话里落 `approval.requested`，提交后推给本人；
+ * 然后等待本人的决定。10 分钟无人处理 → expired；等待中 signal 触发 → cancelled。
+ * 不抛异常以外的失败：返回的一定是最终结局。
+ */
+export async function requestApproval(
+	s: Scoped,
+	input: ApprovalRequest,
+): Promise<ApprovalOutcome> {
+	const agent = await requireAgentPrincipal(s, input.agentId);
+	await requireConversation(s, input.conversationId, agent.id);
+	const item = (await transactWithEvents(s, async (tx, append) => {
+		const item = await createWorkItem(tx, {
+			kind: "approval",
+			payload: {
+				runnerId: input.runnerId,
+				capability: input.capability,
+				args: input.args,
+			},
+			title: input.title,
+			body: input.body,
+			ownerId: agent.ownerId,
+			requesterId: agent.id,
+			conversationId: input.conversationId,
+			sourceEventId: input.sourceEventId ?? null,
+		});
+		await append({
+			conversationId: input.conversationId,
+			actorId: agent.id,
+			onBehalfOfId: agent.ownerId,
+			type: "approval.requested",
+			payload: {
+				workItemId: item.id,
+				runnerId: input.runnerId,
+				runnerName: input.runnerName,
+				capability: input.capability,
+				args: input.args,
+			},
+		});
+		return item;
+	})) as ApprovalItem;
+	notifyWorkItem(item);
+
+	const { signal } = input;
+	return new Promise<ApprovalOutcome>((resolve) => {
+		const finish = (outcome: ApprovalOutcome) => {
+			clearTimeout(timer);
+			signal.removeEventListener("abort", onAbort);
+			approvalWaiters.delete(item.id);
+			resolve(outcome);
+		};
+		approvalWaiters.set(item.id, finish);
+		const settleBy = (outcome: "expired" | "cancelled") => {
+			settleApproval(s, item, outcome, agent.id).then(
+				(settled) => {
+					if (settled) deliverApproval(item.id, outcome);
+				},
+				(e) => {
+					console.error("[approval] 了结审批失败", e);
+					deliverApproval(item.id, outcome);
+				},
+			);
+		};
+		const timer = setTimeout(
+			() => settleBy("expired"),
+			input.timeoutMs ?? APPROVAL_TIMEOUT_MS,
+		);
+		const onAbort = () => settleBy("cancelled");
+		if (signal.aborted) onAbort();
+		else signal.addEventListener("abort", onAbort, { once: true });
+	});
 }

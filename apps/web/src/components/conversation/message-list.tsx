@@ -9,7 +9,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { EscalationCard } from "@/components/conversation/cards";
+import { ApprovalCard, EscalationCard } from "@/components/conversation/cards";
 import {
 	ActionsRow,
 	Bubble,
@@ -71,6 +71,15 @@ function Row({ row, ctx }: { row: ThreadRow; ctx: RowContext }) {
 		case "escalation":
 			return (
 				<EscalationCard
+					event={row.event}
+					resolved={row.resolved}
+					map={map}
+					meId={meId}
+				/>
+			);
+		case "approval":
+			return (
+				<ApprovalCard
 					event={row.event}
 					resolved={row.resolved}
 					map={map}

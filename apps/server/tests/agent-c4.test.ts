@@ -227,10 +227,10 @@ describe("C4 agreed：两个分身谈妥，双方本人确认", () => {
 		);
 	});
 
-	it("两人各有一条 confirmation 待办（关联私聊、带 proposal），并推给各自", async () => {
-		for (const [who, other, frames] of [
-			[alice, bobTwin, aliceFrames],
-			[bob, aliceTwin, bobFrames],
+	it("两人各有一条 confirmation 待办（按各自视角的标题、关联私聊、带 proposal），并推给各自", async () => {
+		for (const [who, other, otherName, frames] of [
+			[alice, bobTwin, "Bob", aliceFrames],
+			[bob, aliceTwin, "Alice", bobFrames],
 		] as const) {
 			const [item, ...rest] = confirmationsOf(
 				await openItems(who.client),
@@ -239,6 +239,7 @@ describe("C4 agreed：两个分身谈妥，双方本人确认", () => {
 			expect(rest).toEqual([]);
 			expect(item).toMatchObject({
 				kind: "confirmation",
+				title: `确认与${otherName}的约定：周四 15:00`,
 				status: "open",
 				ownerId: who.me.principal.id,
 				requesterId: other,

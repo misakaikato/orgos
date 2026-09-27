@@ -2,6 +2,7 @@
  * 事件的一行文字描述（会话里的系统行、卡片副标题与列表预览共用）。
  */
 import type { Event, NEGOTIATION_OUTCOMES } from "@orgos/protocol";
+import { APPROVAL_OUTCOME_LABEL, capabilityLabel } from "@/lib/device";
 import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
 
 type NegotiationOutcome = (typeof NEGOTIATION_OUTCOMES)[number];
@@ -52,6 +53,10 @@ export function describeEvent(
 			return `协商结束：${OUTCOME_LABEL[event.payload.outcome]}`;
 		case "confirmation.resolved":
 			return `${actor}${event.payload.action === "confirm" ? "确认了" : "驳回了"}协商结果`;
+		case "approval.requested":
+			return `${actor}请求在“${event.payload.runnerName}”上${capabilityLabel(event.payload.capability)}`;
+		case "approval.resolved":
+			return `设备操作的审批${APPROVAL_OUTCOME_LABEL[event.payload.outcome]}`;
 	}
 }
 

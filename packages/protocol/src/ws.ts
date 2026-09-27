@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { PRINCIPAL_STATUSES, WorkItemSchema } from "./entities";
 import { EventSchema } from "./events";
+import { RunnerSchema } from "./runner";
 
 export const BROWSER_PING_INTERVAL_MS = 20_000;
 
@@ -44,6 +45,8 @@ export const BrowserFrameSchema = z.discriminatedUnion("t", [
 	}),
 	/** 我的待办新增或变化。 */
 	z.object({ t: z.literal("work_item"), workItem: WorkItemSchema }),
+	/** 我的设备新增、上下线或被吊销。 */
+	z.object({ t: z.literal("runner"), runner: RunnerSchema }),
 ]);
 export type BrowserFrame = z.infer<typeof BrowserFrameSchema>;
 

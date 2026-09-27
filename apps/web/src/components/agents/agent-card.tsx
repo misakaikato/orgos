@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { cx } from "@/lib/cx";
 import { formatTokens, formatUsd } from "@/lib/format";
 import { useOpenDm } from "@/lib/hooks";
+import { useStore } from "@/lib/store";
 
 function usageLine(usage: AgentUsage | undefined): string {
 	if (!usage || usage.requests === 0) return "还没有调用过模型";
@@ -116,7 +117,81 @@ function EditForm({
 }
 
 /**
- * 代理组页的一张代理卡：团子、名字与角色、职责、（分身的）对外政策、用量；
+ * 助手绑定的设备：选择本人的一台设备或不绑定。绑定后它为本人办事时可以在设备上干活。
+ */
+function DeviceBinding({
+	agent,
+	onChanged,
+}: {
+	agent: Agent;
+	onChanged: (next: Agent) => void;
+}) {
+	const runners = useStore((s) => s.runners);
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const current = runners?.find((r) => r.id === agent.runnerId);
+
+	const change = async (runnerId: string | null) => {
+		setSaving(true);
+		setError(null);
+		try {
+			const { agent: next } = await api.updateAgent(agent.principal.id, {
+				runnerId,
+			});
+			onChanged(next);
+		} catch (e) {
+			setError(errorText(e));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<div className="mt-3 flex flex-col gap-1.5 rounded-row bg-surface-2 px-3 py-2">
+			<label
+				htmlFor={`device-${agent.principal.id}`}
+				className="text-12 font-medium text-muted"
+			>
+				设备
+			</label>
+			{runners && runners.length > 0 ? (
+				<select
+					id={`device-${agent.principal.id}`}
+					value={agent.runnerId ?? ""}
+					disabled={saving}
+					onChange={(e) => void change(e.target.value || null)}
+					className="h-control w-full rounded-pill bg-bg px-3 text-14 text-ink outline-none focus:ring-2 focus:ring-accent disabled:opacity-50"
+				>
+					<option value="">不绑定</option>
+					{runners.map((r) => (
+						<option key={r.id} value={r.id}>
+							{r.name}（{r.status === "online" ? "在线" : "离线"}）
+						</option>
+					))}
+				</select>
+			) : (
+				<p className="text-14 text-muted">
+					{runners === null
+						? "正在读取设备…"
+						: "还没有设备，先到「设备」页添加。"}
+				</p>
+			)}
+			<p className="text-12 text-muted">
+				{current
+					? `为你办事时可以在“${current.name}”的工作目录里读写文件、执行命令；写文件和执行命令会先问你。`
+					: "绑定后，它为你办事时可以在那台设备上读写文件、执行命令。"}
+			</p>
+			{error ? (
+				<p role="alert" className="text-12 text-danger">
+					{error}
+				</p>
+			) : null}
+		</div>
+	);
+}
+
+/**
+ * 代理组页的一张代理卡：团子、名字与角色、职责、（分身的）对外政策或（助手的）设备、用量；
  * 可编辑、开聊；助手可删除（分身不可删）。
  */
 export function AgentCard({
@@ -195,7 +270,9 @@ export function AgentCard({
 										"还没设置：分身只会回答你共享资料里明确写着的内容。"}
 								</p>
 							</div>
-						) : null}
+						) : (
+							<DeviceBinding agent={agent} onChanged={onChanged} />
+						)}
 						<p className="mt-3 text-12 text-muted">{usageLine(usage)}</p>
 						{error ? (
 							<p role="alert" className="mt-2 text-12 text-danger">

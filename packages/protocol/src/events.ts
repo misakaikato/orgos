@@ -2,7 +2,11 @@
  * 会话事件：每种 type 一个 Zod 载荷。`events` 表只追加，线上形态见 EventSchema。
  */
 import { z } from "zod";
-import { NEGOTIATION_OUTCOMES, NEGOTIATION_STATUSES } from "./entities";
+import {
+	APPROVAL_OUTCOMES,
+	NEGOTIATION_OUTCOMES,
+	NEGOTIATION_STATUSES,
+} from "./entities";
 
 export const MESSAGE_MAX_LENGTH = 8000;
 
@@ -58,6 +62,21 @@ export const ConfirmationResolvedPayloadSchema = z.object({
 
 export const MemberJoinedPayloadSchema = z.object({
 	principalId: z.uuid(),
+});
+
+/** 代理要在本人的设备上做有风险的操作，等本人批准（界面为审批卡片）。 */
+export const ApprovalRequestedPayloadSchema = z.object({
+	workItemId: z.uuid(),
+	runnerId: z.uuid(),
+	/** 发起时的设备名（设备改名或吊销后卡片仍能显示）。 */
+	runnerName: z.string(),
+	capability: z.string(),
+	args: z.unknown(),
+});
+
+export const ApprovalResolvedPayloadSchema = z.object({
+	workItemId: z.uuid(),
+	outcome: z.enum(APPROVAL_OUTCOMES),
 });
 
 const eventBase = {
@@ -116,6 +135,16 @@ export const EventSchema = z.discriminatedUnion("type", [
 		type: z.literal("member.joined"),
 		payload: MemberJoinedPayloadSchema,
 	}),
+	z.object({
+		...eventBase,
+		type: z.literal("approval.requested"),
+		payload: ApprovalRequestedPayloadSchema,
+	}),
+	z.object({
+		...eventBase,
+		type: z.literal("approval.resolved"),
+		payload: ApprovalResolvedPayloadSchema,
+	}),
 ]);
 export type Event = z.infer<typeof EventSchema>;
 export type EventType = Event["type"];
@@ -140,4 +169,6 @@ export const EVENT_PAYLOAD_SCHEMAS: { [T in EventType]: z.ZodType } = {
 	"negotiation.ended": NegotiationEndedPayloadSchema,
 	"confirmation.resolved": ConfirmationResolvedPayloadSchema,
 	"member.joined": MemberJoinedPayloadSchema,
+	"approval.requested": ApprovalRequestedPayloadSchema,
+	"approval.resolved": ApprovalResolvedPayloadSchema,
 };

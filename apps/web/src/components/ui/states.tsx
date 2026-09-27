@@ -2,13 +2,12 @@
 
 import type { ReactNode } from "react";
 import { Mascot } from "@/components/mascot";
-import { Button, ButtonLink, SoonButton } from "@/components/ui/button";
+import { Button, ButtonLink } from "@/components/ui/button";
 import { cx } from "@/lib/cx";
 
 export type EmptyAction =
 	| { label: string; href: string }
-	| { label: string; onClick: () => void }
-	| { label: string; soon: true };
+	| { label: string; onClick: () => void };
 
 function ActionButton({ action }: { action: EmptyAction }) {
 	if ("href" in action)
@@ -17,8 +16,6 @@ function ActionButton({ action }: { action: EmptyAction }) {
 				{action.label}
 			</ButtonLink>
 		);
-	if ("soon" in action)
-		return <SoonButton variant="primary">{action.label}</SoonButton>;
 	return (
 		<Button variant="primary" onClick={action.onClick}>
 			{action.label}
