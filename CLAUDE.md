@@ -16,3 +16,7 @@ AI 原生办公实验：人与各自的代理组在同一个即时通讯里协�
 - 门禁命令 `bun run typecheck` / `bun run lint` / `bun run test` 分开跑、看真实退出码，不接管道。
 - 读 DeepSeek key 只用 `DEEPSEEK_API_KEY=$(jq -r .deepseek.key ~/.pi/agent/auth.json)` 内联注入，绝不打印或查看该文件全文（里面有其他 OAuth 令牌）。
 - 提交信息：emoji + 中文，不加 Co-Authored-By。
+
+## 架构图
+
+- `docs/architecture.html` 是架构总览的唯一源文件（发布在 claude.ai 的同一链接）。任何设计决定、规格变更或步骤验收后，都要同步更新它。

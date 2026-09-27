@@ -1,0 +1,507 @@
+<title>orgos 架构</title>
+<style>
+	:root {
+		--page: #f5f6f8;
+		--surface: #ffffff;
+		--sunk: #eef0f3;
+		--ink: #1f2329;
+		--muted: #646a73;
+		--line: #d9dce2;
+		--accent: #2b6cf6;
+		--accent-soft: #e6eefe;
+		--pending: #c46f06;
+		--pending-soft: #fff3e3;
+		--good: #1f9d63;
+		--good-soft: #e3f4ec;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root:not([data-theme="light"]) {
+			color-scheme: dark;
+			--page: #111317;
+			--surface: #1a1d22;
+			--sunk: #23272e;
+			--ink: #e8eaee;
+			--muted: #9aa0aa;
+			--line: #353a43;
+			--accent: #6b9bff;
+			--accent-soft: #1f2d49;
+			--pending: #f2a541;
+			--pending-soft: #3a2c18;
+			--good: #46c488;
+			--good-soft: #173226;
+		}
+	}
+	:root[data-theme="dark"] {
+		color-scheme: dark;
+		--page: #111317;
+		--surface: #1a1d22;
+		--sunk: #23272e;
+		--ink: #e8eaee;
+		--muted: #9aa0aa;
+		--line: #353a43;
+		--accent: #6b9bff;
+		--accent-soft: #1f2d49;
+		--pending: #f2a541;
+		--pending-soft: #3a2c18;
+		--good: #46c488;
+		--good-soft: #173226;
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0;
+		background: var(--page);
+		color: var(--ink);
+		font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+		font-size: 15px;
+		line-height: 1.7;
+	}
+	.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; }
+	.prose { max-width: 720px; }
+	.eyebrow { font-size: 12px; color: var(--muted); margin: 0 0 8px; letter-spacing: 0.04em; }
+	h1 { font-size: 28px; line-height: 1.3; margin: 0 0 12px; font-weight: 700; text-wrap: balance; }
+	h2 { font-size: 20px; line-height: 1.4; margin: 0 0 8px; font-weight: 650; text-wrap: balance; }
+	p { margin: 0 0 12px; }
+	.lede { color: var(--muted); font-size: 16px; }
+	section { margin-top: 48px; }
+	.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 20px 0 0; font-size: 13px; color: var(--muted); }
+	.legend span { display: inline-flex; align-items: center; gap: 8px; }
+	.sw { width: 28px; height: 16px; border-radius: 4px; display: inline-block; }
+	.sw.done { background: var(--surface); border: 1.5px solid var(--ink); }
+	.sw.review { background: var(--accent-soft); border: 1.5px solid var(--accent); }
+	.sw.plan { background: var(--surface); border: 1.5px dashed var(--accent); }
+	.sw.later { background: transparent; border: 1.5px dotted var(--muted); }
+	figure { margin: 20px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+	.scroll { overflow-x: auto; }
+	figure svg { display: block; max-width: none; height: auto; }
+	figcaption { margin-top: 12px; font-size: 13.5px; color: var(--muted); max-width: 820px; }
+
+	/* 图中的元素 */
+	svg { color: var(--ink); font-family: inherit; }
+	.box { fill: var(--surface); stroke: var(--ink); stroke-width: 1.4; }
+	.box.review { fill: var(--accent-soft); stroke: var(--accent); }
+	.box.plan { fill: var(--surface); stroke: var(--accent); stroke-dasharray: 6 4; }
+	.box.later { fill: none; stroke: var(--muted); stroke-dasharray: 2 4; }
+	.box.frame { fill: var(--sunk); stroke: var(--line); }
+	.box.alert { fill: var(--pending-soft); stroke: var(--pending); }
+	.box.ok { fill: var(--good-soft); stroke: var(--good); }
+	.t { fill: currentColor; font-size: 13px; font-weight: 650; }
+	.s { fill: var(--muted); font-size: 11.5px; }
+	.lbl { fill: var(--muted); font-size: 11px; }
+	.lbl.a { fill: var(--accent); }
+	.lbl.p { fill: var(--pending); }
+	.ln { stroke: currentColor; stroke-width: 1.3; fill: none; }
+	.ln.a { stroke: var(--accent); stroke-dasharray: 6 4; }
+	.ln.p { stroke: var(--pending); }
+	.ln.m { stroke: var(--muted); stroke-dasharray: 3 3; }
+	.ah { fill: currentColor; }
+	.ah.a { fill: var(--accent); }
+	.ah.p { fill: var(--pending); }
+	.ah.m { fill: var(--muted); }
+
+	table { border-collapse: collapse; width: 100%; font-size: 14px; }
+	.tscroll { overflow-x: auto; margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+	th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+	th { font-size: 12.5px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+	tr:last-child td { border-bottom: none; }
+	td.k { white-space: nowrap; font-weight: 600; }
+
+	.road { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+	.col { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+	.col h3 { font-size: 14px; margin: 0 0 10px; display: flex; align-items: center; gap: 8px; }
+	.col ul { margin: 0; padding-left: 18px; font-size: 14px; }
+	.col li { margin-bottom: 6px; }
+	.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+	.dot.done { background: var(--good); }
+	.dot.review { background: var(--accent); }
+	.dot.plan { border: 1.5px dashed var(--accent); }
+	.dot.later { border: 1.5px dotted var(--muted); }
+	.ask { margin-top: 16px; background: var(--pending-soft); border: 1px solid var(--pending); border-radius: 14px; padding: 16px 18px; }
+	.ask h3 { margin: 0 0 8px; font-size: 14px; color: var(--pending); }
+	.ask ol { margin: 0; padding-left: 20px; font-size: 14px; }
+	.ask li { margin-bottom: 6px; }
+	code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em; background: var(--sunk); padding: 1px 5px; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+	<header class="prose">
+		<p class="eyebrow">orgos · 阶段一设计梳理 · 最近更新 2026 年 9 月 28 日</p>
+		<h1>orgos 架构</h1>
+		<p class="lede">人与各自的代理组在同一个即时通讯里协作：分身对外代表本人，助手替本人干活，设备 Runner 把员工电脑变成虚拟总线上的节点。下面依次是：系统分层、一条消息怎么被分身处理、一个代理的多条线（话题）、记忆层，以及关键决定与进度。</p>
+		<div class="legend" aria-label="图例">
+			<span><i class="sw done"></i>已完成并验收</span>
+			<span><i class="sw review"></i>施工中</span>
+			<span><i class="sw plan"></i>已定方案，待施工</span>
+			<span><i class="sw later"></i>阶段二</span>
+		</div>
+	</header>
+
+	<section aria-labelledby="f1">
+		<h2 id="f1">系统分层</h2>
+		<figure>
+			<div class="scroll">
+				<svg viewBox="0 0 1160 820" width="1160" role="img" aria-label="服务端分为接入层、代理层、业务层、平台层四层，上层调用下层，业务层的新事件经事件通知唤起代理层；服务端下方是 PostgreSQL 与员工电脑上的 Runner，Runner 主动连回能力总线并以 ACP 驱动外部 agent；企业模型网关连接模型厂商。">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="arM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker></defs>
+<rect class="box " x="150" y="18" width="560" height="62" rx="10"/>
+<text class="t" x="164" y="40">Web 应用</text>
+<text class="s" x="164" y="60">聊天 · 待办 · 代理组 · 设备 · 通讯录（模型页、组织树待做）</text>
+<rect class="box " x="725" y="18" width="160" height="62" rx="10"/>
+<text class="t" x="739" y="40">模拟台</text>
+<text class="s" x="739" y="60">一个浏览器扮演多人</text>
+<line class="ln " x1="517" y1="80" x2="517" y2="118" marker-end="url(#ar)" marker-start="url(#ar)"/>
+<text class="lbl " x="528" y="104">REST · 浏览器 WebSocket</text>
+<rect class="box frame" x="30" y="122" width="870" height="498" rx="14"/>
+<text class="t" x="46" y="146">orgos 服务端</text><text class="s" x="46" y="164">Bun + Hono</text><text class="s" x="46" y="182">按租户隔离</text>
+<text class="t" x="46" y="226">接入层</text>
+<rect class="box " x="150" y="196" width="135" height="70" rx="10"/>
+<text class="t" x="164" y="218">REST 接口</text>
+<text class="s" x="164" y="238">入参校验 · 错误体</text>
+<rect class="box " x="300" y="196" width="135" height="70" rx="10"/>
+<text class="t" x="314" y="218">浏览器推送</text>
+<text class="s" x="314" y="238">事件 · 草稿 · 状态</text>
+<rect class="box " x="450" y="196" width="135" height="70" rx="10"/>
+<text class="t" x="464" y="218">Runner 连接</text>
+<text class="s" x="464" y="238">配对令牌 · 心跳</text>
+<rect class="box plan" x="600" y="196" width="135" height="70" rx="10"/>
+<text class="t" x="614" y="218">模型入口</text>
+<text class="s" x="614" y="238">/llm/v1 三协议</text>
+<rect class="box " x="750" y="196" width="135" height="70" rx="10"/>
+<text class="t" x="764" y="218">反代前端</text>
+<text class="s" x="764" y="238">Next.js · HMR</text>
+<text class="t" x="46" y="320">代理层</text><text class="s" x="46" y="338">运行时</text>
+<rect class="box " x="150" y="290" width="160" height="96" rx="10"/>
+<text class="t" x="164" y="312">触发规则</text>
+<text class="s" x="164" y="332">谁该开口：点名 ·</text>
+<text class="s" x="164" y="350">问分身 · 本人忙 · 轮次</text>
+<rect class="box " x="335" y="290" width="160" height="96" rx="10"/>
+<text class="t" x="349" y="312">调度器</text>
+<text class="s" x="349" y="332">同话题单轮 · 打断</text>
+<text class="s" x="349" y="350">防循环 · 恢复运行</text>
+<rect class="box " x="520" y="290" width="170" height="96" rx="10"/>
+<text class="t" x="534" y="312">运行循环</text>
+<text class="s" x="534" y="332">模型 ⇄ 工具 · 流式</text>
+<text class="s" x="534" y="350">运行记录 · 压缩（施工中）</text>
+<rect class="box " x="715" y="290" width="170" height="96" rx="10"/>
+<text class="t" x="729" y="312">工具注册处</text>
+<text class="s" x="729" y="332">为本人 / 为他人收窄</text>
+<text class="s" x="729" y="350">上报 · 协商 · 设备 · 交办</text>
+<line class="ln " x1="310" y1="338" x2="333" y2="338" marker-end="url(#ar)"/>
+<line class="ln " x1="495" y1="338" x2="518" y2="338" marker-end="url(#ar)"/>
+<line class="ln " x1="690" y1="338" x2="713" y2="338" marker-end="url(#ar)"/>
+<text class="t" x="46" y="442">业务层</text><text class="s" x="46" y="460">领域服务</text>
+<rect class="box " x="150" y="412" width="235" height="96" rx="10"/>
+<text class="t" x="164" y="434">身份与主体</text>
+<text class="s" x="164" y="454">人 · 代理 · 租户</text>
+<text class="s" x="164" y="472">部门（待做）· 在线状态</text>
+<rect class="box " x="400" y="412" width="240" height="96" rx="10"/>
+<text class="t" x="414" y="434">会话与话题</text>
+<text class="s" x="414" y="454">私聊 · 群聊都含分身</text>
+<text class="s" x="414" y="472">话题（施工中）· 事件只追加</text>
+<rect class="box " x="655" y="412" width="230" height="96" rx="10"/>
+<text class="t" x="669" y="434">工作对象</text>
+<text class="s" x="669" y="454">待办：上报 · 审批 · 确认</text>
+<text class="s" x="669" y="472">协商 · 任务（A2A 状态）</text>
+<polyline class="ln m" points="470,412 470,400 230,400 230,388" marker-end="url(#arM)"/>
+<text class="lbl " x="250" y="396">新事件唤起</text>
+<text class="t" x="46" y="554">平台层</text><text class="s" x="46" y="572">共享能力</text>
+<rect class="box plan" x="150" y="524" width="235" height="86" rx="10"/>
+<text class="t" x="164" y="546">记忆层</text>
+<text class="s" x="164" y="566">证据 → 条目 → 画像</text>
+<text class="s" x="164" y="584">按类别授权检索</text>
+<rect class="box " x="400" y="524" width="240" height="86" rx="10"/>
+<text class="t" x="414" y="546">能力总线</text>
+<text class="s" x="414" y="566">设备能力声明 · 下发调用</text>
+<text class="s" x="414" y="584">审批挂起 · ACP 帧</text>
+<rect class="box plan" x="655" y="524" width="230" height="86" rx="10"/>
+<text class="t" x="669" y="546">企业模型网关</text>
+<text class="s" x="669" y="566">三协议互转 · 路由组</text>
+<text class="s" x="669" y="584">计量一处 · 任务令牌</text>
+<line class="ln " x1="517" y1="266" x2="517" y2="288" marker-end="url(#ar)"/>
+<text class="lbl " x="528" y="282">调用</text>
+<line class="ln " x1="600" y1="386" x2="600" y2="410" marker-end="url(#ar)"/>
+<text class="lbl " x="610" y="402">调用服务</text>
+<line class="ln " x1="800" y1="386" x2="800" y2="522" marker-end="url(#ar)"/>
+<text class="lbl " x="808" y="470">模型 · 设备 · 记忆</text>
+<rect class="box " x="935" y="530" width="205" height="80" rx="10"/>
+<text class="t" x="949" y="552">模型厂商</text>
+<text class="s" x="949" y="572">DeepSeek（已接）</text>
+<text class="s" x="949" y="590">Anthropic · OpenAI · Kimi…</text>
+<line class="ln " x1="885" y1="567" x2="933" y2="567" marker-end="url(#ar)"/>
+<text class="lbl " x="890" y="559">三协议</text>
+<rect class="box " x="45" y="660" width="330" height="86" rx="10"/>
+<text class="t" x="59" y="682">PostgreSQL 16</text>
+<text class="s" x="59" y="702">事件 · 话题 · 待办 · 任务与运行记录</text>
+<text class="s" x="59" y="720">资料 · 设备 · 用量，全部带租户编号</text>
+<line class="ln " x1="210" y1="620" x2="210" y2="658" marker-end="url(#ar)" marker-start="url(#ar)"/>
+<text class="lbl " x="220" y="644">读写（按租户）</text>
+<rect class="box" x="400" y="650" width="485" height="120" rx="12"/>
+<text class="t" x="416" y="674">设备 Runner（员工电脑）</text>
+<rect class="box " x="414" y="688" width="140" height="66" rx="8"/>
+<text class="t" x="428" y="710">连接桥</text>
+<text class="s" x="428" y="730">主动连出 · 重连</text>
+<rect class="box " x="568" y="688" width="140" height="66" rx="8"/>
+<text class="t" x="582" y="710">设备能力</text>
+<text class="s" x="582" y="730">读写 · 执行</text>
+<rect class="box " x="722" y="688" width="150" height="66" rx="8"/>
+<text class="t" x="736" y="710">ACP 客户端</text>
+<text class="s" x="736" y="730">驱动本机 agent</text>
+<line class="ln " x1="484" y1="688" x2="484" y2="612" marker-end="url(#ar)"/>
+<text class="lbl " x="494" y="640">主动连出 WS</text>
+<rect class="box " x="935" y="660" width="205" height="100" rx="10"/>
+<text class="t" x="949" y="682">外部 agent</text>
+<text class="s" x="949" y="702">Claude Code · Codex</text>
+<text class="s" x="949" y="720">pi · Hermes（默认关闭）</text>
+<text class="s" x="949" y="738">每个话题一个会话</text>
+<line class="ln " x1="872" y1="721" x2="933" y2="721" marker-end="url(#ar)"/>
+<text class="lbl " x="890" y="713">ACP</text>
+<polyline class="ln a" points="1037,660 1037,630 770,630 770,612" marker-end="url(#arA)"/>
+<text class="lbl a" x="790" y="646">企业模式：任务令牌调模型</text>
+</svg>
+			</div>
+			<figcaption>四层自上而下调用：接入层把请求交给代理层或直接交给业务层，代理层经工具调用业务层与平台层；唯一的反向是业务层产生新事件时唤起代理层的触发规则（灰色虚线）。员工电脑上的 Runner 总是主动连出一条 WebSocket，服务端从不连进员工电脑，也不组 VPN；Runner 和外部 agent 都拿不到任何模型厂商的 key。企业模型网关建成后，服务端自己的代理引擎和企业模式下的外部 agent 都只经它调用模型，计量只有这一处。</figcaption>
+		</figure>
+	</section>
+
+	<section aria-labelledby="f2">
+		<h2 id="f2">一条消息怎么被分身处理</h2>
+		<p class="prose">以许诺在私聊里问林晓为例。私聊里同时有林晓本人和她的分身；分身只在三种情况下开口，开口后先查记忆、再判断是否在授权内。</p>
+		<figure>
+			<div class="scroll">
+				<svg viewBox="0 0 1160 380" width="1160" role="img" aria-label="许诺在与林晓的私聊里发消息；触发规则判断是否点名、问分身或林晓忙碌，否则分身不开口；满足时林晓的分身为许诺运行，先按可见范围和类别授权检索记忆，授权内就附依据回答，授权外就上报到林晓的待办，林晓答复后分身恢复运行并回复许诺，答复同时写入记忆。">
+					<defs>
+						<marker id="br" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker>
+						<marker id="brP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="ah p"/></marker>
+						<marker id="brM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker>
+					</defs>
+
+					<rect class="box" x="20" y="40" width="160" height="70" rx="10"/>
+					<text class="t" x="36" y="68">许诺发消息</text>
+					<text class="s" x="36" y="90">在与林晓的私聊里</text>
+
+					<rect class="box" x="230" y="40" width="190" height="70" rx="10"/>
+					<text class="t" x="246" y="68">触发规则</text>
+					<text class="s" x="246" y="90">点名 · 问分身 · 林晓忙</text>
+					<line class="ln" x1="180" y1="75" x2="228" y2="75" marker-end="url(#br)"/>
+
+					<rect class="box" x="230" y="170" width="190" height="60" rx="10"/>
+					<text class="t" x="246" y="196">分身不开口</text>
+					<text class="s" x="246" y="216">人和人正常聊</text>
+					<line class="ln" x1="325" y1="110" x2="325" y2="168" marker-end="url(#br)"/>
+					<text class="lbl" x="334" y="144">都不满足</text>
+
+					<rect class="box" x="470" y="40" width="190" height="70" rx="10"/>
+					<text class="t" x="486" y="68">林晓的分身运行</text>
+					<text class="s" x="486" y="90">以"为许诺办事"身份</text>
+					<line class="ln" x1="420" y1="75" x2="468" y2="75" marker-end="url(#br)"/>
+					<text class="lbl" x="424" y="66">满足其一</text>
+
+					<rect class="box plan" x="710" y="40" width="200" height="70" rx="10"/>
+					<text class="t" x="726" y="68">检索记忆</text>
+					<text class="s" x="726" y="90">可见范围 ∩ 类别授权</text>
+					<line class="ln" x1="660" y1="75" x2="708" y2="75" marker-end="url(#br)"/>
+
+					<rect class="box ok" x="960" y="40" width="180" height="70" rx="10"/>
+					<text class="t" x="976" y="68">在私聊里回答</text>
+					<text class="s" x="976" y="90">附依据</text>
+					<line class="ln" x1="910" y1="75" x2="958" y2="75" marker-end="url(#br)"/>
+					<text class="lbl" x="916" y="66">授权内</text>
+
+					<rect class="box alert" x="710" y="170" width="200" height="70" rx="10"/>
+					<text class="t" x="726" y="198">上报卡片</text>
+					<text class="s" x="726" y="220">进林晓的待办</text>
+					<line class="ln p" x1="810" y1="110" x2="810" y2="168" marker-end="url(#brP)"/>
+					<text class="lbl p" x="820" y="144">超出授权</text>
+
+					<rect class="box alert" x="470" y="170" width="190" height="70" rx="10"/>
+					<text class="t" x="486" y="198">林晓答复</text>
+					<text class="s" x="486" y="220">或暂不答复</text>
+					<line class="ln p" x1="710" y1="205" x2="662" y2="205" marker-end="url(#brP)"/>
+
+					<rect class="box ok" x="470" y="290" width="190" height="64" rx="10"/>
+					<text class="t" x="486" y="316">分身恢复运行</text>
+					<text class="s" x="486" y="338">在同一私聊转告许诺</text>
+					<line class="ln p" x1="565" y1="240" x2="565" y2="288" marker-end="url(#brP)"/>
+
+					<rect class="box plan" x="710" y="290" width="200" height="64" rx="10"/>
+					<text class="t" x="726" y="316">写入记忆</text>
+					<text class="s" x="726" y="338">答复成为最高优先依据</text>
+					<line class="ln m" x1="660" y1="205" x2="700" y2="205"/>
+					<polyline class="ln m" points="680,205 680,322 708,322" marker-end="url(#brM)"/>
+				</svg>
+			</div>
+			<figcaption>橙色是需要本人拍板的路径：真实模型实测中，许诺问 85 折能否答应，分身上报，林晓答复"最低 9 折"后分身在原私聊转告。许诺自己的分身全程不说话；林晓在私聊里亲自发言也不会触发她的分身。</figcaption>
+		</figure>
+	</section>
+
+	<section aria-labelledby="fT">
+		<h2 id="fT">一个代理，多条线：会话内话题（施工中）</h2>
+		<p class="prose">每个代理和本人只有一个私聊，列表里只占一行。私聊里分话题，每个话题是一份独立上下文，外部 agent 每个话题对应一个自己的会话；任务就是带状态的话题。</p>
+		<figure>
+			<div class="scroll">
+				<svg viewBox="0 0 1160 290" width="1160" role="img" aria-label="会话列表里林晓的 Claude Code 只有一行；点进去是一个私聊，私聊里有主线、订单迁移脚本、结算页测试三个话题，其中结算页测试是任务话题；每个话题各对应 Claude Code 的一个 ACP 会话。">
+					<defs><marker id="dr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker></defs>
+					<rect class="box frame" x="20" y="20" width="240" height="250" rx="12"/>
+					<text class="t" x="36" y="46">会话列表</text>
+					<rect class="box" x="36" y="62" width="208" height="38" rx="8"/><text class="s" x="50" y="86">周野</text>
+					<rect class="box" x="36" y="108" width="208" height="38" rx="8" style="stroke-width:2.2"/><text class="t" x="50" y="132">林晓的 Claude Code</text>
+					<rect class="box" x="36" y="154" width="208" height="38" rx="8"/><text class="s" x="50" y="178">Q4 发布（群）</text>
+					<rect class="box" x="36" y="200" width="208" height="38" rx="8"/><text class="s" x="50" y="224">许诺</text>
+					<line class="ln" x1="244" y1="127" x2="298" y2="127" marker-end="url(#dr)"/>
+					<rect class="box frame" x="300" y="20" width="330" height="250" rx="12"/>
+					<text class="t" x="316" y="46">私聊里的话题</text>
+					<rect class="box" x="316" y="62" width="298" height="46" rx="8"/><text class="t" x="330" y="83">主线</text><text class="s" x="330" y="100">闲聊、随手问</text>
+					<rect class="box" x="316" y="116" width="298" height="46" rx="8"/><text class="t" x="330" y="137">订单迁移脚本</text><text class="s" x="330" y="154">普通话题</text>
+					<rect class="box ok" x="316" y="170" width="298" height="46" rx="8"/><text class="t" x="330" y="191">结算页测试</text><text class="s" x="330" y="208">任务话题：有状态与产出</text>
+					<text class="lbl" x="316" y="246">＋ 新话题 · 转为任务 · 转成群聊</text>
+					<rect class="box frame" x="690" y="20" width="450" height="250" rx="12"/>
+					<text class="t" x="706" y="46">设备上的 Claude Code</text>
+					<rect class="box" x="706" y="62" width="190" height="46" rx="8"/><text class="s" x="720" y="90">ACP 会话 1</text>
+					<rect class="box" x="706" y="116" width="190" height="46" rx="8"/><text class="s" x="720" y="144">ACP 会话 2</text>
+					<rect class="box" x="706" y="170" width="190" height="46" rx="8"/><text class="s" x="720" y="198">ACP 会话 3</text>
+					<line class="ln" x1="614" y1="85" x2="704" y2="85" marker-end="url(#dr)"/>
+					<line class="ln" x1="614" y1="139" x2="704" y2="139" marker-end="url(#dr)"/>
+					<line class="ln" x1="614" y1="193" x2="704" y2="193" marker-end="url(#dr)"/>
+					<text class="lbl" x="640" y="77">一对一</text>
+					<text class="s" x="916" y="90">长话题压缩成检查点</text>
+					<text class="s" x="916" y="144">每轮附：近两天在其他</text>
+					<text class="s" x="916" y="162">话题里最后说的话</text>
+					<text class="s" x="916" y="198">每次运行一条运行记录</text>
+				</svg>
+			</div>
+			<figcaption>群聊同理：拉一个人进群，他的分身自动一起进群，成员列表只列人。放弃的方案：另开一条线就建群（列表膨胀）、代理下挂多个会话（违反 IM 习惯）、只用任务（闲聊也得建任务）、自动分段（不可控）。见 decisions/0004。</figcaption>
+		</figure>
+	</section>
+
+	<section aria-labelledby="f3">
+		<h2 id="f3">记忆从哪来、到哪去（待施工）</h2>
+		<p class="prose">不需要对分身说"记住"。原始证据本来就在存，记忆整理在会话告一段落、任务结束时自动提炼；本地 agent 做过的活随任务的过程记录一起进来。</p>
+		<figure>
+			<div class="scroll">
+				<svg viewBox="0 0 1160 400" width="1160" role="img" aria-label="记忆层三层：第零层证据包括聊天事件、任务过程记录、待办答复与协商结果、人写的资料；经自动提炼生成第一层记忆条目，带出处、可见范围和类别，新版本划掉旧版本；定期重建第二层按人和项目的画像。分身替某人回答时先按来源可见范围与类别授权过滤，再检索并附依据回答，本人更正写回条目。">
+					<defs>
+						<marker id="cr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker>
+						<marker id="crM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker>
+					</defs>
+
+					<rect class="box frame" x="20" y="20" width="270" height="226" rx="12"/>
+					<text class="t" x="36" y="46">第 0 层 · 证据（已在存）</text>
+					<rect class="box" x="36" y="60" width="238" height="38" rx="8"/>
+					<text class="s" x="50" y="84">聊天事件</text>
+					<rect class="box" x="36" y="104" width="238" height="38" rx="8"/>
+					<text class="s" x="50" y="128">任务过程：含 Claude Code 的改动与产出</text>
+					<rect class="box" x="36" y="148" width="238" height="38" rx="8"/>
+					<text class="s" x="50" y="172">待办答复 · 协商结果</text>
+					<rect class="box" x="36" y="192" width="238" height="38" rx="8"/>
+					<text class="s" x="50" y="216">人写的资料</text>
+
+					<rect class="box plan" x="340" y="92" width="190" height="84" rx="10"/>
+					<text class="t" x="356" y="118">记忆整理</text>
+					<text class="s" x="356" y="140">会话告一段落 · 任务结束</text>
+					<text class="s" x="356" y="160">便宜模型批量提炼</text>
+					<line class="ln" x1="290" y1="134" x2="338" y2="134" marker-end="url(#cr)"/>
+
+					<rect class="box plan" x="580" y="60" width="270" height="148" rx="10"/>
+					<text class="t" x="596" y="86">第 1 层 · 记忆条目</text>
+					<text class="s" x="596" y="110">事实 · 决定 · 承诺 · 进展 · 偏好</text>
+					<text class="s" x="596" y="132">每条带：出处链接 · 时间 · 所属者</text>
+					<text class="s" x="596" y="154">可见范围（由来源自动决定）· 类别</text>
+					<text class="s" x="596" y="176">信息更新：旧条目划掉，链到新条目</text>
+					<line class="ln" x1="530" y1="134" x2="578" y2="134" marker-end="url(#cr)"/>
+
+					<rect class="box plan" x="900" y="80" width="240" height="108" rx="10"/>
+					<text class="t" x="916" y="106">第 2 层 · 画像</text>
+					<text class="s" x="916" y="130">按人、按项目的"当前状态"</text>
+					<text class="s" x="916" y="152">负责什么 · 在推进什么</text>
+					<text class="s" x="916" y="172">最近定了什么</text>
+					<line class="ln" x1="850" y1="134" x2="898" y2="134" marker-end="url(#cr)"/>
+					<text class="lbl" x="856" y="126">定期重建</text>
+
+					<!-- 取用 -->
+					<rect class="box" x="20" y="300" width="230" height="70" rx="10"/>
+					<text class="t" x="36" y="328">分身替某人回答</text>
+					<text class="s" x="36" y="350">例如替林晓回答许诺</text>
+
+					<rect class="box plan" x="300" y="300" width="260" height="70" rx="10"/>
+					<text class="t" x="316" y="328">过滤</text>
+					<text class="s" x="316" y="350">来源可见范围 ∩ 林晓的类别授权</text>
+					<line class="ln" x1="250" y1="335" x2="298" y2="335" marker-end="url(#cr)"/>
+
+					<rect class="box plan" x="610" y="300" width="240" height="70" rx="10"/>
+					<text class="t" x="626" y="328">检索</text>
+					<text class="s" x="626" y="350">关键词 · 时间 · 人与项目</text>
+					<line class="ln" x1="560" y1="335" x2="608" y2="335" marker-end="url(#cr)"/>
+					<line class="ln" x1="715" y1="298" x2="715" y2="210" marker-end="url(#cr)"/>
+					<line class="ln" x1="820" y1="298" x2="960" y2="190" marker-end="url(#cr)"/>
+
+					<rect class="box ok" x="900" y="300" width="240" height="70" rx="10"/>
+					<text class="t" x="916" y="328">回答附依据</text>
+					<text class="s" x="916" y="350">没依据就明说或上报</text>
+					<line class="ln" x1="850" y1="335" x2="898" y2="335" marker-end="url(#cr)"/>
+
+					<polyline class="ln m" points="1020,370 1020,392 520,392 520,220 596,208" marker-end="url(#crM)"/>
+					<text class="lbl" x="700" y="387">本人在"代答记录"里更正 → 写回条目，最高优先</text>
+				</svg>
+			</div>
+			<figcaption>对外授权按类别，默认宽松：除私人事务、薪资、健康、家庭等明确禁止的类别外都可对同事讲；来自第三人私聊的内容只转述提炼后的事实，不引用原话、不透露来源。本地 agent 自己的记忆文件不接入，只用经 orgos 交办的过程记录。向量检索放到阶段二。</figcaption>
+		</figure>
+	</section>
+
+	<section aria-labelledby="f4">
+		<h2 id="f4">代理与沟通方式</h2>
+		<div class="tscroll">
+			<table>
+				<thead><tr><th>代理</th><th>属于谁</th><th>在哪运行</th><th>对谁开口</th><th>状态</th></tr></thead>
+				<tbody>
+					<tr><td class="k">分身</td><td>每人一个</td><td>服务端内置引擎</td><td>本人随时；别人在私聊或群里点名、问分身、或本人忙碌时</td><td>已完成</td></tr>
+					<tr><td class="k">助手</td><td>本人（可建多个）</td><td>服务端内置引擎，可绑设备</td><td>只替本人干活；被分身转交时受"为他人"限制</td><td>已完成</td></tr>
+					<tr><td class="k">外部助手</td><td>本人</td><td>设备 Runner 上的 Claude Code、Codex、pi、Hermes</td><td>只替本人干活，用本人订阅或网关令牌</td><td>已完成（Claude Code 真机验收）</td></tr>
+					<tr><td class="k">部门分身</td><td>部门（负责人拍板）</td><td>服务端内置引擎</td><td>任何同事可直接问；章程内自己决定，章程外上报负责人</td><td>待施工</td></tr>
+				</tbody>
+			</table>
+		</div>
+		<div class="tscroll">
+			<table>
+				<thead><tr><th>沟通</th><th>机制</th><th>实测</th></tr></thead>
+				<tbody>
+					<tr><td class="k">和自己的代理组聊</td><td>私聊或群聊；群里按 Lorca 式轮次，被 @ 的先说，没话就跳过</td><td>分身按路线图答出"10 月 31 日"，花费约 0.0013 元</td></tr>
+					<tr><td class="k">和真人聊</td><td>普通私聊、群聊；分身在场但不插嘴</td><td>多窗格实时收发</td></tr>
+					<tr><td class="k">别人问我的分身</td><td>见第二张图；授权外上报，本人答复后接着回复</td><td>85 折上报后按"最低 9 折"转告</td></tr>
+					<tr><td class="k">分身之间协商</td><td>结构化提案往返，最多 8 步；拿不准问各自本人；谈成后双方确认</td><td>约到"10 月 5 日 10:00–10:30"，8 次模型调用</td></tr>
+					<tr><td class="k">代理用我的电脑</td><td>设备 Runner；读直接做，写与执行先审批</td><td>批准后 done.txt 真实写入磁盘</td></tr>
+				</tbody>
+			</table>
+		</div>
+	</section>
+
+	<section aria-labelledby="fD">
+		<h2 id="fD">关键决定</h2>
+		<div class="tscroll">
+			<table>
+				<thead><tr><th>问题</th><th>决定</th><th>记录</th></tr></thead>
+				<tbody>
+					<tr><td class="k">代理循环</td><td>自写最小循环，不用 pi-agent-core；多厂商时再评估</td><td>decisions/0001</td></tr>
+					<tr><td class="k">外部 agent 怎么映射</td><td>任务（A2A 状态机）+ 会话内话题；每话题一个 ACP 会话</td><td>0002、0004</td></tr>
+					<tr><td class="k">组织</td><td>部门是主体，部门分身归部门、上报负责人；不做个人行为统计</td><td>0002</td></tr>
+					<tr><td class="k">模型</td><td>企业模型网关，三协议互转，计量一处；外部 agent 默认企业模式</td><td>0003</td></tr>
+					<tr><td class="k">订阅</td><td>只作"执行者"：由官方 CLI 用本人登录干活；不读取令牌、不转成 API</td><td>0003</td></tr>
+					<tr><td class="k">驱动本机 agent</td><td>ACP（Zed 的 Agent Client Protocol，40 多个 agent 支持）。MCP 管工具、A2A 管跨公司、AG-UI 属前端层，都不替代它；注意与 IBM 的同名协议（已并入 A2A）区分</td><td>本页</td></tr>
+					<tr><td class="k">设备联网</td><td>保持 Runner 主动连出的 WebSocket，不组 VPN；暴露本机服务时做经这条连接的端口转发；设备间大流量阶段二再考虑 iroh 或 tsnet</td><td>本页</td></tr>
+					<tr><td class="k">记忆</td><td>自动提炼三层；对外按类别授权、默认宽松；第三人私聊只转述事实；不接本地 agent 的记忆文件；先不用向量</td><td>0004（细则待写）</td></tr>
+				</tbody>
+			</table>
+		</div>
+	</section>
+
+	<section aria-labelledby="f5">
+		<h2 id="f5">进度</h2>
+		<div class="road">
+			<div class="col"><h3><i class="dot done"></i>已完成并验收</h3><ul>
+				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li></ul></div>
+			<div class="col"><h3><i class="dot review"></i>施工中</h3><ul>
+				<li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身、pi 与 Hermes 默认关闭</li></ul></div>
+			<div class="col"><h3><i class="dot plan"></i>下一步（按顺序）</h3><ul>
+				<li>企业模型网关</li><li>记忆层（先写细则）</li><li>组织结构与部门分身</li><li>端到端总验收</li></ul></div>
+			<div class="col"><h3><i class="dot later"></i>阶段二</h3><ul>
+				<li>邮件</li><li>工作台与小应用</li><li>跨公司 A2A 网关</li><li>向量检索</li><li>端口转发、设备间直连</li><li>更多 ACP agent：Kimi CLI、Qwen Code、Gemini CLI、Copilot</li></ul></div>
+		</div>
+	</section>
+</div>
