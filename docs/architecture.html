@@ -179,7 +179,7 @@
 <rect class="box " x="520" y="290" width="170" height="96" rx="10"/>
 <text class="t" x="534" y="312">运行循环</text>
 <text class="s" x="534" y="332">模型 ⇄ 工具 · 流式</text>
-<text class="s" x="534" y="350">运行记录 · 压缩（施工中）</text>
+<text class="s" x="534" y="350">运行记录 · 压缩</text>
 <rect class="box " x="715" y="290" width="170" height="96" rx="10"/>
 <text class="t" x="729" y="312">工具注册处</text>
 <text class="s" x="729" y="332">为本人 / 为他人收窄</text>
@@ -195,7 +195,7 @@
 <rect class="box " x="400" y="412" width="240" height="96" rx="10"/>
 <text class="t" x="414" y="434">会话与话题</text>
 <text class="s" x="414" y="454">私聊 · 群聊都含分身</text>
-<text class="s" x="414" y="472">话题（施工中）· 事件只追加</text>
+<text class="s" x="414" y="472">话题 · 事件只追加</text>
 <rect class="box " x="655" y="412" width="230" height="96" rx="10"/>
 <text class="t" x="669" y="434">工作对象</text>
 <text class="s" x="669" y="454">待办：上报 · 审批 · 确认</text>
@@ -333,7 +333,7 @@
 	</section>
 
 	<section aria-labelledby="fT">
-		<h2 id="fT">一个代理，多条线：会话内话题（施工中）</h2>
+		<h2 id="fT">一个代理，多条线：会话内话题</h2>
 		<p class="prose">每个代理和本人只有一个私聊，列表里只占一行。私聊里分话题，每个话题是一份独立上下文，外部 agent 每个话题对应一个自己的会话；任务就是带状态的话题。</p>
 		<figure>
 			<div class="scroll">
@@ -367,7 +367,7 @@
 					<text class="s" x="916" y="198">每次运行一条运行记录</text>
 				</svg>
 			</div>
-			<figcaption>群聊同理：拉一个人进群，他的分身自动一起进群、退群一起退，成员列表只列人；分身在群里同样平时不开口，被点名或本人忙碌、离开时才替本人回答。放弃的方案：另开一条线就建群（列表膨胀）、代理下挂多个会话（违反 IM 习惯）、只用任务（闲聊也得建任务）、自动分段（不可控）。见 decisions/0004。</figcaption>
+			<figcaption>群聊同理：拉一个人进群，他的分身自动一起进群、退群一起退，成员列表只列人；分身在群里平时不开口，只在三种情况开口：它被 @；有人 @ 本人并选"问分身"；本人忙碌或离开时被 @。放弃的方案：另开一条线就建群（列表膨胀）、代理下挂多个会话（违反 IM 习惯）、只用任务（闲聊也得建任务）、自动分段（不可控）。见 decisions/0004。</figcaption>
 		</figure>
 	</section>
 
@@ -495,9 +495,9 @@
 		<h2 id="f5">进度</h2>
 		<div class="road">
 			<div class="col"><h3><i class="dot done"></i>已完成并验收</h3><ul>
-				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li></ul></div>
+				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li></ul></div>
 			<div class="col"><h3><i class="dot review"></i>施工中</h3><ul>
-				<li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身、pi 与 Hermes 默认关闭</li></ul></div>
+				<li>暂无；下一步开始企业模型网关</li></ul></div>
 			<div class="col"><h3><i class="dot plan"></i>下一步（按顺序）</h3><ul>
 				<li>企业模型网关</li><li>记忆层（先写细则）</li><li>组织结构与部门分身</li><li>端到端总验收</li></ul></div>
 			<div class="col"><h3><i class="dot later"></i>阶段二</h3><ul>
