@@ -1109,4 +1109,119 @@
 				<li>邮件</li><li>工作台与小应用</li><li>跨公司 A2A 网关</li><li>向量检索、按项目的画像</li><li>端口转发、设备间直连</li><li>更多 ACP agent：Kimi CLI、Qwen Code、Gemini CLI、Copilot</li></ul></div>
 		</div>
 	</section>
+	<section aria-labelledby="fN">
+		<h2 id="fN">走向正式产品</h2>
+		<p class="prose">MVP 验证了四种沟通、部门、设备、外部 agent、记忆与"指挥代理操作软件"能在一套系统里成立。正式产品建议<strong>保留骨架、替换实现</strong>：下面第一张表是经过验证、值得原样带走的设计；第二张是 MVP 为了快而做的简化，正式开发时要重做；最后是具体的技术债。</p>
+		<figure>
+			<div class="scroll">
+<svg viewBox="0 0 1160 480" width="1160" role="img" aria-label="从 MVP 的单进程到正式产品：左侧现在所有模块在一个进程里，推送连接表、调度队列、外部会话槽与记忆作业只存在内存中；右侧目标是无状态的接口实例、实时网关、独立的模型网关与作业工作者，共享持久队列、消息总线与 PostgreSQL。">
+<defs><marker id="ev" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="evA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="evM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker><marker id="evP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah p"/></marker></defs>
+<rect class="box frame" x="20" y="20" width="420" height="440" rx="14"/>
+<text class="t" x="36" y="46">现在（MVP）：一个进程</text>
+<rect class="box " x="36" y="62" width="388" height="250" rx="10"/>
+<text class="t" x="50" y="86">orgos 服务端进程</text>
+<rect class="box" x="50" y="104" width="360" height="22" rx="5"/>
+<text class="s" x="62" y="120">接口与鉴权</text>
+<rect class="box alert" x="50" y="132" width="360" height="22" rx="5"/>
+<text class="s" x="62" y="148">浏览器推送（内存连接表）</text>
+<rect class="box alert" x="50" y="160" width="360" height="22" rx="5"/>
+<text class="s" x="62" y="176">Runner 连接（内存连接表）</text>
+<rect class="box alert" x="50" y="188" width="360" height="22" rx="5"/>
+<text class="s" x="62" y="204">调度队列（内存）</text>
+<rect class="box alert" x="50" y="216" width="360" height="22" rx="5"/>
+<text class="s" x="62" y="232">外部会话槽（内存）</text>
+<rect class="box alert" x="50" y="244" width="360" height="22" rx="5"/>
+<text class="s" x="62" y="260">记忆作业执行器（进程内定时）</text>
+<rect class="box" x="50" y="272" width="360" height="22" rx="5"/>
+<text class="s" x="62" y="288">模型网关</text>
+<rect class="box " x="36" y="336" width="388" height="60" rx="10"/>
+<text class="t" x="48" y="358">PostgreSQL</text>
+<text class="s" x="48" y="378">所有持久数据</text>
+<line class="ln " x1="230" y1="312" x2="230" y2="334" marker-end="url(#ev)" marker-start="url(#ev)"/>
+<text class="s" x="36" y="430">橙色部分的状态只在这个进程的内存里：</text>
+<text class="s" x="36" y="448">起第二个实例，消息、队列、连接就会分裂。</text>
+<line class="ln " x1="448" y1="240" x2="492" y2="240" marker-end="url(#ev)"/>
+<rect class="box frame" x="500" y="20" width="640" height="440" rx="14"/>
+<text class="t" x="516" y="46">正式产品：无状态实例 + 共享的队列与总线</text>
+<rect class="box ok" x="516" y="62" width="190" height="84" rx="10"/>
+<text class="t" x="528" y="84">接口实例 ×N</text>
+<text class="s" x="528" y="104">无状态，可随意扩缩</text>
+<text class="s" x="528" y="121">鉴权 · 业务 · 工具</text>
+<rect class="box ok" x="722" y="62" width="190" height="84" rx="10"/>
+<text class="t" x="734" y="84">实时网关 ×N</text>
+<text class="s" x="734" y="104">浏览器与 Runner 长连接</text>
+<text class="s" x="734" y="121">按主体路由推送</text>
+<rect class="box ok" x="928" y="62" width="196" height="84" rx="10"/>
+<text class="t" x="940" y="84">模型网关</text>
+<text class="s" x="940" y="104">可独立部署与扩缩</text>
+<text class="s" x="940" y="121">计量仍只此一处</text>
+<rect class="box ok" x="516" y="176" width="396" height="84" rx="10"/>
+<text class="t" x="528" y="198">作业工作者 ×N</text>
+<text class="s" x="528" y="218">代理运行 · 记忆提炼 · 画像重建 · 外部会话</text>
+<text class="s" x="528" y="235">从持久队列领取，同一话题串行（按话题加锁）</text>
+<rect class="box " x="928" y="176" width="196" height="84" rx="10"/>
+<text class="t" x="940" y="198">消息总线</text>
+<text class="s" x="940" y="218">事件通知 · 帧路由</text>
+<text class="s" x="940" y="235">起步 PG NOTIFY</text>
+<rect class="box " x="516" y="290" width="608" height="70" rx="10"/>
+<text class="t" x="528" y="312">PostgreSQL</text>
+<text class="s" x="528" y="332">事件、话题、任务、记忆……；持久队列（SKIP LOCKED）；行级安全作第二道隔离；向量与全文索引</text>
+<rect class="box later" x="516" y="376" width="296" height="64" rx="10"/>
+<text class="t" x="528" y="398">对象存储</text>
+<text class="s" x="528" y="418">附件、日志归档</text>
+<rect class="box later" x="828" y="376" width="296" height="64" rx="10"/>
+<text class="t" x="840" y="398">密钥管理（KMS）</text>
+<text class="s" x="840" y="418">厂商 key 与租户数据密钥</text>
+<line class="ln " x1="611" y1="146" x2="611" y2="174" marker-end="url(#ev)"/>
+<line class="ln " x1="1026" y1="146" x2="1026" y2="174" marker-end="url(#ev)" marker-start="url(#ev)"/>
+<line class="ln " x1="912" y1="104" x2="926" y2="104" marker-end="url(#ev)"/>
+<line class="ln " x1="912" y1="218" x2="926" y2="218" marker-end="url(#ev)" marker-start="url(#ev)"/>
+<line class="ln " x1="714" y1="260" x2="714" y2="288" marker-end="url(#ev)" marker-start="url(#ev)"/>
+</svg>
+			</div>
+			<figcaption>最大的一处重做是"单进程"：MVP 里凡是橙色的部分，状态只在一个进程的内存里。正式产品把它们拆成无状态实例加共享的持久队列与消息总线；模型网关天然独立，可以最先拆出去。灰色虚线框是 MVP 里还没有、正式产品需要的基础设施。</figcaption>
+		</figure>
+		<h3 style="font-size:16px;margin:28px 0 0">值得原样带走的设计</h3>
+		<div class="tscroll">
+			<table>
+				<thead><tr><th>设计</th><th>为什么值得保留</th><th>代码位置</th></tr></thead>
+				<tbody>
+						<tr><td class="k">主体模型</td><td>人、代理、部门都是主体；代理必有一个本人（人或部门）。分身、助手、部门分身、外部助手都是同一套机制的实例，权限与上报沿同一条链走</td><td>db/schema.ts principals · services/units.ts deciderOf</td></tr>
+						<tr><td class="k">事件只追加、唯一写入口</td><td>所有会话里发生的事都是一条事件，只经 services/events.ts 写入；代办标记也只在这里把 actor 改记为代理。审计、推送、提炼都从事件派生</td><td>services/events.ts</td></tr>
+						<tr><td class="k">话题是上下文边界</td><td>每次代理运行只读本话题，外部 agent 每话题一个会话；任务是带状态的话题。长对话靠检查点压缩，跨话题只给近期简报</td><td>agent/context.ts · services/topics.ts · runs</td></tr>
+						<tr><td class="k">协议包是单一真相源</td><td>REST 出入参、推送帧、Runner 帧、ACP 适配器表、厂商预设、记忆类别都是 Zod 模式，前端、服务端、Runner 共用，只增不改</td><td>packages/protocol</td></tr>
+						<tr><td class="k">企业模型网关</td><td>三种入口协议 × 三种上游协议，经统一中间结构互转；计量、限额、审计天然只有一处；外部 agent 只拿随会话吊销的任务令牌</td><td>gateway/*</td></tr>
+						<tr><td class="k">Runner 主动连出 + ACP</td><td>员工电脑不开端口、不组网；子进程环境清洗，厂商 key 永不下发；外部 agent 靠 ACP 接入，换 agent 只加一行适配器</td><td>apps/runner · protocol/acp.ts</td></tr>
+						<tr><td class="k">记忆的可见性</td><td>可见范围由来源决定，过滤只在一个函数；类别授权 + 第三人规则 + 代答记录与更正，让"替我说话"可控可追</td><td>memory/access.ts</td></tr>
+						<tr><td class="k">能力随接口增长</td><td>代理操作软件走同一套接口与权限；接口目录有完整性测试，新接口不登记就过不了测试</td><td>agent/app-api/catalog.ts</td></tr>
+						<tr><td class="k">三层测试</td><td>集成测试连真库、端到端脚本用确定性假模型、真实模型冒烟单独跑；假模型指令让端到端可复现</td><td>apps/server/tests · scripts/e2e.ts · smoke-llm.ts</td></tr>
+				</tbody>
+			</table>
+		</div>
+		<h3 style="font-size:16px;margin:28px 0 0">MVP 的简化，正式产品要重做</h3>
+		<div class="tscroll">
+			<table>
+				<thead><tr><th>方面</th><th>现状与问题</th><th>建议</th></tr></thead>
+				<tbody>
+						<tr><td class="k">单进程内存状态</td><td>浏览器与 Runner 连接表、调度队列、外部会话槽、记忆作业执行器都在进程内存里，只能跑一个实例，重启会丢排队中的运行</td><td>调度与作业进持久队列（Postgres SKIP LOCKED 起步），连接与推送经消息总线跨实例路由，会话槽落库；见上图</td></tr>
+						<tr><td class="k">可靠性靠提示词</td><td>模型遵守规则不稳：上报调了 6 版提示仍会口头声称已转交，最后靠运行时校验兜住；部门分身会合理化越出章程</td><td>关键行为一律"工具调用 + 服务端校验"；建真实模型评测集（smoke 为起点），每次换模型或改提示都回归</td></tr>
+						<tr><td class="k">检索</td><td>应用层按字二元组打分，没有索引，数据一多就慢、召回弱</td><td>Postgres 全文与 trigram 索引，再加向量检索（列已预留）</td></tr>
+						<tr><td class="k">身份与组织</td><td>只有邮箱密码登录；部门树只有接口，没有管理界面</td><td>SSO（OIDC/SAML）、SCIM 目录同步、多因素认证；组织管理后台</td></tr>
+						<tr><td class="k">权限与隔离</td><td>角色只有租户 owner、成员、部门负责人；隔离只靠应用层 scoped(tenantId)</td><td>RBAC 或策略引擎；数据库行级安全作第二道防线</td></tr>
+						<tr><td class="k">密钥</td><td>厂商 key 用单一 ORGOS_SECRET 派生的密钥加密，换密钥要重填</td><td>接入 KMS，按租户数据密钥，支持轮换</td></tr>
+						<tr><td class="k">代理代办不确认</td><td>本人的代理以本人权限直接操作，群里别人的话会进它的上下文，存在提示注入风险</td><td>social_write 默认确认或做异常检测，按租户可配；敏感接口加二次确认</td></tr>
+						<tr><td class="k">记忆分类靠模型</td><td>私事可能被错分成可对外类别；提炼偶尔写错日期；部门内部资料可经协商内容流出</td><td>拿不准一律归私人事务；本人审阅入口；敏感类别二次校验；资料加"仅部门内"标记并在对外时强制过滤</td></tr>
+						<tr><td class="k">可观测与合规</td><td>日志只到标准输出，有运行记录与计量但没有指标、追踪和审计界面；没有数据保留、导出与删除</td><td>指标与链路追踪、模型调用看板、审计查询界面；按个人信息保护法做保留期、导出与删除</td></tr>
+						<tr><td class="k">部署形态</td><td>只有本地开发形态（Next 开发服务经服务端反代）</td><td>生产构建与容器化，明确 Web、接口、实时网关的部署拓扑与迁移流程</td></tr>
+						<tr><td class="k">桌面客户端</td><td>未签名、无自动更新，Runner 由 app 看护，只在 macOS 验证；安装包 150MB</td><td>签名与公证、自动更新、可选系统级后台服务、Windows/Linux 验证；体积敏感时评估 Tauri</td></tr>
+						<tr><td class="k">功能缺口</td><td>没有文件与附件、邮件、工作台、移动端、跨公司协作；外部 agent 还不能调用 orgos 自身的能力</td><td>按优先级补；外部 agent 经 MCP 复用同一份接口目录</td></tr>
+				</tbody>
+			</table>
+		</div>
+		<h3 style="font-size:16px;margin:28px 0 0">技术债清单</h3>
+		<div class="col" style="margin-top:12px"><ul>
+<li>真实模型实测里，同一次"问部门"按会话统计 5 次模型调用、按运行统计 6 次，差的一次没有查清</li><li>画像重建在相邻两次轮询里对同一人各跑一次，重复计费</li><li>分身转告本人答复时会模仿历史消息格式，带上"【许诺】"前缀；回复里会把群 id 直接念出来</li><li>代办标记会被请求期间派生的后台任务继承（只影响 actor 等于本人的事件）</li><li>应用接口调用的过程记录挂在运行名下，不在任务过程视图里</li><li>代理代发的消息不触发任何代理（有意为之，防止自我打断），因此"转为任务"后被交办的代理不会自动开始</li><li>端到端脚本为跳过 10 分钟去抖直接改了提炼作业的执行时间</li><li>编译版 Runner 里测试用的 fake 适配器不可用；desktop:dev 会清空已打好的安装包</li><li>模型的日期与假期推理会出错（把 9 月 29、30 日当成国庆假期），章程边界会被模型自行放宽（研发部接受了周五）</li>
+		</ul></div>
+		<p class="prose" style="margin-top:16px">正式开发的起点：规格 <code>specs/2026-09-26-phase1-mvp.md</code>（每节写明了已实现的行为，是续做的合同）、决策记录 <code>decisions/</code>、端到端脚本 <code>scripts/e2e.ts</code>（系统承诺了什么的可执行说明）。</p>
+	</section>
 </div>
