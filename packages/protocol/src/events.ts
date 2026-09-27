@@ -13,12 +13,25 @@ import {
 
 export const MESSAGE_MAX_LENGTH = 8000;
 
+/** 代理回复里引用的依据：记忆条目 id 与回答时给出的内容（为他人时已按第三人规则处理）。 */
+export const MessageCitationSchema = z.object({
+	id: z.uuid(),
+	content: z.string(),
+});
+export type MessageCitation = z.infer<typeof MessageCitationSchema>;
+
 export const MessagePostedPayloadSchema = z.object({
 	text: z.string(),
 	/** 被 @ 的主体 id。 */
 	mentions: z.array(z.uuid()),
 	/** 发送者切到"问分身"：私聊里指向对方的分身，群聊里指向被 @ 的人的分身。 */
 	askTwin: z.boolean().optional(),
+	/** 代理回复引用的记忆条目（界面上的"依据"）。 */
+	citations: z.array(MessageCitationSchema).optional(),
+	/** 分身替本人回答他人时：提问的人（代答记录据此列出）。 */
+	askedById: z.uuid().optional(),
+	/** 分身替本人回答他人时：引起这次回答的消息。 */
+	replyToEventId: z.number().int().optional(),
 });
 
 export const AgentActionPayloadSchema = z.object({

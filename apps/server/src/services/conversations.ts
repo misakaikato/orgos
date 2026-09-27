@@ -5,6 +5,7 @@ import type {
 	Conversation,
 	ConversationSummary,
 	Event,
+	EventPayload,
 	EventsQuery,
 	PostMessageRequest,
 } from "@orgos/protocol";
@@ -24,6 +25,7 @@ import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
 import { toConversation, toEvent, toPrincipal } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
+import { scheduleIdleExtraction } from "@/memory/queue";
 import { browserHub } from "@/realtime/browser-hub";
 import { requireTwinOf } from "@/services/agents";
 import { transactWithEvents } from "@/services/events";
@@ -502,7 +504,15 @@ export async function postAs(
 	actor: PrincipalRow,
 	conversationId: string,
 	req: PostMessageRequest,
-	opts: { onBehalfOfId?: string | null; at?: Date } = {},
+	opts: {
+		onBehalfOfId?: string | null;
+		at?: Date;
+		/** 代理消息的附加载荷（引用、提问人），见 `postAgentMessage`。 */
+		extra?: Pick<
+			EventPayload<"message.posted">,
+			"citations" | "askedById" | "replyToEventId"
+		>;
+	} = {},
 ): Promise<Event> {
 	const { conversation } = await requireConversation(
 		s,
@@ -538,8 +548,9 @@ export async function postAs(
 	}
 	const topic = await topicIn(s, conversation.id, req.topicId);
 	if (topic.archivedAt) throw badRequest("话题已归档");
-	return transactWithEvents(s, (_tx, append) =>
-		append({
+	const extra = opts.extra ?? {};
+	return transactWithEvents(s, async (tx, append) => {
+		const event = await append({
 			conversationId: conversation.id,
 			topicId: topic.id,
 			actorId: actor.id,
@@ -549,10 +560,18 @@ export async function postAs(
 				text: req.text,
 				mentions,
 				...(req.askTwin ? { askTwin: true } : {}),
+				...(extra.citations?.length ? { citations: extra.citations } : {}),
+				...(extra.askedById ? { askedById: extra.askedById } : {}),
+				...(extra.replyToEventId !== undefined
+					? { replyToEventId: extra.replyToEventId }
+					: {}),
 			},
 			at: opts.at,
-		}),
-	);
+		});
+		if (actor.kind === "human" && conversation.kind !== "negotiation")
+			await scheduleIdleExtraction(tx, topic.id, new Date(event.createdAt));
+		return event;
+	});
 }
 
 /** 本人发消息。`at` 只在回放历史（演示数据）时指定。 */

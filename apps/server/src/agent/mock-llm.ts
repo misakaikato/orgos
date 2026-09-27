@@ -3,6 +3,10 @@
  *
  * 生成压缩检查点时：按固定格式列出被压缩的第一句、最后一句与条数（同样确定性）。
  *
+ * 记忆提炼时：材料里每条含 `#fact <类别>|<内容>` 的发言产出一条 fact 条目（subject 为发言人或代理的本人，
+ * 出处为该条材料）；再带 `|supersede` 时取代候选里同一 subject、同一类别的最后一条。
+ * 整理画像时：每条记忆各成一段，小标题按 kind 归类。
+ *
  * 按本次运行的触发文本决定行为，优先级：
  * 1. 本次运行已有工具结果 → `完成：<工具结果前 60 字>`，不再调工具；
  * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具；
@@ -69,7 +73,7 @@ const DIRECTIVES: Directive[] = [
 	},
 	{
 		pattern: /#note\s+([\s\S]*)$/,
-		tool: "knowledge_search",
+		tool: "memory_search",
 		args: (m) => ({ query: rest(m) }),
 	},
 	{
@@ -172,11 +176,85 @@ function mockCheckpoint(messages: readonly ChatMessage[]): string {
 	].join("\n");
 }
 
+const MATERIAL_LINE = /^\[E(\d+)[^\]]*\] @([a-z][a-z0-9-]*)[^：]*：(.*)$/;
+const FACT = /#fact\s+([^|\n]+?)\|([^|\n]+?)(?:\|(supersede))?\s*$/;
+const CANDIDATE_LINE = /^\[M:([0-9a-f]{8})\] @([a-z0-9-]+)｜([^｜]+)｜/;
+
+/** 提炼：材料里的 `#fact 类别|内容[|supersede]` → 条目。 */
+function mockExtraction(messages: readonly ChatMessage[]): string {
+	const lines = (messages.findLast((m) => m.role === "user")?.content ?? "")
+		.split("\n")
+		.map((l) => l.trim());
+	const candidates = lines.flatMap((l) => {
+		const m = CANDIDATE_LINE.exec(l);
+		return m ? [{ id: m[1], handle: m[2], category: m[3] }] : [];
+	});
+	const items = lines.flatMap((l) => {
+		const line = MATERIAL_LINE.exec(l);
+		const fact = line ? FACT.exec(line[3] ?? "") : null;
+		if (!line || !fact) return [];
+		const [, eventId, handle] = line;
+		const category = (fact[1] ?? "").trim();
+		const target = fact[3]
+			? candidates.findLast(
+					(c) => c.handle === handle && c.category === category,
+				)
+			: undefined;
+		return [
+			{
+				subject: handle,
+				kind: "fact",
+				category,
+				content: (fact[2] ?? "").trim(),
+				entities: [],
+				sources: [Number(eventId)],
+				confidence: 1,
+				action: target ? "supersede" : "new",
+				supersedes: target?.id ?? null,
+			},
+		];
+	});
+	return JSON.stringify({ items });
+}
+
+const PROFILE_LINE = /^\[M:([0-9a-f]{8})\] \((\w+)｜[^)]*\) (.*)$/;
+const PROFILE_HEADING: Record<string, string> = {
+	fact: "负责什么",
+	relation: "负责什么",
+	progress: "在推进什么",
+	commitment: "在推进什么",
+	decision: "最近定了什么",
+	preference: "协作偏好",
+};
+
+/** 画像：每条记忆一段。 */
+function mockProfile(messages: readonly ChatMessage[]): string {
+	const sections = (messages.findLast((m) => m.role === "user")?.content ?? "")
+		.split("\n")
+		.flatMap((l) => {
+			const m = PROFILE_LINE.exec(l.trim());
+			return m
+				? [
+						{
+							heading: PROFILE_HEADING[m[2] ?? ""] ?? "负责什么",
+							text: m[3] ?? "",
+							itemIds: [m[1]],
+						},
+					]
+				: [];
+		});
+	return JSON.stringify({ sections });
+}
+
 /** 纯函数：按优先级决定这一步说什么或调什么工具。 */
 export function mockDecide(
 	trigger: RunTrigger,
 	messages: readonly ChatMessage[],
 ): MockDecision {
+	if (trigger.memory === "extract")
+		return { kind: "text", text: mockExtraction(messages) };
+	if (trigger.memory === "profile")
+		return { kind: "text", text: mockProfile(messages) };
 	if (trigger.checkpoint)
 		return { kind: "text", text: mockCheckpoint(messages) };
 	const lastTool = messages.findLast((m) => m.role === "tool");

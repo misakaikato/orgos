@@ -26,7 +26,8 @@ export type ToolSpec = {
 /** 记账归属。 */
 export type LlmMeta = {
 	tenantId: string;
-	agentId: string;
+	/** 系统运行（记忆提炼、画像整理）为空。 */
+	agentId: string | null;
 	onBehalfOfId: string | null;
 	conversationId: string | null;
 	/** 这次调用属于哪次运行。 */
@@ -52,6 +53,8 @@ export type RunTrigger = {
 	resume?: { answer: string; declined?: boolean };
 	/** 生成压缩检查点（不是一次回复）。 */
 	checkpoint?: true;
+	/** 记忆层的系统调用：从话题材料提炼条目，或把条目整理成画像（输出 JSON）。 */
+	memory?: "extract" | "profile";
 	/** 协商中的一步。 */
 	negotiation?: {
 		role: "initiator" | "responder";
@@ -67,6 +70,8 @@ export type RunTrigger = {
 export type LlmRequest = {
 	messages: ChatMessage[];
 	tools: ToolSpec[];
+	/** 要求模型只输出一个 JSON 对象。 */
+	json?: boolean;
 	meta: LlmMeta;
 	trigger: RunTrigger;
 	signal?: AbortSignal;

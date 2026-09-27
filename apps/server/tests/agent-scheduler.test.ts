@@ -194,7 +194,7 @@ describe("单次运行上限与记账", () => {
 						toolCalls: [
 							{
 								id: `c${calls.length}`,
-								name: "knowledge_search",
+								name: "memory_search",
 								arguments: '{"query":"预算"}',
 							},
 						],

@@ -86,6 +86,7 @@ export function createGatewayClient(
 				model: req.meta.model,
 				messages: req.messages,
 				...(req.tools.length > 0 ? { tools: req.tools } : {}),
+				...(req.json ? { response_format: { type: "json_object" } } : {}),
 				stream: true,
 				stream_options: { include_usage: true },
 				max_tokens: MAX_TOKENS,

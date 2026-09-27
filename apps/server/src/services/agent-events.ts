@@ -2,7 +2,10 @@
  * 代理在会话里留下的痕迹：消息与动作。actorId 是代理主体，onBehalfOfId 是代理所属的人——
  * 代理永远不以本人名义发言。事件经 `@/services/events` 写入。
  */
-import type { Event } from "@orgos/protocol";
+import type { Event, EventPayload } from "@orgos/protocol";
+
+type MessagePostedPayload = EventPayload<"message.posted">;
+
 import { eq } from "drizzle-orm";
 import { principals } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
@@ -28,13 +31,19 @@ export async function requireAgentPrincipal(
 /** 代理留痕的位置：会话与其中的话题（缺省为主线）。 */
 export type Place = { conversationId: string; topicId?: string };
 
+/** 代理消息的附加信息：引用的记忆条目；替本人回答他人时的提问人与所答的消息。 */
+export type AgentMessageExtra = Pick<
+	MessagePostedPayload,
+	"citations" | "askedById" | "replyToEventId"
+>;
+
 /** 代理发一条消息（代理须是会话成员）。 */
 export async function postAgentMessage(
 	s: Scoped,
 	agentId: string,
 	place: Place,
 	text: string,
-	opts: { mentions?: string[]; at?: Date } = {},
+	opts: { mentions?: string[]; at?: Date; extra?: AgentMessageExtra } = {},
 ): Promise<Event> {
 	const agent = await requireAgentPrincipal(s, agentId);
 	return postAs(
@@ -46,7 +55,7 @@ export async function postAgentMessage(
 			mentions: opts.mentions ?? [],
 			...(place.topicId ? { topicId: place.topicId } : {}),
 		},
-		{ onBehalfOfId: agent.ownerId, at: opts.at },
+		{ onBehalfOfId: agent.ownerId, at: opts.at, extra: opts.extra },
 	);
 }
 

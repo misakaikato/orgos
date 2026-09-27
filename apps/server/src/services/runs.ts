@@ -28,7 +28,7 @@ import {
 	tenantsWithRunningRuns,
 } from "@/db/scope";
 import { AppError, notFound } from "@/lib/errors";
-import { toRun } from "@/lib/serialize";
+import { isAgentRun, toRun } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
 import { requireTask, transitionTask } from "@/services/tasks";
 
@@ -63,7 +63,34 @@ export async function startRun(s: Scoped, input: StartRunInput): Promise<Run> {
 		if (task.state !== "working" && canTransition(task.state, "working"))
 			await transitionTask(s, task.id, "working", { runId: row.id });
 	}
-	return toRun(row);
+	return toRun({
+		...row,
+		agentId: input.agentId,
+		actingForId: input.actingForId,
+		conversationId: input.conversationId,
+		topicId: input.topicId,
+	});
+}
+
+/**
+ * 开始一次系统运行（记忆提炼、画像整理）：不属于任何代理、不替任何人办事，
+ * 只为把模型调用的计量挂在一个运行名下。返回运行 id。
+ */
+export async function startSystemRun(
+	s: Scoped,
+	input: { conversationId?: string; topicId?: string; trigger: string },
+): Promise<string> {
+	const row = await s.insert(runs, {
+		agentId: null,
+		actingForId: null,
+		conversationId: input.conversationId ?? null,
+		topicId: input.topicId ?? null,
+		taskId: null,
+		trigger: input.trigger,
+		engine: "builtin",
+		state: "running",
+	});
+	return row.id;
 }
 
 export type RunEnd = {
@@ -75,12 +102,12 @@ export type RunEnd = {
 	taskSummary?: string;
 };
 
-/** 结束一次运行（已结束的不再改）；返回结束后的运行，已结束过 → null。 */
+/** 结束一次运行（已结束的不再改）；本次确实结束了它 → true，已结束过 → false。 */
 export async function finishRun(
 	s: Scoped,
 	runId: string,
 	end: RunEnd,
-): Promise<Run | null> {
+): Promise<boolean> {
 	const [row] = await s.executor
 		.update(runs)
 		.set({
@@ -93,7 +120,7 @@ export async function finishRun(
 		})
 		.where(s.where(runs, eq(runs.id, runId), eq(runs.state, "running")))
 		.returning();
-	if (!row) return null;
+	if (!row) return false;
 	if (row.taskId) {
 		const task = await requireTask(s, row.taskId);
 		const to =
@@ -107,7 +134,7 @@ export async function finishRun(
 				...(end.taskSummary !== undefined ? { summary: end.taskSummary } : {}),
 			});
 	}
-	return toRun(row);
+	return true;
 }
 
 /** 外部 agent 报来了这一轮所在的 ACP 会话。 */
@@ -124,7 +151,7 @@ export async function setRunExternalSession(
 
 export async function findRun(s: Scoped, runId: string): Promise<Run | null> {
 	const row = isUuid(runId) ? await s.first(runs, eq(runs.id, runId)) : null;
-	return row ? toRun(row) : null;
+	return row && isAgentRun(row) ? toRun(row) : null;
 }
 
 /** 我看得到的运行：我的代理的运行，或我所在会话里的运行。否则 404。 */
@@ -186,7 +213,7 @@ export async function listRuns(
 		)
 		.orderBy(desc(runs.startedAt))
 		.limit(RUN_LIST_LIMIT);
-	return rows.map(toRun);
+	return rows.filter(isAgentRun).map(toRun);
 }
 
 /** 一次运行的模型用量合计。 */
@@ -208,7 +235,7 @@ export async function runUsage(s: Scoped, runId: string) {
 	};
 }
 
-/** 某话题里仍在进行的运行。 */
+/** 某话题里仍在进行的代理运行（系统运行不算）。 */
 export async function runningRunsIn(
 	s: Scoped,
 	topicId: string,
@@ -217,7 +244,7 @@ export async function runningRunsIn(
 		runs,
 		and(eq(runs.topicId, topicId), eq(runs.state, "running")),
 	);
-	return rows.map(toRun);
+	return rows.filter(isAgentRun).map(toRun);
 }
 
 /** 进程启动：上一个进程留下的进行中的运行都已失去运行时，判失败。 */

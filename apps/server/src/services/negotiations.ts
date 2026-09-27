@@ -31,6 +31,7 @@ import {
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { badRequest, notFound } from "@/lib/errors";
 import { toEvent, toWorkItem } from "@/lib/serialize";
+import { enqueueMemoryJob } from "@/memory/queue";
 import {
 	postAgentMessage,
 	requireAgentPrincipal,
@@ -362,7 +363,8 @@ async function stepsOf(s: Scoped, conversationId: string) {
 }
 
 /**
- * 结束协商：落 `negotiation.ended`（actor 为发起方代理）。结果为 agreed 时给双方本人
+ * 结束协商：落 `negotiation.ended`（actor 为发起方代理），并排一个 resolution 作业把结果写成 decision 记忆。
+ * 结果为 agreed 时给双方本人
  * 各建一条 confirmation 待办，提问人为对方的代理，关联两人的私聊（协商卡片所在处），
  * 提交后推给各自的本人。协商由本人在某个会话里发起时，发起方分身在那里回一句结果摘要。
  */
@@ -380,7 +382,7 @@ export async function endNegotiation(
 	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
 	const main = await mainTopicOf(s, conversationId);
 	const items = await transactWithEvents(s, async (tx, append) => {
-		await append({
+		const ended = await append({
 			conversationId,
 			topicId: main.id,
 			actorId: initiator.id,
@@ -391,6 +393,11 @@ export async function endNegotiation(
 				...(proposal === undefined ? {} : { proposal }),
 			},
 			at,
+		});
+		await enqueueMemoryJob(tx, {
+			topicId: main.id,
+			trigger: "resolution",
+			eventId: ended.id,
 		});
 		await saveState(tx, conversationId, { ...state, state: "ended" });
 		if (outcome !== "agreed") return [];

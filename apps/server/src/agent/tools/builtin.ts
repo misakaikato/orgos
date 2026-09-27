@@ -1,9 +1,10 @@
 /**
- * 基础工具：pass、knowledge_search、memory_save、create_commitment。
+ * 基础工具：pass、memory_search、memory_save、create_commitment。
  */
 import { z } from "zod";
 import { forOwner, makeTool } from "@/agent/tools/tool";
-import { createNote, searchNotes } from "@/services/notes";
+import { searchMemory } from "@/memory/search";
+import { createNote } from "@/services/notes";
 import { createWorkItem, notifyWorkItem } from "@/services/work-items";
 
 export const passTool = makeTool({
@@ -16,25 +17,31 @@ export const passTool = makeTool({
 	run: async () => ({ result: "", summary: "跳过", ok: true, pass: true }),
 });
 
-export const knowledgeSearchTool = makeTool({
-	name: "knowledge_search",
+export const memorySearchTool = makeTool({
+	name: "memory_search",
 	description:
-		"检索本人的资料与记忆。query 用几个关键词，空格分隔。返回每行一条“标题：正文”，没有命中时返回“无结果”。",
-	label: "正在查资料…",
-	schema: z.object({ query: z.string().trim().min(1).max(200) }),
+		"检索记忆与资料（组织里沉淀下来的事实、进展、决定，以及本人的资料）。query 用几个关键词；about 可选，填关于谁（handle 或姓名）。返回的记忆每条带编号 [M:xxxxxxxx]：回复用到哪条，就把它的编号原样写在那句话末尾。没有命中时返回“无结果”。",
+	label: "正在查记忆…",
+	schema: z.object({
+		query: z.string().trim().min(1).max(200),
+		about: z.string().trim().max(60).optional(),
+	}),
 	available: () => true,
-	run: async ({ query }, scope) => {
-		const rows = await searchNotes(scope.s, scope.owner.id, query, {
-			sharedOnly: !forOwner(scope),
-		});
-		const titles = rows.map((r) => `《${r.title}》`).join("");
+	run: async ({ query, about }, scope) => {
+		const res = await searchMemory(
+			scope.s,
+			{
+				ownerId: scope.owner.id,
+				requesterId:
+					scope.actingFor.kind === "other" ? scope.actingFor.principalId : null,
+			},
+			{ query, ...(about ? { about } : {}) },
+		);
+		for (const [mark, citation] of res.citable)
+			scope.session.citable.set(mark, citation);
 		return {
-			result:
-				rows.length === 0
-					? "无结果"
-					: rows.map((r) => `${r.title}：${r.body}`).join("\n"),
-			summary:
-				rows.length === 0 ? `查资料“${query}”：无结果` : `查阅了${titles}`,
+			result: res.lines.length === 0 ? "无结果" : res.lines.join("\n"),
+			summary: res.summary,
 			ok: true,
 		};
 	},

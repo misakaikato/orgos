@@ -3,9 +3,12 @@
 import type { Agent, AgentUsage, ModelOption } from "@orgos/protocol";
 import { useEffect, useState } from "react";
 import { AgentCard } from "@/components/agents/agent-card";
+import { AnswersPanel } from "@/components/agents/answers-panel";
 import { ExternalAgentForm } from "@/components/agents/external-agent-form";
+import { MemoryPanel } from "@/components/agents/memory-panel";
 import { NewAgentForm } from "@/components/agents/new-agent-form";
 import { NotesPanel } from "@/components/agents/notes-panel";
+import { PolicyPanel } from "@/components/agents/policy-panel";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
@@ -19,11 +22,14 @@ import {
 	useStore,
 } from "@/lib/store";
 
-type Tab = "agents" | "notes";
+type Tab = "agents" | "notes" | "memory" | "answers" | "policy";
 
 const TABS: { key: Tab; label: string }[] = [
 	{ key: "agents", label: "代理" },
 	{ key: "notes", label: "资料" },
+	{ key: "memory", label: "记忆" },
+	{ key: "answers", label: "代答记录" },
+	{ key: "policy", label: "对外政策" },
 ];
 
 function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
@@ -31,7 +37,7 @@ function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
 		<div
 			role="tablist"
 			aria-label="代理组"
-			className="flex w-full max-w-xs gap-1 rounded-pill bg-surface-2 p-1"
+			className="flex w-full max-w-lg gap-1 rounded-pill bg-surface-2 p-1"
 		>
 			{TABS.map((t) => (
 				<button
@@ -41,7 +47,7 @@ function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
 					aria-selected={tab === t.key}
 					onClick={() => onChange(t.key)}
 					className={cx(
-						"inline-flex h-7 flex-1 items-center justify-center rounded-pill text-13 transition-colors duration-150",
+						"inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-pill px-1 text-13 whitespace-nowrap transition-colors duration-150",
 						tab === t.key
 							? "bg-bg font-medium text-ink shadow-card-hover"
 							: "text-muted hover:text-ink",
@@ -134,7 +140,11 @@ function AgentsPanel({
 	);
 }
 
-/** 代理组：我的分身与助手（职责、对外政策、用量），以及它们可以引用的资料。 */
+/**
+ * 代理组：我的分身与助手（职责、对外政策、用量）；它们可以引用的资料与记忆；
+ * 分身替我对外回答的记录；按类别的对外授权。记忆相关的三页都关乎"代理替我知道什么、说什么"，
+ * 与资料同放在这里，导航轨不新增入口。
+ */
 export default function AgentsPage() {
 	const me = useStore((s) => s.me);
 	const [tab, setTab] = useState<Tab>("agents");
@@ -151,8 +161,14 @@ export default function AgentsPage() {
 					<Tabs tab={tab} onChange={setTab} />
 					{tab === "agents" ? (
 						<AgentsPanel agents={me.agents} ownerHandle={me.principal.handle} />
-					) : (
+					) : tab === "notes" ? (
 						<NotesPanel />
+					) : tab === "memory" ? (
+						<MemoryPanel />
+					) : tab === "answers" ? (
+						<AnswersPanel />
+					) : (
+						<PolicyPanel onEditPolicy={() => setTab("agents")} />
 					)}
 				</div>
 			</div>

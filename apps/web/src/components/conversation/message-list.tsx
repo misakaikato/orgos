@@ -33,6 +33,19 @@ function scrollToBottom(el: HTMLElement | null): void {
 	if (el) el.scrollTop = el.scrollHeight;
 }
 
+/** 地址锚点 `#m<seq>` 指向的消息（依据的"查看原消息"）。 */
+function anchoredMessage(el: HTMLElement): HTMLElement | null {
+	const m = /^#m(\d+)$/.exec(window.location.hash);
+	return m ? el.querySelector<HTMLElement>(`[data-seq="${m[1]}"]`) : null;
+}
+
+/** 滚到那条消息（停在上方三分之一处），并短暂标出它。 */
+function revealMessage(el: HTMLElement, target: HTMLElement): void {
+	el.scrollTop = Math.max(0, target.offsetTop - el.clientHeight / 3);
+	target.classList.add("message-anchored");
+	setTimeout(() => target.classList.remove("message-anchored"), 2000);
+}
+
 type RowContext = {
 	map: PrincipalMap;
 	meId: string;
@@ -142,8 +155,10 @@ export function MessageList({
 		const newest = events.at(-1);
 		if (!positioned.current) {
 			positioned.current = true;
+			const target = anchoredMessage(el);
 			const divider = el.querySelector<HTMLElement>("[data-unread-divider]");
-			if (divider)
+			if (target) revealMessage(el, target);
+			else if (divider)
 				el.scrollTop = Math.max(0, divider.offsetTop - el.clientHeight / 3);
 			else scrollToBottom(el);
 		} else if (newest && (newest.seq ?? 0) > lastSeen.current) {
@@ -155,6 +170,17 @@ export function MessageList({
 		atBottom.current = bottom;
 		onBottomChange(bottom);
 	}, [events, meId, onBottomChange]);
+
+	// 已在本会话时点了指向某条消息的链接（依据的原消息）：定位过去。
+	useEffect(() => {
+		const onHash = () => {
+			const el = scroller.current;
+			const target = el ? anchoredMessage(el) : null;
+			if (el && target) revealMessage(el, target);
+		};
+		window.addEventListener("hashchange", onHash);
+		return () => window.removeEventListener("hashchange", onHash);
+	}, []);
 
 	// 末尾附加内容（正在工作、流式草稿）每次渲染都可能变高：停在底部时跟随。
 	useLayoutEffect(() => {

@@ -1,13 +1,13 @@
 /**
- * 代理工具表：唯一的注册处。本阶段注册 pass、knowledge_search、memory_save、
+ * 代理工具表：唯一的注册处。本阶段注册 pass、memory_search、memory_save、
  * delegate_to_teammate、escalate_to_owner、create_commitment、negotiate、negotiation_reply，
  * 以及设备的 device_list / device_read / device_write / device_exec。
  */
 import type { ToolSpec } from "@/agent/llm-types";
 import {
 	createCommitmentTool,
-	knowledgeSearchTool,
 	memorySaveTool,
+	memorySearchTool,
 	passTool,
 } from "@/agent/tools/builtin";
 import { delegateTool } from "@/agent/tools/delegate";
@@ -23,7 +23,7 @@ import type { AgentTool, ToolOutcome, ToolScope } from "@/agent/tools/tool";
 
 export const TOOLS: readonly AgentTool[] = [
 	passTool,
-	knowledgeSearchTool,
+	memorySearchTool,
 	memorySaveTool,
 	delegateTool,
 	escalateTool,

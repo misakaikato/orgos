@@ -36,6 +36,13 @@
       "when": 1790517773046,
       "tag": "0004_model_gateway",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790518967112,
+      "tag": "0005_memory_layer",
+      "breakpoints": true
     }
   ]
 }

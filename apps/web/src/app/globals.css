@@ -187,3 +187,26 @@
 		background: var(--accent-soft);
 	}
 }
+
+/* 从"依据"跳来的那条消息：短暂铺一层浅强调色。 */
+.message-anchored {
+	border-radius: var(--radius-card);
+	animation: message-anchored 2s ease-out;
+}
+
+@keyframes message-anchored {
+	from,
+	60% {
+		background: var(--accent-soft);
+	}
+	to {
+		background: transparent;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.message-anchored {
+		animation: none;
+		background: var(--accent-soft);
+	}
+}

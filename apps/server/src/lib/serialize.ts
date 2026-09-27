@@ -202,7 +202,24 @@ export function toTopic(
 
 type RunRow = typeof runs.$inferSelect;
 
-export function toRun(row: RunRow): Run {
+/** 代理的运行（系统运行没有代理，不经这里对外）。 */
+export type AgentRunRow = RunRow & {
+	agentId: string;
+	actingForId: string;
+	conversationId: string;
+	topicId: string;
+};
+
+export function isAgentRun(row: RunRow): row is AgentRunRow {
+	return (
+		row.agentId !== null &&
+		row.actingForId !== null &&
+		row.conversationId !== null &&
+		row.topicId !== null
+	);
+}
+
+export function toRun(row: AgentRunRow): Run {
 	return {
 		id: row.id,
 		tenantId: row.tenantId,

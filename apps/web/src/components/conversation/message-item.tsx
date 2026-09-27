@@ -2,6 +2,7 @@
 
 import type { Principal } from "@orgos/protocol";
 import { type ReactNode, useState } from "react";
+import { Citations } from "@/components/conversation/citations";
 import { IconCheck, IconChevronRight, IconClose } from "@/components/icons";
 import { mascotInkClass } from "@/components/mascot";
 import { Avatar } from "@/components/ui/avatar";
@@ -184,7 +185,10 @@ export function Bubble({
 
 	if (side === "me") {
 		return (
-			<div className={cx("group flex justify-end gap-2", gap)}>
+			<div
+				data-seq={event.seq ?? undefined}
+				className={cx("group flex justify-end gap-2", gap)}
+			>
 				<HoverTime at={event.createdAt} />
 				<div className="max-w-[72%] rounded-bubble bg-accent-soft px-3.5 py-2.5">
 					<MessageText text={text} handles={handles} />
@@ -200,6 +204,7 @@ export function Bubble({
 	const withAvatar = agent || isGroup;
 	return (
 		<div
+			data-seq={event.seq ?? undefined}
 			className={cx(
 				"group grid gap-x-2",
 				withAvatar ? "grid-cols-[32px_minmax(0,1fr)]" : "grid-cols-1",
@@ -232,6 +237,7 @@ export function Bubble({
 					</div>
 					<HoverTime at={event.createdAt} />
 				</div>
+				{agent ? <Citations citations={event.payload.citations} /> : null}
 				<ActionsFold actions={actions} />
 			</div>
 		</div>

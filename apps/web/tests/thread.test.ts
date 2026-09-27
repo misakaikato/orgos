@@ -59,7 +59,7 @@ function action(actorId: string, at: string, summary: string): Event {
 		type: "agent.action",
 		actorId,
 		onBehalfOfId: null,
-		payload: { tool: "knowledge_search", summary, ok: true },
+		payload: { tool: "memory_search", summary, ok: true },
 		createdAt: at,
 	};
 }

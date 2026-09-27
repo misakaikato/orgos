@@ -5,7 +5,9 @@ import {
 	type AddMemberRequest,
 	AgentListResponseSchema,
 	AgentResponseSchema,
+	AnswerActionResponseSchema,
 	ConversationListResponseSchema,
+	type CorrectAnswerRequest,
 	type CreateAgentRequest,
 	type CreateConversationRequest,
 	CreateConversationResponseSchema,
@@ -18,10 +20,15 @@ import {
 	DevInfoResponseSchema,
 	DevSessionResponseSchema,
 	DirectoryResponseSchema,
+	DisclosureResponseSchema,
 	ErrorBodySchema,
 	EVENTS_PAGE_MAX,
 	type Event,
 	EventsResponseSchema,
+	MemoryItemListResponseSchema,
+	MemoryItemResponseSchema,
+	type MemoryItemsQuery,
+	MemorySourcesResponseSchema,
 	MeResponseSchema,
 	ModelAdminResponseSchema,
 	ModelGroupResponseSchema,
@@ -49,7 +56,10 @@ import {
 	TopicResponseSchema,
 	TopicSourceResponseSchema,
 	type TopicToGroupRequest,
+	TwinAnswerListResponseSchema,
 	type UpdateAgentRequest,
+	type UpdateDisclosureRequest,
+	type UpdateMemoryItemRequest,
 	type UpdateModelGroupRequest,
 	type UpdateModelProviderRequest,
 	type UpdateNoteRequest,
@@ -58,6 +68,7 @@ import {
 	type UpdateTenantSettingsRequest,
 	type UpdateTopicRequest,
 	UsageResponseSchema,
+	type WithholdAnswerRequest,
 	type WORK_ITEM_STATUSES,
 	WorkItemListResponseSchema,
 	WorkItemResponseSchema,
@@ -317,6 +328,64 @@ export const api = {
 			http.patch(`/api/notes/${id}`, { json: req }).json(NoteResponseSchema),
 		),
 	deleteNote: (id: string) => noContent(http.delete(`/api/notes/${id}`)),
+
+	/** 自己的记忆条目（subject 是我）。 */
+	memoryItems: (query: MemoryItemsQuery = {}) =>
+		run(() =>
+			http
+				.get("/api/memory/items", {
+					searchParams: Object.fromEntries(
+						Object.entries(query).filter(([, v]) => v !== undefined),
+					),
+				})
+				.json(MemoryItemListResponseSchema),
+		),
+	updateMemoryItem: (id: string, req: UpdateMemoryItemRequest) =>
+		run(() =>
+			http
+				.patch(`/api/memory/items/${id}`, { json: req })
+				.json(MemoryItemResponseSchema),
+		),
+	retractMemoryItem: (id: string) =>
+		run(() =>
+			http
+				.post(`/api/memory/items/${id}/retract`)
+				.json(MemoryItemResponseSchema),
+		),
+	/** 条目出处里我看得到的原消息。 */
+	memorySources: (id: string) =>
+		run(() =>
+			http
+				.get(`/api/memory/items/${id}/sources`)
+				.json(MemorySourcesResponseSchema),
+		),
+	disclosure: () =>
+		run(() =>
+			http.get("/api/memory/disclosure").json(DisclosureResponseSchema),
+		),
+	updateDisclosure: (req: UpdateDisclosureRequest) =>
+		run(() =>
+			http
+				.put("/api/memory/disclosure", { json: req })
+				.json(DisclosureResponseSchema),
+		),
+	/** 代答记录：分身替我对他人的回答。 */
+	twinAnswers: () =>
+		run(() =>
+			http.get("/api/memory/answers").json(TwinAnswerListResponseSchema),
+		),
+	correctAnswer: (eventId: number, req: CorrectAnswerRequest) =>
+		run(() =>
+			http
+				.post(`/api/memory/answers/${eventId}/correct`, { json: req })
+				.json(AnswerActionResponseSchema),
+		),
+	withholdAnswer: (eventId: number, req: WithholdAnswerRequest) =>
+		run(() =>
+			http
+				.post(`/api/memory/answers/${eventId}/withhold`, { json: req })
+				.json(AnswerActionResponseSchema),
+		),
 
 	/** 我是处理人的待办；`as` 给定时以该 bearer 身份请求（模拟台读各窗格的待办数）。 */
 	workItems: (

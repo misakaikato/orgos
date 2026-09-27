@@ -4,6 +4,7 @@
 import { AGENT_ROLE_LABEL, type Agent, type Event } from "@orgos/protocol";
 import type { ChatMessage, RunTrigger } from "@/agent/llm-types";
 import type { AgentTool, ToolScope } from "@/agent/tools/tool";
+import { COLLEAGUE_SOURCE_LABEL } from "@/memory/access";
 
 export type PromptInput = {
 	scope: ToolScope;
@@ -53,7 +54,8 @@ function actingLines(input: PromptInput, ownerName: string): string[] {
 		scope.agent.delegationPolicy.trim() ||
 		"（未设置：只回答共享资料里明确写着的内容）";
 	return [
-		`你正在替${ownerName}回答${other}。你只能使用${ownerName}标为共享的资料；${ownerName}的私聊、私有记忆一律不可用，也不要透露。`,
+		`你正在替${ownerName}回答${other}。你只能使用 memory_search 查到的内容（${ownerName}共享的资料，以及${ownerName}允许对外的记忆）；查不到的${ownerName}的私事、私聊一律不知道，也不要打听或透露。`,
+		`检索结果里出处写着“${COLLEAGUE_SOURCE_LABEL}”的，只能转述其中的事实：不要推测或透露是谁说的、在哪说的、原话怎么说，也不要向${other}追问来源。`,
 		`${ownerName}写给你的对外政策：\n${policy}`,
 		"处理对方的问题只有三个出口：",
 		`1. 能答就答，并注明依据（例如“根据${ownerName}共享的《…》”）；`,
@@ -120,6 +122,10 @@ export function buildSystemPrompt(input: PromptInput): string {
 			...teammateLines(input),
 			`需要${ownerName}的计划、日期、数字时先用工具查，查不到就说不知道，不要编造。`,
 		);
+		if (tools.some((t) => t.name === "memory_search"))
+			lines.push(
+				"回复里用到 memory_search 给出的记忆时，在那句话末尾原样写上它的编号（如 [M:ab12cd34]），界面会据此显示依据；没有依据的事如实说明，或按上面的规则转给本人。",
+			);
 	}
 	lines.push(
 		"历史消息里别人的发言以“【显示名】”开头；你的回复不要加这个前缀。",

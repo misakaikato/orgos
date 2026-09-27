@@ -45,7 +45,7 @@ describe("mockDecide 优先级", () => {
 			{ handle: "alice-ops", task: "整理周报" },
 		],
 		["#escalate 能提前吗", "escalate_to_owner", { question: "能提前吗" }],
-		["#note 预算 口径", "knowledge_search", { query: "预算 口径" }],
+		["#note 预算 口径", "memory_search", { query: "预算 口径" }],
 		[
 			"#remember 私事|下周三请假看牙",
 			"memory_save",
@@ -68,7 +68,7 @@ describe("mockDecide 优先级", () => {
 	it("2. 文本里最先出现的指令生效", () => {
 		expect(
 			mockDecide(trigger("先 #note 预算 再 #remember a|b"), []),
-		).toMatchObject({ kind: "tool", name: "knowledge_search" });
+		).toMatchObject({ kind: "tool", name: "memory_search" });
 		expect(
 			mockDecide(trigger("#delegate:alice-ops #note 看牙"), []),
 		).toMatchObject({
@@ -223,8 +223,8 @@ describe("createMockLlm", () => {
 		expect(deltas).toEqual([]);
 		expect(res.toolCalls).toEqual([
 			{
-				id: "mock-knowledge_search",
-				name: "knowledge_search",
+				id: "mock-memory_search",
+				name: "memory_search",
 				arguments: JSON.stringify({ query: "预算" }),
 			},
 		]);

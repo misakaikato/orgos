@@ -4,7 +4,8 @@
  *
  * 压缩：运行前估算上下文超过 `模型窗口 - 预留` 或未压缩事件超过上限时，先由同一模型把较早的部分
  * 写成结构化检查点（目标、进展、决定、下一步、涉及文件）存进 compactions，之后该话题的运行
- * 从检查点 + 其后事件开始；最近约 keepRecentTokens 的内容保留原文。
+ * 从检查点 + 其后事件开始；最近约 keepRecentTokens 的内容保留原文。压缩前先为该话题排一个提炼作业
+ * （记忆冲刷），被压缩的那段即提炼的材料。
  *
  * 近期工作简报：该代理过去 48 小时在其他话题与会话里说的最后一句，最多 10 行、约 350 token，
  * 放在历史之后（不进系统提示，以保住提示缓存）；为他人办事时只列对方也在的会话。
@@ -28,6 +29,7 @@ import {
 } from "@/db/schema";
 import type { Scoped } from "@/db/scope";
 import { toEvent } from "@/lib/serialize";
+import { enqueueMemoryJob } from "@/memory/queue";
 import type { TopicRow } from "@/services/topics";
 
 export type ContextLimits = {
@@ -186,6 +188,8 @@ export async function topicHistory(
 		const older = pending.slice(0, k);
 		const last = older.at(-1);
 		if (last) {
+			// 记忆冲刷：被压缩的那段先交给提炼（进度之后的事件都会被提炼，原文不因压缩删除）。
+			await enqueueMemoryJob(s, { topicId: topic.id, trigger: "compaction" });
 			const summary = await summarize(
 				input,
 				checkpoint?.summary ?? null,

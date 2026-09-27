@@ -36,7 +36,7 @@ function constraintLines(
 		);
 	} else {
 		lines.push(
-			`这次协商是对方发起的，${ownerName}事先没有给你指示。${ownerName}的日程、偏好等先用 knowledge_search 查一两次${ownerName}的资料（用两三个关键词，别反复换说法重查）。你看不到${ownerName}的日历：资料里没写、${ownerName}也没答复过的，不要替${ownerName}接受、拒绝或另提具体时间，更不要编造${ownerName}“已有安排”——凡是会替${ownerName}做出承诺（占用${ownerName}的时间、答应交付等）而你没有依据的，用 need_owner 问${ownerName}。`,
+			`这次协商是对方发起的，${ownerName}事先没有给你指示。${ownerName}的日程、偏好等先用 memory_search 查一两次${ownerName}的资料（用两三个关键词，别反复换说法重查）。你看不到${ownerName}的日历：资料里没写、${ownerName}也没答复过的，不要替${ownerName}接受、拒绝或另提具体时间，更不要编造${ownerName}“已有安排”——凡是会替${ownerName}做出承诺（占用${ownerName}的时间、答应交付等）而你没有依据的，用 need_owner 问${ownerName}。`,
 		);
 	}
 	lines.push(
@@ -78,7 +78,7 @@ export function buildNegotiationPrompt(input: {
 		`你为${ownerName}本人办事，可以查阅${ownerName}的全部资料与记忆；只对对方说达成目标所需的信息，不要透露${ownerName}的私事。不要编造${ownerName}的日程或安排。`,
 		...constraintLines(ctx, ownerName, policy),
 		"协商规则（结构化协议，不是聊天）：",
-		"1. 每一轮你必须调用一次 negotiation_reply 结束，不要只输出文字；需要查资料可以先调用 knowledge_search（一两次即可，查不到就别换说法反复查）。",
+		"1. 每一轮你必须调用一次 negotiation_reply 结束，不要只输出文字；需要查资料可以先调用 memory_search（一两次即可，查不到就别换说法反复查）。",
 		"2. continue：提出新方案或修改方案，proposal 里写完整方案（不是只写改动）；也用于回应对方但暂不同意。",
 		`3. agree：接受对方最近一次提出的 proposal，必须把它原样（逐字段相同）放进 proposal。只有一方 agree 了另一方最近的 proposal，协商才算谈成；不能 agree 自己提的方案。`,
 		`4. reject：这件事谈不成（对方的要求和${ownerName}的约束根本冲突），协商随即终止。`,

@@ -19,7 +19,8 @@ export const STATUS_NO_RESPONSE = 0;
 /** 这次调用算在谁头上。 */
 export type Attribution = {
 	tenantId: string;
-	agentId: string;
+	/** 系统运行（记忆提炼、画像整理）为空。 */
+	agentId: string | null;
 	onBehalfOfId: string | null;
 	conversationId: string | null;
 	runId: string | null;

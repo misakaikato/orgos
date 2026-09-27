@@ -5,6 +5,8 @@
  * - abort：POST /stop，立即中止（取消进行中的模型调用）；
  * - 交接（群聊里由代理发言引起的运行、delegate_to_teammate）累计到上限即停止。
  */
+import type { MessageCitation } from "@orgos/protocol";
+
 export const MAX_MODEL_CALLS = 8;
 export const MAX_ROUNDS = 4;
 export const MAX_HANDOFFS = 8;
@@ -19,6 +21,8 @@ export const LIMIT_SUMMARY = {
 export type LimitKind = keyof typeof LIMIT_SUMMARY;
 
 export class RunSession {
+	/** 本轮 memory_search 给出过的条目（引用标记 → 依据）：回复里只认这些引用。 */
+	readonly citable = new Map<string, MessageCitation>();
 	private readonly controller = new AbortController();
 	private readonly stopController = new AbortController();
 	private interrupted = false;

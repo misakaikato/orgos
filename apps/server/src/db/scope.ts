@@ -6,16 +6,17 @@
  *
  * 文件末尾的"身份解析"一节是仅有的例外：租户根表本身、登录后"我属于哪个租户"的查找，
  * 以及设备凭配对码或 token、外部 agent 凭任务令牌认出自己属于哪个租户，天然发生在知道租户之前；
- * 另有进程级的维护（启动时设备置离线、找出有未结束任务或进行中运行的租户），只返回租户 id，
+ * 另有进程级的维护（启动时设备置离线、找出有未结束任务、进行中运行或待办提炼作业的租户），只返回租户 id，
  * 具体处理仍经 `scoped(tenantId)`。
  */
 import { TASK_ENDED_STATES } from "@orgos/protocol";
-import { and, eq, gt, isNull, notInArray, type SQL } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, notInArray, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { db, type Executor } from "@/db";
 import {
 	gatewayTokens,
 	members,
+	memoryJobs,
 	pairingCodes,
 	principals,
 	runners,
@@ -275,4 +276,23 @@ export async function findActiveGatewayToken(
 		)
 		.limit(1);
 	return rows[0];
+}
+
+/**
+ * 有提炼作业要处理的租户：到期的 pending，或（进程启动时收尾用）上一个进程留下的 running。
+ */
+export async function tenantsWithMemoryJobs(
+	now: Date,
+	opts: { running?: boolean } = {},
+	executor: Executor = db,
+): Promise<string[]> {
+	const rows = await executor
+		.selectDistinct({ tenantId: memoryJobs.tenantId })
+		.from(memoryJobs)
+		.where(
+			opts.running
+				? eq(memoryJobs.status, "running")
+				: and(eq(memoryJobs.status, "pending"), lte(memoryJobs.runAfter, now)),
+		);
+	return rows.map((r) => r.tenantId);
 }

@@ -3,7 +3,8 @@
  * "新任务"都经这里。写入只经本文件：建任务、状态迁移、进度与产出、过程日志。
  *
  * - 状态迁移按 protocol 的 `TASK_TRANSITIONS` 判定，条件更新（WHERE state = from）防并发；
- *   迁移在任务话题落 `task.updated`，进入结束态落 `task.ended`；运行的开始与结束经 `@/services/runs` 驱动迁移；
+ *   迁移在任务话题落 `task.updated`，进入结束态落 `task.ended` 并为该话题排一个提炼作业；
+ *   运行的开始与结束经 `@/services/runs` 驱动迁移；
  * - 进度与产出变化只推 `{t:'task'}` 帧，不落会话事件；
  * - 过程日志只追加：服务于任务的记录 seq 取自 `tasks.last_log_seq`（任务内连续），
  *   不服务于任务的运行的记录 seq 取自 `runs.last_log_seq`（运行内连续）。
@@ -48,6 +49,7 @@ import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, notFound } from "@/lib/errors";
 import { toPrincipal, toRunLog, toTask, toTaskLog } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
+import { enqueueMemoryJob } from "@/memory/queue";
 import { browserHub } from "@/realtime/browser-hub";
 import { requireConversation } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
@@ -441,6 +443,7 @@ export async function transitionTask(
 			onBehalfOfId: actor?.ownerId ?? null,
 		};
 		if (ended) {
+			await enqueueMemoryJob(tx, { topicId: row.topicId, trigger: "task_end" });
 			await append({
 				...base,
 				type: "task.ended",

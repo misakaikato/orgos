@@ -132,7 +132,7 @@ export async function writeDemoConversations(
 		twinL.id,
 		{ conversationId: q4.id },
 		{
-			tool: "knowledge_search",
+			tool: "memory_search",
 			summary: "查阅了《Q4 路线图》和《9 月 15 日评审会纪要》",
 			ok: true,
 		},
@@ -317,7 +317,7 @@ export async function writeDemoConversations(
 		s,
 		twinL.id,
 		{ conversationId: dmXL.id },
-		{ tool: "knowledge_search", summary: "查阅了《Q4 路线图》", ok: true },
+		{ tool: "memory_search", summary: "查阅了《Q4 路线图》", ok: true },
 		t.minutesAgo(95),
 	);
 	await agentSays(

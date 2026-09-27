@@ -62,11 +62,17 @@ export async function usageByAgent(
 			),
 		)
 		.groupBy(llmRequests.agentId);
-	return rows.map((r) => ({
-		agentId: r.agentId,
-		requests: r.requests,
-		inputTokens: Number(r.inputTokens),
-		outputTokens: Number(r.outputTokens),
-		costMicroUsd: Number(r.costMicroUsd),
-	}));
+	return rows.flatMap((r) =>
+		r.agentId === null
+			? []
+			: [
+					{
+						agentId: r.agentId,
+						requests: r.requests,
+						inputTokens: Number(r.inputTokens),
+						outputTokens: Number(r.outputTokens),
+						costMicroUsd: Number(r.costMicroUsd),
+					},
+				],
+	);
 }

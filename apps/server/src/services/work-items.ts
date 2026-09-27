@@ -25,6 +25,7 @@ import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
 import { toWorkItem } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
+import { enqueueMemoryJob } from "@/memory/queue";
 import { browserHub } from "@/realtime/browser-hub";
 import { requireAgentPrincipal } from "@/services/agent-events";
 import { requireConversation } from "@/services/conversations";
@@ -187,7 +188,8 @@ function noteTitleOf(question: string): string {
  * 已处理 → 409。提交后推 work_item 帧。
  *
  * - decision：待办置 done 并写入 resolution；answer 且 saveAsNote 时以本人为作者写一条共享资料
- *   （标题取问题前 30 字）；在原会话落 `escalation.resolved`。恢复上报代理的运行由调用方交给调度器。
+ *   （标题取问题前 30 字）；在原会话落 `escalation.resolved`，答复另排一个 resolution 作业写成 decision 记忆。
+ *   恢复上报代理的运行由调用方交给调度器。
  * - confirmation：在协商会话落 `confirmation.resolved`，待办置 done；reject 时同一协商里
  *   另一方仍未处理的确认待办置 cancelled。同一协商的处理经协商会话的行锁串行。
  * - approval：待办置 done 并在会话里落 `approval.resolved`，再把决定交给正在等待的代理运行。
@@ -307,7 +309,7 @@ async function resolveDecision(
 		const updated = await closeOpen(tx, item.id, resolution);
 		const card = await cardEventOf(tx, item);
 		if (item.conversationId && card) {
-			await append({
+			const resolved = await append({
 				conversationId: item.conversationId,
 				topicId: card.topicId,
 				actorId: me.id,
@@ -318,6 +320,12 @@ async function resolveDecision(
 					...(text ? { text } : {}),
 				},
 			});
+			if (req.action === "answer")
+				await enqueueMemoryJob(tx, {
+					topicId: card.topicId,
+					trigger: "resolution",
+					eventId: resolved.id,
+				});
 		}
 		return updated;
 	});

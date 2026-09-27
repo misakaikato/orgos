@@ -1,6 +1,6 @@
 /**
  * 集成（MOCK_LLM=1）：C1 与自己的代理组对话、触发规则接线、为他人时的权限收窄、
- * knowledge_search 的共享过滤、转交的深度与限制传递。
+ * memory_search 对资料的共享过滤、转交的深度与限制传递。
  */
 import { and, eq } from "drizzle-orm";
 import { beforeAll, describe, expect, it } from "vitest";

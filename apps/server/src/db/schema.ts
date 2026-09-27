@@ -14,6 +14,14 @@ import {
 	GATEWAY_PROTOCOLS,
 	GROUP_ROUTINGS,
 	MEMBER_ROLES,
+	MEMORY_CATEGORIES,
+	MEMORY_JOB_STATUSES,
+	MEMORY_JOB_TRIGGERS,
+	MEMORY_KINDS,
+	MEMORY_STATUSES,
+	type MemoryEntity,
+	type MemoryScope,
+	type MemorySource,
 	NOTE_VISIBILITIES,
 	PRINCIPAL_KINDS,
 	PRINCIPAL_STATUSES,
@@ -38,6 +46,7 @@ import {
 	type PgColumn,
 	pgTable,
 	primaryKey,
+	real,
 	text,
 	timestamp,
 	unique,
@@ -291,9 +300,8 @@ export const llmRequests = pgTable(
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
 		tenantId: tenantId(),
-		agentId: uuid("agent_id")
-			.notNull()
-			.references(() => principals.id),
+		/** 为空：系统运行（记忆提炼、画像整理）的调用。 */
+		agentId: uuid("agent_id").references(() => principals.id),
 		onBehalfOfId: uuid("on_behalf_of_id").references(() => principals.id),
 		conversationId: uuid("conversation_id").references(() => conversations.id),
 		/** 这次调用属于哪次运行。 */
@@ -449,20 +457,15 @@ export const runs = pgTable(
 	{
 		id: uuid("id").primaryKey().defaultRandom(),
 		tenantId: tenantId(),
-		agentId: uuid("agent_id")
-			.notNull()
-			.references(() => principals.id),
-		conversationId: uuid("conversation_id")
-			.notNull()
-			.references(() => conversations.id),
-		topicId: uuid("topic_id")
-			.notNull()
-			.references(() => topics.id),
+		/** 为空：系统运行（记忆提炼、画像整理），模型调用计量挂在它名下。 */
+		agentId: uuid("agent_id").references(() => principals.id),
+		/** 代理运行必有；系统运行在话题上提炼时有，整理画像时为空。 */
+		conversationId: uuid("conversation_id").references(() => conversations.id),
+		topicId: uuid("topic_id").references(() => topics.id),
 		taskId: uuid("task_id").references(() => tasks.id),
 		trigger: text("trigger").notNull(),
-		actingForId: uuid("acting_for_id")
-			.notNull()
-			.references(() => principals.id),
+		/** 为谁办；系统运行为空。 */
+		actingForId: uuid("acting_for_id").references(() => principals.id),
 		engine: text("engine", { enum: AGENT_ENGINES }).notNull(),
 		state: text("state", { enum: RUN_STATES }).notNull().default("running"),
 		startedAt: timestamp("started_at", { withTimezone: true })
@@ -580,4 +583,133 @@ export const gatewayTokens = pgTable(
 		revokedAt: timestamp("revoked_at", { withTimezone: true }),
 	},
 	(t) => [index("gateway_tokens_topic_idx").on(t.topicId)],
+);
+
+// ─────────────────────────── 记忆层 ───────────────────────────
+
+/**
+ * 记忆条目（第 1 层）：从会话、任务、答复里提炼出的陈述句，带出处与可见范围。
+ * 不删除：被取代时 status=superseded 并链到新条目，本人撤回时 status=retracted。
+ */
+export const memoryItems = pgTable(
+	"memory_items",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		/** 这条记忆关于谁。 */
+		subjectId: uuid("subject_id")
+			.notNull()
+			.references(() => principals.id),
+		kind: text("kind", { enum: MEMORY_KINDS }).notNull(),
+		content: text("content").notNull(),
+		category: text("category", { enum: MEMORY_CATEGORIES }).notNull(),
+		entities: jsonb("entities").$type<MemoryEntity[]>().notNull().default([]),
+		scope: jsonb("scope").$type<MemoryScope>().notNull(),
+		sources: jsonb("sources").$type<MemorySource[]>().notNull().default([]),
+		confidence: real("confidence").notNull().default(0.8),
+		status: text("status", { enum: MEMORY_STATUSES })
+			.notNull()
+			.default("active"),
+		supersededById: uuid("superseded_by_id").references(
+			(): PgColumn => memoryItems.id,
+		),
+		ownerCorrected: boolean("owner_corrected").notNull().default(false),
+		createdByRunId: uuid("created_by_run_id").references(() => runs.id),
+		/** 预留给向量检索（本期不建索引、不写入）。 */
+		embedding: real("embedding").array(),
+		validFrom: timestamp("valid_from", { withTimezone: true })
+			.defaultNow()
+			.notNull(),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		index("memory_items_subject_idx").on(t.subjectId, t.status),
+		index("memory_items_tenant_status_idx").on(t.tenantId, t.status),
+	],
+);
+
+/** 画像的一段：由哪些条目整理而来（检索时只拼接对方看得到全部条目的段落）。 */
+export type MemoryProfileSection = {
+	heading: string;
+	text: string;
+	itemIds: string[];
+};
+
+/** 画像（第 2 层）：按人的"当前状态"页，按段记录来源条目。 */
+export const memoryProfiles = pgTable(
+	"memory_profiles",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		subjectId: uuid("subject_id")
+			.notNull()
+			.references(() => principals.id),
+		subjectKind: text("subject_kind", { enum: ["person", "project"] })
+			.notNull()
+			.default("person"),
+		projectKey: text("project_key"),
+		content: text("content").notNull(),
+		itemIds: uuid("item_ids").array().notNull(),
+		sections: jsonb("sections")
+			.$type<MemoryProfileSection[]>()
+			.notNull()
+			.default([]),
+		builtAt: timestamp("built_at", { withTimezone: true })
+			.defaultNow()
+			.notNull(),
+	},
+	(t) => [
+		uniqueIndex("memory_profiles_person_unique")
+			.on(t.subjectId)
+			.where(sql`${t.subjectKind} = 'person'`),
+	],
+);
+
+/**
+ * 提炼作业：后台执行器按 runAfter 拉取，单租户串行、可重试。
+ * 话题的提炼进度 = 该话题已完成作业的最大 throughEventId。
+ */
+export const memoryJobs = pgTable(
+	"memory_jobs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		topicId: uuid("topic_id")
+			.notNull()
+			.references(() => topics.id),
+		trigger: text("trigger", { enum: MEMORY_JOB_TRIGGERS }).notNull(),
+		status: text("status", { enum: MEMORY_JOB_STATUSES })
+			.notNull()
+			.default("pending"),
+		runAfter: timestamp("run_after", { withTimezone: true })
+			.defaultNow()
+			.notNull(),
+		attempts: integer("attempts").notNull().default(0),
+		error: text("error"),
+		/** resolution：写 decision 条目所依据的事件（答复或协商结束）。 */
+		eventId: bigint("event_id", { mode: "number" }).references(() => events.id),
+		/** 本作业提炼到的最后一条事件。 */
+		throughEventId: bigint("through_event_id", { mode: "number" }),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		index("memory_jobs_due_idx").on(t.status, t.runAfter),
+		index("memory_jobs_topic_idx").on(t.topicId, t.status),
+	],
+);
+
+/** 本人的类别授权：没有行即取默认值（前八类可对外，后六类禁止）。 */
+export const disclosureRules = pgTable(
+	"disclosure_rules",
+	{
+		tenantId: tenantId(),
+		ownerId: uuid("owner_id")
+			.notNull()
+			.references(() => principals.id),
+		category: text("category", { enum: MEMORY_CATEGORIES }).notNull(),
+		allowed: boolean("allowed").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.ownerId, t.category] })],
 );

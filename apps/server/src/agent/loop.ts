@@ -1,6 +1,7 @@
 /**
  * 代理运行循环：组装系统提示 + 当前话题的历史（必要时先压缩）+ 近期工作简报 → 调模型 →
- * 有工具调用则执行并继续 → 无工具调用时把文本作为 message.posted 落在当前话题。
+ * 有工具调用则执行并继续 → 无工具调用时把文本作为 message.posted 落在当前话题（正文里的 `[M:…]`
+ * 引用解析为依据后剥离；替本人回答他人时记下提问人，供代答记录）。
  * 单次运行最多 8 次模型调用。结束型工具（escalate_to_owner、negotiation_reply）执行后本次运行随即结束。
  *
  * 每次运行写一条运行记录（`@/services/runs`）：开始、结束、失败、中止、被打断；模型调用带 runId 记账。
@@ -42,6 +43,7 @@ import type { DelegatedOutcome, ToolScope } from "@/agent/tools/tool";
 import type { ActingFor } from "@/agent/triggers";
 import { conversations, principals } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
+import { extractCitations, stripCitationMarks } from "@/memory/citations";
 import { postAgentMessage, recordAgentAction } from "@/services/agent-events";
 import { findAgent, listAgentsOf } from "@/services/agents";
 import { memberPrincipals } from "@/services/conversations";
@@ -60,6 +62,12 @@ import { openTaskOfTopic } from "@/services/tasks";
 import { topicIn } from "@/services/topics";
 
 export const STEP_LIMIT_TEXT = "这件事步骤太多，我先停在这里。";
+/**
+ * 替他人回答时放在最新消息之后的提醒：本人可能已更正过分身先前的回答，历史里的旧说法不可照搬。
+ * 放在历史之后而非系统提示里（系统提示要保住提示缓存）。
+ */
+export const RECHECK_REMINDER =
+	"【系统】回答这条消息前先调用 memory_search 查一次：你之前在对话里的回答可能已被本人更正，以这次检索结果为准（标着“本人更正”的优先）。";
 export const MODEL_UNAVAILABLE_TEXT = "模型暂时不可用，请稍后再试。";
 
 export type RunInput = {
@@ -93,7 +101,7 @@ export type RunResult = {
 
 const SUMMARY_CHARS = 80;
 const head = (text: string) => {
-	const chars = Array.from(text.trim());
+	const chars = Array.from(stripCitationMarks(text));
 	return chars.length > SUMMARY_CHARS
 		? `${chars.slice(0, SUMMARY_CHARS).join("")}…`
 		: chars.join("");
@@ -140,7 +148,7 @@ function runEndOf(
 				: base.state === "canceled"
 					? "canceled"
 					: "failed",
-		taskSummary: text || (base.summary ?? ""),
+		taskSummary: stripCitationMarks(text) || (base.summary ?? ""),
 	};
 }
 
@@ -298,10 +306,16 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 				currentTopicId: topic.id,
 				visibleTo: actingFor.kind === "other" ? actingFor.principalId : null,
 			});
+	const recheck =
+		!ctx &&
+		actingFor.kind === "other" &&
+		!input.trigger.resume &&
+		tools.some((t) => t.name === "memory_search");
 	const messages: ChatMessage[] = [
 		{ role: "system", content: system },
 		...history,
 		...(brief ? [{ role: "user" as const, content: brief }] : []),
+		...(recheck ? [{ role: "user" as const, content: RECHECK_REMINDER }] : []),
 	];
 	const trigger: RunTrigger = {
 		...input.trigger,
@@ -352,7 +366,20 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 			if (res.toolCalls.length === 0) {
 				const text = res.text.trim() || "（没有可说的）";
 				if (!posts) return { outcome: "returned", text };
-				await postAgentMessage(s, agentId, place, text);
+				const said = extractCitations(text, session.citable);
+				await postAgentMessage(s, agentId, place, said.text || text, {
+					extra: {
+						citations: said.citations,
+						...(actingFor.kind === "other"
+							? {
+									askedById: actingFor.principalId,
+									...(depth === 0 && input.triggerEventId !== undefined
+										? { replyToEventId: input.triggerEventId }
+										: {}),
+								}
+							: {}),
+					},
+				});
 				return { outcome: "posted", text };
 			}
 
