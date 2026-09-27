@@ -17,7 +17,9 @@
 		"lint": "NO_PROXY=localhost,127.0.0.1 biome check apps packages scripts",
 		"test": "NO_PROXY=localhost,127.0.0.1 bun run --filter '*' test",
 		"seed": "NO_PROXY=localhost,127.0.0.1 bun scripts/seed.ts",
-		"seed:demo": "NO_PROXY=localhost,127.0.0.1 bun scripts/seed-demo.ts"
+		"seed:demo": "NO_PROXY=localhost,127.0.0.1 bun scripts/seed-demo.ts",
+		"desktop:dev": "NO_PROXY=localhost,127.0.0.1 bun run --cwd apps/desktop dev",
+		"desktop:build": "NO_PROXY=localhost,127.0.0.1 bun run --cwd apps/desktop build"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.6",

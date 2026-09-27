@@ -291,6 +291,8 @@ export class AcpManager {
 			server: string;
 			adapters: AdapterRegistry;
 			send: SendUp;
+			/** 会话槽增减之后。 */
+			onSessionsChanged?: () => void;
 		},
 	) {}
 
@@ -320,6 +322,7 @@ export class AcpManager {
 					this.sessions.delete(frame.taskId);
 					session.dispose();
 					log.info("acp.task_closed", { taskId: frame.taskId });
+					this.deps.onSessionsChanged?.();
 				}
 				return;
 		}
@@ -367,16 +370,20 @@ export class AcpManager {
 		});
 		// 先登记再做任何异步的事：此刻到来的 hello 要能上报它。
 		this.sessions.set(frame.taskId, session);
+		this.deps.onSessionsChanged?.();
 		if (!(await session.start(frame.prompt))) this.forget(session);
 	}
 
 	private forget(session: AcpTaskSession): void {
-		if (this.sessions.get(session.taskId) === session)
-			this.sessions.delete(session.taskId);
+		if (this.sessions.get(session.taskId) !== session) return;
+		this.sessions.delete(session.taskId);
+		this.deps.onSessionsChanged?.();
 	}
 
 	disposeAll(): void {
+		if (this.sessions.size === 0) return;
 		for (const session of this.sessions.values()) session.dispose();
 		this.sessions.clear();
+		this.deps.onSessionsChanged?.();
 	}
 }

@@ -31,6 +31,7 @@ import {
 	clearAgentActivity,
 } from "@/lib/activity";
 import { ApiError, api, fetchEventsAfter } from "@/lib/api";
+import { syncDesktop } from "@/lib/desktop";
 import {
 	applyEventToSummaries,
 	maxSeq,
@@ -114,7 +115,7 @@ const initialState: State = {
 };
 
 let state = initialState;
-const listeners = new Set<() => void>();
+const listeners = new Set<() => void>([() => syncDesktop(state)]);
 
 function set(patch: Partial<State> | ((s: State) => Partial<State>)): void {
 	const next = typeof patch === "function" ? patch(state) : patch;

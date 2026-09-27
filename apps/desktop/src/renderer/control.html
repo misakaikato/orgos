@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'self'; script-src 'self'; style-src 'self'"
+		/>
+		<title>Runner 控制</title>
+		<link rel="stylesheet" href="tokens.css" />
+		<link rel="stylesheet" href="page.css" />
+	</head>
+	<body>
+		<main class="stack">
+			<header class="row spread">
+				<h1>Runner 控制</h1>
+				<span class="status-pill"
+					><span class="dot" id="phase-dot"></span><span id="phase-label">…</span></span
+				>
+			</header>
+
+			<section class="card pending" id="quit" hidden>
+				<div class="card-title">退出前确认</div>
+				<div class="card-body stack">
+					<p id="quit-text"></p>
+					<div class="row">
+						<button class="danger" id="quit-confirm" type="button">仍然退出</button>
+						<button id="quit-cancel" type="button">取消</button>
+					</div>
+				</div>
+			</section>
+
+			<section class="card">
+				<h2>状态</h2>
+				<dl class="facts">
+					<dt>连接</dt>
+					<dd id="fact-link">—</dd>
+					<dt>最近连接</dt>
+					<dd id="fact-connected">—</dd>
+					<dt>正在执行</dt>
+					<dd id="fact-busy">—</dd>
+					<dt>进程</dt>
+					<dd id="fact-process">—</dd>
+					<dt>最近问题</dt>
+					<dd id="fact-problem">—</dd>
+				</dl>
+				<div class="row">
+					<button class="primary" id="start" type="button">启动</button>
+					<button id="stop" type="button">停止</button>
+					<button id="restart" type="button">重启</button>
+					<button id="open-log" type="button">打开日志</button>
+				</div>
+				<p class="message" id="run-message" role="status"></p>
+			</section>
+
+			<section class="card">
+				<h2>服务器</h2>
+				<form class="row" id="server-form">
+					<div class="field">
+						<label for="server">服务器地址</label>
+						<input id="server" type="url" required />
+					</div>
+					<button class="align-end" type="submit">保存</button>
+				</form>
+				<p class="message" id="server-message" role="status"></p>
+			</section>
+
+			<section class="card">
+				<h2>配对</h2>
+				<div id="paired" hidden>
+					<div class="row spread">
+						<p>这台设备已配对。</p>
+						<button class="danger" id="unpair" type="button">解除本机配对</button>
+					</div>
+					<p class="muted">吊销设备请到网页的“设备”页操作。</p>
+				</div>
+				<form id="pair-form" class="stack" hidden>
+					<p class="muted">在网页的“设备”页生成配对码，填到这里。</p>
+					<div class="row">
+						<div class="field">
+							<label for="code">配对码</label>
+							<input id="code" type="text" autocomplete="off" required />
+						</div>
+						<div class="field">
+							<label for="device-name">设备名</label>
+							<input id="device-name" type="text" maxlength="40" required />
+						</div>
+					</div>
+					<div class="row">
+						<button class="primary" type="submit">配对</button>
+					</div>
+				</form>
+				<p class="message" id="pair-message" role="status"></p>
+			</section>
+
+			<section class="card">
+				<h2>工作目录</h2>
+				<div class="row">
+					<span class="path" id="workspace">—</span>
+					<button id="choose-workspace" type="button">选择…</button>
+				</div>
+				<p class="muted">代理只能读写这个目录里的文件、在这里执行命令。</p>
+			</section>
+
+			<section class="card">
+				<h2>外部助手</h2>
+				<p class="muted" id="path-error" hidden></p>
+				<div id="adapters"></div>
+			</section>
+
+			<section class="card stack">
+				<h2>启动</h2>
+				<label class="check"
+					><input id="auto-start" type="checkbox" />打开 orgos 时自动启动 Runner</label
+				>
+				<label class="check"><input id="open-at-login" type="checkbox" />开机时打开 orgos</label>
+			</section>
+
+			<footer class="muted small" id="footer"></footer>
+		</main>
+		<script src="control.js"></script>
+	</body>
+</html>

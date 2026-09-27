@@ -1,0 +1,272 @@
+/*
+ * 桌面端本地页面（服务器地址页、Runner 控制窗口）的样式。
+ * 只用 tokens.css 的变量（构建时从 apps/web/src/app/tokens.css 引入），不写字面色值。
+ */
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--ink);
+	font-family: var(--font-ui);
+	font-size: var(--fs-14);
+	line-height: 1.6;
+}
+
+body {
+	padding: 24px;
+}
+
+h1 {
+	margin: 0;
+	font-size: var(--fs-20);
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+h2 {
+	margin: 0 0 12px;
+	font-size: var(--fs-16);
+	font-weight: 600;
+}
+
+p {
+	margin: 0;
+}
+
+.muted {
+	color: var(--muted);
+	font-size: var(--fs-13);
+}
+
+.small {
+	font-size: var(--fs-12);
+}
+
+.stack > * + * {
+	margin-top: 16px;
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.align-end {
+	align-self: flex-end;
+}
+
+.spread {
+	justify-content: space-between;
+}
+
+.card {
+	border: 1px solid var(--line);
+	border-radius: var(--radius-card);
+	background: var(--bg);
+	padding: 16px;
+}
+
+.card.pending {
+	padding: 0;
+	overflow: hidden;
+}
+
+.card.pending .card-title {
+	background: var(--pending-soft);
+	color: var(--pending-ink);
+	font-weight: 600;
+	height: 40px;
+	display: flex;
+	align-items: center;
+	padding: 0 16px;
+}
+
+.card.pending .card-body {
+	padding: 12px 16px 16px;
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	flex: 1;
+	min-width: 160px;
+}
+
+.field label {
+	font-size: var(--fs-12);
+	color: var(--muted);
+}
+
+input[type="text"],
+input[type="url"] {
+	height: var(--control-h);
+	border: 1px solid var(--line);
+	border-radius: var(--radius-pill);
+	background: var(--surface-2);
+	color: var(--ink);
+	font: inherit;
+	padding: 0 12px;
+	outline: none;
+	width: 100%;
+}
+
+input[type="text"]:focus,
+input[type="url"]:focus {
+	border-color: var(--accent);
+}
+
+button {
+	height: var(--control-h);
+	border: none;
+	border-radius: var(--radius-pill);
+	padding: 0 16px;
+	font: inherit;
+	font-size: var(--fs-13);
+	cursor: pointer;
+	background: var(--surface-2);
+	color: var(--ink);
+	white-space: nowrap;
+}
+
+button.primary {
+	background: var(--accent);
+	color: var(--on-accent);
+}
+
+button.danger {
+	color: var(--danger);
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+
+.status-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	height: 28px;
+	padding: 0 12px;
+	border-radius: var(--radius-pill);
+	background: var(--surface-2);
+	font-size: var(--fs-13);
+	font-weight: 600;
+}
+
+.dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--muted);
+	flex: none;
+}
+
+.dot[data-phase="connected"] {
+	background: var(--good);
+}
+
+.dot[data-phase="reconnecting"] {
+	background: var(--pending);
+}
+
+.dot[data-phase="unpaired"] {
+	background: var(--danger);
+}
+
+dl.facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 16px;
+	margin: 0 0 12px;
+}
+
+dl.facts dt {
+	color: var(--muted);
+	font-size: var(--fs-13);
+}
+
+dl.facts dd {
+	margin: 0;
+	font-size: var(--fs-13);
+	overflow-wrap: anywhere;
+}
+
+.path {
+	font-size: var(--fs-13);
+	overflow-wrap: anywhere;
+	flex: 1;
+	min-width: 0;
+}
+
+.adapter {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+	padding: 8px 0;
+	border-top: 1px solid var(--line);
+}
+
+.adapter:first-of-type {
+	border-top: none;
+}
+
+.adapter input {
+	margin-top: 5px;
+}
+
+.adapter .name {
+	font-weight: 600;
+}
+
+.tag {
+	display: inline-block;
+	margin-left: 8px;
+	padding: 0 8px;
+	border-radius: var(--radius-pill);
+	background: var(--surface-2);
+	color: var(--muted);
+	font-size: var(--fs-12);
+	font-weight: 400;
+}
+
+.check {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+
+.message {
+	min-height: 20px;
+	font-size: var(--fs-13);
+	color: var(--muted);
+}
+
+.message[data-tone="error"] {
+	color: var(--danger);
+}
+
+[hidden] {
+	display: none;
+}
+
+.setup {
+	min-height: calc(100vh - 48px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.setup .card {
+	width: 100%;
+	max-width: var(--card-w);
+	padding: 24px;
+}
