@@ -6,6 +6,8 @@ import {
 	AgentSchema,
 	ConversationSchema,
 	HandleSchema,
+	NOTE_VISIBILITIES,
+	NoteSchema,
 	PRINCIPAL_STATUSES,
 	PrincipalSchema,
 	TenantSchema,
@@ -188,6 +190,86 @@ export const WorkItemListResponseSchema = z.object({
 	items: z.array(WorkItemSchema),
 });
 export type WorkItemListResponse = z.infer<typeof WorkItemListResponseSchema>;
+
+// ─────────────────────────── 代理组 ───────────────────────────
+
+export const AGENT_DESCRIPTION_MAX_LENGTH = 2000;
+export const DELEGATION_POLICY_MAX_LENGTH = 2000;
+
+export const AgentListResponseSchema = z.object({
+	items: z.array(AgentSchema),
+});
+export type AgentListResponse = z.infer<typeof AgentListResponseSchema>;
+
+/** 新建的代理一律是助手（分身每人恰好一个，随入驻创建）。 */
+export const CreateAgentRequestSchema = z.object({
+	displayName: DisplayNameSchema,
+	handle: HandleSchema,
+	description: z.string().trim().max(AGENT_DESCRIPTION_MAX_LENGTH),
+});
+export type CreateAgentRequest = z.infer<typeof CreateAgentRequestSchema>;
+
+export const UpdateAgentRequestSchema = z.object({
+	displayName: DisplayNameSchema.optional(),
+	description: z.string().trim().max(AGENT_DESCRIPTION_MAX_LENGTH).optional(),
+	/** 仅分身：本人写的对外授权政策。 */
+	delegationPolicy: z
+		.string()
+		.trim()
+		.max(DELEGATION_POLICY_MAX_LENGTH)
+		.optional(),
+});
+export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
+
+export const AgentResponseSchema = z.object({ agent: AgentSchema });
+export type AgentResponse = z.infer<typeof AgentResponseSchema>;
+
+// ─────────────────────────── 资料 ───────────────────────────
+
+export const NOTE_TITLE_MAX_LENGTH = 120;
+export const NOTE_BODY_MAX_LENGTH = 8000;
+
+const NoteTitleSchema = z.string().trim().min(1).max(NOTE_TITLE_MAX_LENGTH);
+const NoteBodySchema = z.string().max(NOTE_BODY_MAX_LENGTH);
+
+export const NoteListResponseSchema = z.object({
+	items: z.array(NoteSchema),
+});
+export type NoteListResponse = z.infer<typeof NoteListResponseSchema>;
+
+export const CreateNoteRequestSchema = z.object({
+	title: NoteTitleSchema,
+	body: NoteBodySchema,
+	visibility: z.enum(NOTE_VISIBILITIES).default("private"),
+});
+export type CreateNoteRequest = z.input<typeof CreateNoteRequestSchema>;
+
+export const UpdateNoteRequestSchema = z.object({
+	title: NoteTitleSchema.optional(),
+	body: NoteBodySchema.optional(),
+	visibility: z.enum(NOTE_VISIBILITIES).optional(),
+});
+export type UpdateNoteRequest = z.infer<typeof UpdateNoteRequestSchema>;
+
+export const NoteResponseSchema = z.object({ note: NoteSchema });
+export type NoteResponse = z.infer<typeof NoteResponseSchema>;
+
+// ─────────────────────────── 用量 ───────────────────────────
+
+export const AgentUsageSchema = z.object({
+	agentId: z.uuid(),
+	requests: z.number().int(),
+	inputTokens: z.number().int(),
+	outputTokens: z.number().int(),
+	/** 未定价或计量解析失败的请求不计入。 */
+	costMicroUsd: z.number().int(),
+});
+export type AgentUsage = z.infer<typeof AgentUsageSchema>;
+
+export const UsageResponseSchema = z.object({
+	byAgent: z.array(AgentUsageSchema),
+});
+export type UsageResponse = z.infer<typeof UsageResponseSchema>;
 
 // ─────────────────────────── 模拟台（仅 ORGOS_DEV=1） ───────────────────────────
 

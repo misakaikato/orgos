@@ -82,6 +82,18 @@
 	--animate-mascot-bounce: mascot-bounce 1.2s ease-in-out infinite;
 	--animate-typing-dot: typing-dot 1.2s ease-in-out infinite;
 	--animate-pop-in: pop-in 160ms ease-out;
+	--animate-caret: caret-blink 1s steps(1) infinite;
+}
+
+/* 代理流式回复末尾的闪烁光标。 */
+@keyframes caret-blink {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0;
+	}
 }
 
 /* 团子工作时的弹跳（DESIGN.md §4）：上下 2px。 */

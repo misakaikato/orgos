@@ -3,9 +3,13 @@
  */
 import {
 	type AddMemberRequest,
+	AgentListResponseSchema,
+	AgentResponseSchema,
 	ConversationListResponseSchema,
+	type CreateAgentRequest,
 	type CreateConversationRequest,
 	CreateConversationResponseSchema,
+	type CreateNoteRequest,
 	DemoPeopleResponseSchema,
 	DevInfoResponseSchema,
 	DevSessionResponseSchema,
@@ -15,13 +19,18 @@ import {
 	type Event,
 	EventsResponseSchema,
 	MeResponseSchema,
+	NoteListResponseSchema,
+	NoteResponseSchema,
 	type OnboardingRequest,
 	OnboardingResponseSchema,
 	type PostMessageRequest,
 	PostMessageResponseSchema,
 	ResetDemoResponseSchema,
+	type UpdateAgentRequest,
+	type UpdateNoteRequest,
 	type UpdateStatusRequest,
 	UpdateStatusResponseSchema,
+	UsageResponseSchema,
 	type WORK_ITEM_STATUSES,
 	WorkItemListResponseSchema,
 } from "@orgos/protocol";
@@ -143,6 +152,30 @@ export const api = {
 		noContent(http.post(`/api/conversations/${id}/members`, { json: req })),
 	markRead: (id: string, seq: number) =>
 		noContent(http.post(`/api/conversations/${id}/read`, { json: { seq } })),
+	/** 中止该会话里正在运行的代理。 */
+	stop: (id: string) => noContent(http.post(`/api/conversations/${id}/stop`)),
+
+	agents: () =>
+		run(() => http.get("/api/agents").json(AgentListResponseSchema)),
+	createAgent: (req: CreateAgentRequest) =>
+		run(() =>
+			http.post("/api/agents", { json: req }).json(AgentResponseSchema),
+		),
+	updateAgent: (id: string, req: UpdateAgentRequest) =>
+		run(() =>
+			http.patch(`/api/agents/${id}`, { json: req }).json(AgentResponseSchema),
+		),
+	deleteAgent: (id: string) => noContent(http.delete(`/api/agents/${id}`)),
+	usage: () => run(() => http.get("/api/usage").json(UsageResponseSchema)),
+
+	notes: () => run(() => http.get("/api/notes").json(NoteListResponseSchema)),
+	createNote: (req: CreateNoteRequest) =>
+		run(() => http.post("/api/notes", { json: req }).json(NoteResponseSchema)),
+	updateNote: (id: string, req: UpdateNoteRequest) =>
+		run(() =>
+			http.patch(`/api/notes/${id}`, { json: req }).json(NoteResponseSchema),
+		),
+	deleteNote: (id: string) => noContent(http.delete(`/api/notes/${id}`)),
 
 	/** 我是处理人的待办；`as` 给定时以该 bearer 身份请求（模拟台读各窗格的待办数）。 */
 	workItems: (

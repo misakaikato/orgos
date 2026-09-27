@@ -144,6 +144,11 @@ export function MessageList({
 		onBottomChange(bottom);
 	}, [events, meId, onBottomChange]);
 
+	// 末尾附加内容（正在工作、流式草稿）每次渲染都可能变高：停在底部时跟随。
+	useLayoutEffect(() => {
+		if (atBottom.current) scrollToBottom(scroller.current);
+	});
+
 	// 内容高度变化（字体加载、窗口缩放）时保持贴底。
 	useEffect(() => {
 		const el = scroller.current;

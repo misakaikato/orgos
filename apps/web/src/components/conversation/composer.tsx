@@ -8,7 +8,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { IconClip, IconPlus, IconSend } from "@/components/icons";
+import { IconClip, IconPlus, IconSend, IconStop } from "@/components/icons";
 import { Mascot } from "@/components/mascot";
 import { Avatar, PersonAvatar } from "@/components/ui/avatar";
 import { Tag } from "@/components/ui/badge";
@@ -108,6 +108,8 @@ export function Composer({
 	onSend,
 	placeholder,
 	twinTarget,
+	running = false,
+	onStop,
 }: {
 	members: readonly Principal[];
 	meId: string;
@@ -115,6 +117,9 @@ export function Composer({
 	onSend: (text: string, mentions: string[], askTwin: boolean) => Promise<void>;
 	placeholder: string;
 	twinTarget?: TwinTarget | null;
+	/** 会话里有代理正在运行：输入为空时发送键换成"停止"。 */
+	running?: boolean;
+	onStop?: () => Promise<void>;
 }) {
 	const area = useRef<HTMLTextAreaElement>(null);
 	const [text, setText] = useState("");
@@ -125,6 +130,7 @@ export function Composer({
 	const [sending, setSending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [askTwin, setAskTwin] = useState(false);
+	const [stopping, setStopping] = useState(false);
 	const hint = twinTarget ? unavailableHint(twinTarget.peer) : null;
 
 	const groups = mention
@@ -189,12 +195,26 @@ export function Composer({
 			setMention(null);
 			setAskTwin(false);
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "发送失败");
+			setError(`发送失败：${e instanceof Error ? e.message : "未知错误"}`);
 		} finally {
 			setSending(false);
 			area.current?.focus();
 		}
 	};
+
+	const stop = async () => {
+		if (!onStop || stopping) return;
+		setStopping(true);
+		setError(null);
+		try {
+			await onStop();
+		} catch (e) {
+			setError(`停止失败：${e instanceof Error ? e.message : "未知错误"}`);
+		} finally {
+			setStopping(false);
+		}
+	};
+	const showStop = running && Boolean(onStop) && text.trim().length === 0;
 
 	const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
 		if (e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -277,7 +297,7 @@ export function Composer({
 			) : null}
 			{error ? (
 				<p role="alert" className="mb-2 px-2 text-12 text-danger">
-					发送失败：{error}
+					{error}
 				</p>
 			) : hint ? (
 				<p role="status" className="mb-2 px-2 text-12 text-muted">
@@ -353,16 +373,30 @@ export function Composer({
 						{text.length}/{MESSAGE_MAX_LENGTH}
 					</span>
 				) : null}
-				<button
-					type="button"
-					aria-label="发送"
-					title="发送（Enter）"
-					disabled={!canSend}
-					onClick={() => void send()}
-					className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-accent text-on-accent transition-[background-color,color,filter] duration-150 hover:brightness-110 disabled:bg-surface-2 disabled:text-muted disabled:hover:brightness-100"
-				>
-					<IconSend size={18} />
-				</button>
+				{showStop ? (
+					<button
+						type="button"
+						aria-label="停止"
+						title="停止代理"
+						disabled={stopping}
+						onClick={() => void stop()}
+						className="inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-pill bg-surface-2 pr-3 pl-2 text-13 font-medium text-ink transition-colors duration-150 hover:bg-line disabled:opacity-50"
+					>
+						<IconStop size={18} />
+						停止
+					</button>
+				) : (
+					<button
+						type="button"
+						aria-label="发送"
+						title="发送（Enter）"
+						disabled={!canSend}
+						onClick={() => void send()}
+						className="inline-flex size-8 shrink-0 items-center justify-center rounded-pill bg-accent text-on-accent transition-[background-color,color,filter] duration-150 hover:brightness-110 disabled:bg-surface-2 disabled:text-muted disabled:hover:brightness-100"
+					>
+						<IconSend size={18} />
+					</button>
+				)}
 			</div>
 		</div>
 	);

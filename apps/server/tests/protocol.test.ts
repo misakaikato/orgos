@@ -1,4 +1,8 @@
-import { HANDLE_RE, OnboardingRequestSchema } from "@orgos/protocol";
+import {
+	HANDLE_RE,
+	OnboardingRequestSchema,
+	parseBrowserFrame,
+} from "@orgos/protocol";
 import { describe, expect, it } from "vitest";
 import { newInviteCode, normalizeInviteCode } from "@/services/onboarding";
 
@@ -76,5 +80,32 @@ describe("邀请码", () => {
 	});
 	it("比对前去空白并转大写", () => {
 		expect(normalizeInviteCode("  abcd23 ")).toBe("ABCD23");
+	});
+});
+
+describe("代理运行帧", () => {
+	const ids = {
+		conversationId: "8a0b3c73-5249-4e52-af6e-84506d0eea3d",
+		agentId: "4eb3877b-ea7e-4ab2-a310-667d28ca01ab",
+		runId: "run-1",
+	};
+
+	it("draft 与 status 可解析；state 只能是 thinking / tool / idle", () => {
+		expect(
+			parseBrowserFrame(JSON.stringify({ t: "draft", ...ids, delta: "你好" })),
+		).toMatchObject({ ok: true });
+		expect(
+			parseBrowserFrame(
+				JSON.stringify({
+					t: "status",
+					...ids,
+					state: "tool",
+					label: "正在查资料…",
+				}),
+			),
+		).toMatchObject({ ok: true });
+		expect(
+			parseBrowserFrame(JSON.stringify({ t: "status", ...ids, state: "busy" })),
+		).toMatchObject({ ok: false });
 	});
 });

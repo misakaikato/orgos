@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Composer } from "@/components/conversation/composer";
 import { Inspector } from "@/components/conversation/inspector";
 import { MessageList } from "@/components/conversation/message-list";
+import { AgentActivityRows } from "@/components/conversation/working-indicator";
 import { IconBack, IconPanel } from "@/components/icons";
 import { Avatar, GroupAvatar } from "@/components/ui/avatar";
 import { IconButton } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import {
 	refreshConversations,
 	sendMessage,
 	setActiveConversation,
+	stopAgents,
 	useStore,
 } from "@/lib/store";
 
@@ -43,6 +45,7 @@ export function ConversationView({
 	const events = useStore((s) => s.events[conversationId]);
 	const status = useStore((s) => s.eventsStatus[conversationId]);
 	const directory = useStore((s) => s.directory);
+	const activity = useStore((s) => s.activity[conversationId]);
 	const map = usePrincipalMap();
 	const wide = useMediaQuery(WIDE);
 	const [panelWide, setPanelWide] = useState(false);
@@ -196,6 +199,9 @@ export function ConversationView({
 						handles={handles}
 						isGroup={kind !== "dm"}
 						onBottomChange={onBottomChange}
+						footer={
+							<AgentActivityRows activity={activity} map={map} meId={meId} />
+						}
 						empty={
 							<EmptyState
 								mascotId={
@@ -213,6 +219,8 @@ export function ConversationView({
 					map={map}
 					placeholder={`发给 ${title}`}
 					twinTarget={twinTarget}
+					running={Boolean(activity)}
+					onStop={() => stopAgents(conversationId)}
 					onSend={(text, mentions, askTwin) =>
 						sendMessage(conversationId, text, mentions, askTwin)
 					}

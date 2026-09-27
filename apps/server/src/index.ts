@@ -6,9 +6,11 @@ import { wsProxyEvents } from "@/lib/ws-proxy";
 import { upgradeWs } from "@/lib/ws-upgrade";
 import type { AppEnv } from "@/middleware/auth";
 import { nextWsTarget, proxyToNext } from "@/proxy";
+import { registerAgentRoutes } from "@/routes/agents";
 import { registerConversationRoutes } from "@/routes/conversations";
 import { registerDevRoutes } from "@/routes/dev";
 import { registerMeRoutes } from "@/routes/me";
+import { registerNoteRoutes } from "@/routes/notes";
 import { registerOnboardingRoutes } from "@/routes/onboarding";
 import { registerWorkItemRoutes } from "@/routes/work-items";
 import { registerWsRoutes } from "@/routes/ws";
@@ -23,6 +25,8 @@ export function createApp(): Hono<AppEnv> {
 	registerMeRoutes(app);
 	registerConversationRoutes(app);
 	registerWorkItemRoutes(app);
+	registerAgentRoutes(app);
+	registerNoteRoutes(app);
 	registerWsRoutes(app);
 	registerDevRoutes(app);
 

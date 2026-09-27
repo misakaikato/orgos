@@ -8,8 +8,10 @@
 import { parseBrowserFrame, WS_CLOSE } from "@orgos/protocol";
 import { wsUrl } from "@/lib/auth-mode";
 import {
+	applyAgentFrame,
 	applyEvent,
 	applyPresence,
+	applyWorkItem,
 	markNotOnboarded,
 	markUnauthorized,
 	resync,
@@ -56,9 +58,12 @@ export function startRealtime(): () => void {
 			if (typeof ev.data !== "string") return;
 			const frame = parseBrowserFrame(ev.data);
 			if (!frame.ok) return;
-			if (frame.data.t === "event") applyEvent(frame.data.event);
-			else if (frame.data.t === "presence")
-				applyPresence(frame.data.principalId, frame.data.status);
+			const data = frame.data;
+			if (data.t === "event") applyEvent(data.event);
+			else if (data.t === "presence")
+				applyPresence(data.principalId, data.status);
+			else if (data.t === "draft" || data.t === "status") applyAgentFrame(data);
+			else if (data.t === "work_item") applyWorkItem(data.workItem);
 		};
 		ws.onclose = (ev) => {
 			if (silenceTimer) clearTimeout(silenceTimer);

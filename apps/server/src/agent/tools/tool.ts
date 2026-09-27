@@ -1,0 +1,77 @@
+/**
+ * 代理工具的定义方式：一个 Zod schema 同时产出给模型的 JSON schema（z.toJSONSchema）
+ * 与执行前的入参校验（safeParse），二者不会漂移。
+ *
+ * 可用性按运行上下文（行事对象、会话类型、转交深度）判定：不可用的工具不出现在工具列表里，
+ * 模型编造调用也只会得到"无权限"。
+ */
+import type { Agent, CONVERSATION_KINDS } from "@orgos/protocol";
+import { z } from "zod";
+import type { RunSession } from "@/agent/session";
+import type { ActingFor } from "@/agent/triggers";
+import type { PrincipalRow, Scoped } from "@/db/scope";
+
+export type ToolScope = {
+	s: Scoped;
+	agent: Agent;
+	owner: PrincipalRow;
+	conversation: { id: string; kind: (typeof CONVERSATION_KINDS)[number] };
+	actingFor: ActingFor;
+	/** 转交深度：直接被触发的运行为 0。 */
+	depth: number;
+	session: RunSession;
+	/** 同步运行一位同组代理一次，返回它的最终文本。 */
+	delegate(target: Agent, task: string): Promise<string>;
+};
+
+export type ToolOutcome = {
+	/** 作为工具结果交还给模型的文本。 */
+	result: string;
+	/** 落在 agent.action 里、给人看的一句话。 */
+	summary: string;
+	ok: boolean;
+	/** pass：本次运行无声结束。 */
+	pass?: true;
+};
+
+export type AgentTool = {
+	name: string;
+	description: string;
+	/** 执行时状态行的灰字。 */
+	label: string;
+	parameters: unknown;
+	available(scope: ToolScope): boolean;
+	execute(raw: unknown, scope: ToolScope): Promise<ToolOutcome>;
+};
+
+export function makeTool<S extends z.ZodType>(def: {
+	name: string;
+	description: string;
+	label: string;
+	schema: S;
+	available: (scope: ToolScope) => boolean;
+	run: (args: z.infer<S>, scope: ToolScope) => Promise<ToolOutcome>;
+}): AgentTool {
+	return {
+		name: def.name,
+		description: def.description,
+		label: def.label,
+		parameters: z.toJSONSchema(def.schema),
+		available: def.available,
+		async execute(raw, scope) {
+			const parsed = def.schema.safeParse(raw ?? {});
+			if (!parsed.success) {
+				const first = parsed.error.issues[0];
+				const at = first?.path.length ? `（${first.path.join(".")}）` : "";
+				return {
+					result: `参数不合法${at}：${first?.message ?? "校验失败"}`,
+					summary: `调用 ${def.name} 的参数不合法`,
+					ok: false,
+				};
+			}
+			return def.run(parsed.data, scope);
+		},
+	};
+}
+
+export const forOwner = (scope: ToolScope) => scope.actingFor.kind === "owner";

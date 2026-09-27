@@ -4,7 +4,8 @@
  * - 本人与自己某个代理的私聊：本人发言时该代理总是回应，为本人办事。
  * - 两个真人的私聊（含双方分身）：对方 @ 了我的分身、切到"问分身"发送、或我忙碌 / 离开时，
  *   我的分身为对方办事；我自己的消息永远不触发我的分身；否则谁也不触发。
- * - 群聊：只返回被 @ 的代理（轮次规则由调度器在此之上实现）。
+ * - 群聊：`agentsToTrigger` 只返回被 @ 的代理；`groupRound` 给出一轮的完整发言顺序
+ *   （被 @ 的在前，其余按入群顺序），轮次的推进由调度器实现。
  * - 代理发的消息、协商会话：不触发任何代理（协商由协商流程自己驱动）。
  */
 import type {
@@ -48,7 +49,9 @@ export type TriggerReason =
 	| "own_dm"
 	| "mentioned"
 	| "ask_twin"
-	| "owner_unavailable";
+	| "owner_unavailable"
+	/** 群聊里没被点名、按轮次轮到（可以无声跳过）。 */
+	| "round";
 
 export type Trigger = {
 	agentId: string;
@@ -86,7 +89,10 @@ export function isHumanPairDm(conv: TriggerConversation): boolean {
 	return humanPairOf(conv) !== null;
 }
 
-function actingFor(agent: TriggerMember, actorId: string): ActingFor {
+export function actingFor(
+	agent: Pick<TriggerMember, "ownerId">,
+	actorId: string,
+): ActingFor {
 	return agent.ownerId === actorId
 		? { kind: "owner" }
 		: { kind: "other", principalId: actorId };
@@ -159,4 +165,35 @@ export function agentsToTrigger(
 					reason: "mentioned",
 				}));
 	}
+}
+
+/**
+ * 群聊一轮的发言顺序（假设 5）：被 @ 的代理按 @ 的先后在前，其余代理按成员顺序（入群顺序）。
+ * 只有人发的消息开启一轮；每个代理为发消息的人办事（是自己的本人则为本人）。
+ */
+export function groupRound(
+	conv: TriggerConversation,
+	msg: TriggerMessage,
+): Trigger[] {
+	if (conv.kind !== "group") return [];
+	const members = participants(conv);
+	const actor = members.find((m) => m.id === msg.actorId);
+	if (actor?.kind !== "human") return [];
+	const agents = members.filter((m) => m.kind === "agent");
+	const mentioned = msg.mentions.flatMap((id) =>
+		agents.filter((a) => a.id === id),
+	);
+	const others = agents.filter((a) => !msg.mentions.includes(a.id));
+	return [
+		...mentioned.map((a) => ({
+			agentId: a.id,
+			actingFor: actingFor(a, actor.id),
+			reason: "mentioned" as const,
+		})),
+		...others.map((a) => ({
+			agentId: a.id,
+			actingFor: actingFor(a, actor.id),
+			reason: "round" as const,
+		})),
+	];
 }

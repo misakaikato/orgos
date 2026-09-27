@@ -12,6 +12,7 @@ import { principals, workItems } from "@/db/schema";
 import type { Scoped } from "@/db/scope";
 import { badRequest } from "@/lib/errors";
 import { toWorkItem } from "@/lib/serialize";
+import { browserHub } from "@/realtime/browser-hub";
 import { requireAgentPrincipal } from "@/services/agent-events";
 import { requireConversation } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
@@ -49,6 +50,11 @@ export async function createWorkItem(
 		dueAt: input.dueAt ?? null,
 	});
 	return toWorkItem(row);
+}
+
+/** 把新增或变化的待办推给处理人（须在写入提交之后调用）。 */
+export function notifyWorkItem(item: WorkItem): void {
+	browserHub.sendTo([item.ownerId], { t: "work_item", workItem: item });
 }
 
 /** 我是处理人的待办，按创建时间倒序。 */

@@ -5,6 +5,8 @@
  * 组件经 useStore(selector) 订阅；写入只经本文件导出的动作。
  */
 import type {
+	Agent,
+	BrowserFrame,
 	ConversationSummary,
 	DirectoryResponse,
 	Event,
@@ -13,6 +15,12 @@ import type {
 	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
+import {
+	type ActivityMap,
+	applyDraftFrame,
+	applyStatusFrame,
+	clearAgentActivity,
+} from "@/lib/activity";
 import { ApiError, api, fetchEventsAfter } from "@/lib/api";
 import {
 	applyEventToSummaries,
@@ -47,6 +55,8 @@ export type State = {
 	/** 我是处理人、仍未处理的待办（null = 还没加载过）。 */
 	workItems: WorkItem[] | null;
 	workItemsStatus: LoadStatus | null;
+	/** 正在工作的代理（状态行与流式草稿），按会话、按代理。 */
+	activity: ActivityMap;
 };
 
 const initialState: State = {
@@ -62,6 +72,7 @@ const initialState: State = {
 	connection: "connecting",
 	workItems: null,
 	workItemsStatus: null,
+	activity: {},
 };
 
 let state = initialState;
@@ -251,6 +262,10 @@ export function applyEvent(event: Event): void {
 	const meId = state.me?.principal.id;
 	if (!cid || !meId) return;
 	mergeInto(cid, [event]);
+	if (event.type === "message.posted" && event.onBehalfOfId) {
+		const activity = clearAgentActivity(state.activity, cid, event.actorId);
+		if (activity !== state.activity) set({ activity });
+	}
 	if (WORK_ITEM_EVENTS.has(event.type)) void loadWorkItems();
 	if (NEGOTIATION_EVENTS.has(event.type)) return;
 	const read = state.activeId === cid;
@@ -262,8 +277,35 @@ export function applyEvent(event: Event): void {
 	if (next !== state.conversations) set({ conversations: next });
 }
 
-/** 断线重连后：重拉通讯录（在线状态）与会话列表，并按已知最大 seq 补齐每个已加载的会话。 */
+/** 代理运行的 draft / status 帧。 */
+export function applyAgentFrame(
+	frame: Extract<BrowserFrame, { t: "draft" | "status" }>,
+): void {
+	set((s) => ({
+		activity:
+			frame.t === "draft"
+				? applyDraftFrame(s.activity, frame)
+				: applyStatusFrame(s.activity, frame),
+	}));
+}
+
+/** 我的待办新增或变化：open 的并入列表，其余移出。 */
+export function applyWorkItem(item: WorkItem): void {
+	set((s) => {
+		if (!s.workItems) return {};
+		const rest = s.workItems.filter((w) => w.id !== item.id);
+		return {
+			workItems: item.status === "open" ? [item, ...rest] : rest,
+		};
+	});
+}
+
+/**
+ * 断线重连后：重拉通讯录（在线状态）与会话列表，并按已知最大 seq 补齐每个已加载的会话。
+ * 断线期间的运行状态无从得知，先清空；仍在运行的代理会继续推 status 帧。
+ */
 export async function resync(): Promise<void> {
+	set({ activity: {} });
 	const [directory] = await Promise.all([
 		api.directory(),
 		refreshConversations(),
@@ -316,6 +358,22 @@ export function applyPresence(
 				? { ...s.me, principal: { ...s.me.principal, status } }
 				: s.me,
 	}));
+}
+
+/** 中止会话里正在运行的代理。 */
+export async function stopAgents(conversationId: string): Promise<void> {
+	await api.stop(conversationId);
+}
+
+/** 代理组有变化（新建、改资料、删除）后刷新本人的代理列表。 */
+export function setMyAgents(agents: Agent[]): void {
+	set((s) => (s.me ? { me: { ...s.me, agents } } : {}));
+}
+
+export async function refreshMyAgents(): Promise<Agent[]> {
+	const { items } = await api.agents();
+	setMyAgents(items);
+	return items;
 }
 
 export async function setMyStatus(status: PrincipalStatus): Promise<void> {

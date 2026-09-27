@@ -10,6 +10,7 @@ import {
 	type PostMessageResponse,
 } from "@orgos/protocol";
 import type { Hono } from "hono";
+import { scheduler } from "@/agent/scheduler";
 import { parseJson, parseQuery } from "@/lib/http";
 import { type AppEnv, requireAuth, requireMember } from "@/middleware/auth";
 import {
@@ -68,14 +69,16 @@ export function registerConversationRoutes(app: Hono<AppEnv>): void {
 
 	app.post("/api/conversations/:id/messages", async (c) => {
 		const req = await parseJson(c, PostMessageRequestSchema);
-		const body: PostMessageResponse = {
-			event: await postMessage(
-				c.get("scope"),
-				c.get("principal"),
-				c.req.param("id"),
-				req,
-			),
-		};
+		const s = c.get("scope");
+		const event = await postMessage(
+			s,
+			c.get("principal"),
+			c.req.param("id"),
+			req,
+		);
+		if (event.type === "message.posted")
+			void scheduler.onHumanMessage(s, event);
+		const body: PostMessageResponse = { event };
 		return c.json(body, 201);
 	});
 
@@ -102,11 +105,12 @@ export function registerConversationRoutes(app: Hono<AppEnv>): void {
 	});
 
 	app.post("/api/conversations/:id/stop", async (c) => {
-		await requireConversation(
+		const { conversation } = await requireConversation(
 			c.get("scope"),
 			c.req.param("id"),
 			c.get("principal").id,
 		);
+		scheduler.stop(conversation.id);
 		return c.body(null, 204);
 	});
 }

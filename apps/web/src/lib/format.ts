@@ -52,3 +52,15 @@ export function sameDay(a: string, b: string): boolean {
 export function formatCount(n: number): string {
 	return n > 99 ? "99+" : String(n);
 }
+
+/** 花费：微美元 → `$0.0123`（不足万分之一美元显示 `<$0.0001`）。 */
+export function formatUsd(microUsd: number): string {
+	if (microUsd === 0) return "$0";
+	if (microUsd < 100) return "<$0.0001";
+	return `$${(microUsd / 1_000_000).toFixed(4)}`;
+}
+
+/** token 数：千位以上用 k。 */
+export function formatTokens(n: number): string {
+	return n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}

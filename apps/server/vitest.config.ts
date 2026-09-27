@@ -18,6 +18,8 @@ export default defineConfig({
 		environment: "node",
 		env: {
 			DATABASE_URL: TEST_DATABASE_URL,
+			// 测试一律用确定性的假模型，不出网。
+			MOCK_LLM: "1",
 		},
 		globalSetup: ["./tests/global-setup.ts"],
 		include: ["tests/**/*.test.ts"],

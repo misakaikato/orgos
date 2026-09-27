@@ -5,6 +5,7 @@ import type { PrincipalStatus } from "@orgos/protocol";
 import { describe, expect, it } from "vitest";
 import {
 	agentsToTrigger,
+	groupRound,
 	isHumanPairDm,
 	type TriggerConversation,
 	type TriggerMember,
@@ -266,5 +267,51 @@ describe("协商会话", () => {
 			[],
 		);
 		expect(agentsToTrigger(conv, say(A_TWIN))).toEqual([]);
+	});
+});
+
+describe("群聊一轮的发言顺序", () => {
+	const group: TriggerConversation = {
+		kind: "group",
+		members: [
+			human(ALICE),
+			human(BOB),
+			twin(A_TWIN, ALICE),
+			ops(A_OPS, ALICE),
+			twin(B_TWIN, BOB),
+		],
+	};
+
+	it("被 @ 的按 @ 的先后在前，其余按入群顺序；各自为发消息的人办事", () => {
+		expect(groupRound(group, say(BOB, { mentions: [A_OPS, B_TWIN] }))).toEqual([
+			{
+				agentId: A_OPS,
+				actingFor: { kind: "other", principalId: BOB },
+				reason: "mentioned",
+			},
+			{ agentId: B_TWIN, actingFor: { kind: "owner" }, reason: "mentioned" },
+			{
+				agentId: A_TWIN,
+				actingFor: { kind: "other", principalId: BOB },
+				reason: "round",
+			},
+		]);
+	});
+
+	it("代理发的消息、私聊不开启一轮", () => {
+		expect(groupRound(group, say(A_TWIN))).toEqual([]);
+		expect(groupRound(pairDm(), say(ALICE))).toEqual([]);
+	});
+
+	it("observer 不参与", () => {
+		const withObserver: TriggerConversation = {
+			...group,
+			members: [...group.members, { ...ops(B_OPS, BOB), role: "observer" }],
+		};
+		expect(groupRound(withObserver, say(ALICE)).map((t) => t.agentId)).toEqual([
+			A_TWIN,
+			A_OPS,
+			B_TWIN,
+		]);
 	});
 });

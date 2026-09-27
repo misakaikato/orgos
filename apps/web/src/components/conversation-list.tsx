@@ -51,6 +51,9 @@ function ConversationRow({
 	const peer = conversationAvatar(item, meId);
 	const avatar = peer ? (map.get(peer.id) ?? peer) : null;
 	const time = item.lastEvent?.createdAt ?? item.conversation.createdAt;
+	const working = useStore((s) =>
+		Boolean(avatar && s.activity[item.conversation.id]?.[avatar.id]),
+	);
 	return (
 		<Link
 			href={appHref(`/c/${item.conversation.id}`)}
@@ -65,6 +68,7 @@ function ConversationRow({
 					principal={avatar}
 					size={40}
 					showStatus
+					state={working ? "working" : "idle"}
 					ring={active ? "accent-soft" : "list-row"}
 				/>
 			) : (

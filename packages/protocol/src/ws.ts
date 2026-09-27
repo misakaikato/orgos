@@ -2,10 +2,13 @@
  * 浏览器 WS 帧（仅服务端 → 浏览器）。发送一律走 REST。
  */
 import { z } from "zod";
-import { PRINCIPAL_STATUSES } from "./entities";
+import { PRINCIPAL_STATUSES, WorkItemSchema } from "./entities";
 import { EventSchema } from "./events";
 
 export const BROWSER_PING_INTERVAL_MS = 20_000;
+
+export const AGENT_RUN_STATES = ["thinking", "tool", "idle"] as const;
+export type AgentRunState = (typeof AGENT_RUN_STATES)[number];
 
 /** 浏览器 WS 的关闭码。 */
 export const WS_CLOSE = {
@@ -22,6 +25,25 @@ export const BrowserFrameSchema = z.discriminatedUnion("t", [
 		principalId: z.uuid(),
 		status: z.enum(PRINCIPAL_STATUSES),
 	}),
+	/** 代理回复的流式增量；同一 runId 的增量按到达顺序拼接。 */
+	z.object({
+		t: z.literal("draft"),
+		conversationId: z.uuid(),
+		agentId: z.uuid(),
+		runId: z.string(),
+		delta: z.string(),
+	}),
+	/** 代理的运行状态：thinking 时新一步开始（草稿清空），tool 时 label 说明在做什么，idle 表示本次运行结束。 */
+	z.object({
+		t: z.literal("status"),
+		conversationId: z.uuid(),
+		agentId: z.uuid(),
+		runId: z.string(),
+		state: z.enum(AGENT_RUN_STATES),
+		label: z.string().optional(),
+	}),
+	/** 我的待办新增或变化。 */
+	z.object({ t: z.literal("work_item"), workItem: WorkItemSchema }),
 ]);
 export type BrowserFrame = z.infer<typeof BrowserFrameSchema>;
 

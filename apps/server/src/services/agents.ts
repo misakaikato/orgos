@@ -1,10 +1,16 @@
-import type { Agent, Principal } from "@orgos/protocol";
-import { AGENT_ROLES } from "@orgos/protocol";
+import type { Agent, CreateAgentRequest, Principal } from "@orgos/protocol";
+import { AGENT_ROLES, ERROR_CODES } from "@orgos/protocol";
 import { and, eq, inArray } from "drizzle-orm";
 import { agents, principals } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
-import { notFound } from "@/lib/errors";
+import {
+	AppError,
+	notFound,
+	PG_UNIQUE_VIOLATION,
+	pgErrorOf,
+} from "@/lib/errors";
 import { toAgent, toPrincipal } from "@/lib/serialize";
+import { isUuid } from "@/lib/uuid";
 
 type AgentRole = (typeof AGENT_ROLES)[number];
 
@@ -156,4 +162,88 @@ export async function updateAgentProfile(
 				)[0];
 	if (!nextPrincipal || !nextAgent) throw notFound("代理不存在");
 	return toAgent(nextPrincipal, nextAgent);
+}
+
+/**
+ * 按 id 或 handle 取一个在职的代理（有 agents 行）。删除的代理只留主体行作历史锚点，这里取不到。
+ */
+export async function findAgent(
+	s: Scoped,
+	by: { id: string } | { handle: string },
+): Promise<Agent | null> {
+	if ("id" in by && !isUuid(by.id)) return null;
+	const [row] = await s.executor
+		.select({ principal: principals, agent: agents })
+		.from(principals)
+		.innerJoin(agents, eq(agents.principalId, principals.id))
+		.where(
+			and(
+				s.where(
+					principals,
+					eq(principals.kind, "agent"),
+					"id" in by
+						? eq(principals.id, by.id)
+						: eq(principals.handle, by.handle),
+				),
+				s.where(agents),
+			),
+		)
+		.limit(1);
+	return row ? toAgent(row.principal, row.agent) : null;
+}
+
+/** 我的某个代理：不存在或跨租户 → 404；别人的 → 403。 */
+export async function requireOwnAgent(
+	s: Scoped,
+	me: PrincipalRow,
+	agentId: string,
+): Promise<Agent> {
+	const agent = await findAgent(s, { id: agentId });
+	if (!agent) throw notFound("代理不存在");
+	if (agent.principal.ownerId !== me.id) {
+		throw new AppError(403, ERROR_CODES.FORBIDDEN, "只能管理自己的代理");
+	}
+	return agent;
+}
+
+/** 新建一个助手（分身随入驻创建，每人恰好一个）。handle 冲突 → 409。 */
+export async function createSpecialist(
+	s: Scoped,
+	me: PrincipalRow,
+	req: CreateAgentRequest,
+): Promise<Agent> {
+	try {
+		return await s.transaction((tx) =>
+			createAgent(tx, {
+				ownerId: me.id,
+				role: "specialist",
+				handle: req.handle,
+				displayName: req.displayName,
+				description: req.description,
+			}),
+		);
+	} catch (e) {
+		if (pgErrorOf(e)?.code === PG_UNIQUE_VIOLATION) {
+			throw new AppError(409, ERROR_CODES.HANDLE_TAKEN, "handle 已被占用");
+		}
+		throw e;
+	}
+}
+
+/**
+ * 删除我的一个助手：删去 agents 行，主体行留作历史消息与记账的锚点
+ * （events 只追加、不能删）。分身不可删除 → 403。
+ */
+export async function retireAgent(
+	s: Scoped,
+	me: PrincipalRow,
+	agentId: string,
+): Promise<void> {
+	const agent = await requireOwnAgent(s, me, agentId);
+	if (agent.role === "front") {
+		throw new AppError(403, ERROR_CODES.FORBIDDEN, "分身不能删除");
+	}
+	await s.executor
+		.delete(agents)
+		.where(s.where(agents, eq(agents.principalId, agent.principal.id)));
 }

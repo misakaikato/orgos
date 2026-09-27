@@ -11,7 +11,6 @@ import type {
 import { ERROR_CODES } from "@orgos/protocol";
 import { and, asc, count, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { z } from "zod";
 import { isHumanPairDm, type TriggerConversation } from "@/agent/triggers";
 import {
 	agents,
@@ -23,13 +22,12 @@ import {
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
 import { toConversation, toEvent, toPrincipal } from "@/lib/serialize";
+import { isUuid } from "@/lib/uuid";
 import { requireTwinOf } from "@/services/agents";
 import { transactWithEvents } from "@/services/events";
 
 type ConversationRow = typeof conversations.$inferSelect;
 type MembershipRow = typeof conversationMembers.$inferSelect;
-
-const UuidSchema = z.uuid();
 
 /**
  * 取会话并确认 `principalId` 是其成员（含 observer）。
@@ -40,8 +38,7 @@ export async function requireConversation(
 	conversationId: string,
 	principalId: string,
 ): Promise<{ conversation: ConversationRow; membership: MembershipRow }> {
-	if (!UuidSchema.safeParse(conversationId).success)
-		throw notFound("会话不存在");
+	if (!isUuid(conversationId)) throw notFound("会话不存在");
 	const [row] = await s.executor
 		.select({ conversation: conversations, membership: conversationMembers })
 		.from(conversationMembers)
@@ -95,6 +92,12 @@ async function requireSomeoneElse(
 	const target = await s.first(principals, eq(principals.id, targetId));
 	if (!target) throw notFound("找不到此人");
 	if (target.id === me.id) throw badRequest("不能和自己建会话");
+	if (
+		target.kind === "agent" &&
+		!(await s.first(agents, eq(agents.principalId, target.id)))
+	) {
+		throw notFound("代理不存在");
+	}
 	return target;
 }
 
@@ -210,7 +213,31 @@ async function findDm(
 	)?.conversation;
 }
 
-/** 会话成员连同判定"谁该回应"所需的身份信息。 */
+/** 会话全部成员（含 observer）的主体，按 id 索引。 */
+export async function memberPrincipals(
+	s: Scoped,
+	conversationId: string,
+): Promise<Map<string, PrincipalRow>> {
+	const rows = await s.executor
+		.select({ principal: principals })
+		.from(conversationMembers)
+		.innerJoin(principals, eq(principals.id, conversationMembers.principalId))
+		.where(
+			and(
+				s.where(
+					conversationMembers,
+					eq(conversationMembers.conversationId, conversationId),
+				),
+				s.where(principals),
+			),
+		);
+	return new Map(rows.map((r) => [r.principal.id, r.principal]));
+}
+
+/**
+ * 会话成员连同判定"谁该回应"所需的身份信息，按入群顺序。
+ * 已删除的代理（没有 agents 行）不参与判定。
+ */
 export async function triggerConversationOf(
 	s: Scoped,
 	conversation: ConversationRow,
@@ -232,17 +259,20 @@ export async function triggerConversationOf(
 				),
 				s.where(principals),
 			),
-		);
+		)
+		.orderBy(asc(conversationMembers.joinedAt), asc(principals.createdAt));
 	return {
 		kind: conversation.kind,
-		members: rows.map((r) => ({
-			id: r.principal.id,
-			kind: r.principal.kind,
-			ownerId: r.principal.ownerId,
-			agentRole: r.agentRole,
-			status: r.principal.kind === "human" ? r.principal.status : null,
-			role: r.role,
-		})),
+		members: rows
+			.filter((r) => r.principal.kind === "human" || r.agentRole !== null)
+			.map((r) => ({
+				id: r.principal.id,
+				kind: r.principal.kind,
+				ownerId: r.principal.ownerId,
+				agentRole: r.agentRole,
+				status: r.principal.kind === "human" ? r.principal.status : null,
+				role: r.role,
+			})),
 	};
 }
 

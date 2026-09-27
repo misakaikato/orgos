@@ -1,4 +1,8 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import type {
+	InputHTMLAttributes,
+	ReactNode,
+	TextareaHTMLAttributes,
+} from "react";
 import { useId } from "react";
 import { cx } from "@/lib/cx";
 
@@ -57,5 +61,77 @@ export function Field({
 				</p>
 			) : null}
 		</div>
+	);
+}
+
+/** 多行输入：与单行同底色，卡片圆角，可纵向拉伸。 */
+export function TextAreaField({
+	label,
+	hint,
+	id,
+	className,
+	...rest
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+	label: string;
+	hint?: ReactNode;
+}) {
+	const auto = useId();
+	const inputId = id ?? auto;
+	const noteId = `${inputId}-note`;
+	return (
+		<div className={cx("flex flex-col gap-1.5", className)}>
+			<label htmlFor={inputId} className="text-13 font-medium text-ink">
+				{label}
+			</label>
+			<textarea
+				id={inputId}
+				rows={3}
+				aria-describedby={hint ? noteId : undefined}
+				className={cx(fieldClass, "min-h-20 resize-y rounded-card px-4 py-2.5")}
+				{...rest}
+			/>
+			{hint ? (
+				<p id={noteId} className="text-12 text-muted">
+					{hint}
+				</p>
+			) : null}
+		</div>
+	);
+}
+
+/** 开关：胶囊轨道 + 圆钮；开时轨道为品牌色。 */
+export function Switch({
+	checked,
+	onChange,
+	label,
+	disabled,
+}: {
+	checked: boolean;
+	onChange: (next: boolean) => void;
+	/** 无障碍名称。 */
+	label: string;
+	disabled?: boolean;
+}) {
+	return (
+		<button
+			type="button"
+			role="switch"
+			aria-checked={checked}
+			aria-label={label}
+			disabled={disabled}
+			onClick={() => onChange(!checked)}
+			className={cx(
+				"relative inline-flex h-5 w-9 shrink-0 items-center rounded-pill transition-colors duration-150 disabled:opacity-50",
+				checked ? "bg-accent" : "bg-line",
+			)}
+		>
+			<span
+				aria-hidden="true"
+				className={cx(
+					"size-4 rounded-pill bg-bg shadow-card-hover transition-transform duration-150",
+					checked ? "translate-x-4.5" : "translate-x-0.5",
+				)}
+			/>
+		</button>
 	);
 }

@@ -183,3 +183,18 @@ export type WorkItemPayload<K extends WorkItemKind> = Extract<
 export type WorkItemDraft = {
 	[K in WorkItemKind]: { kind: K; payload: WorkItemPayload<K> };
 }[WorkItemKind];
+
+// ─────────────────────────── 资料与记忆 ───────────────────────────
+
+/** 本人写的资料与代理写的记忆同表：authorId 是代理时即记忆。 */
+export const NoteSchema = z.object({
+	id: z.uuid(),
+	ownerId: z.uuid(),
+	authorId: z.uuid(),
+	title: z.string(),
+	body: z.string(),
+	visibility: z.enum(NOTE_VISIBILITIES),
+	createdAt: z.iso.datetime(),
+	updatedAt: z.iso.datetime(),
+});
+export type Note = z.infer<typeof NoteSchema>;

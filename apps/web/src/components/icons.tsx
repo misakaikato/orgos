@@ -208,3 +208,12 @@ export function IconClip(p: IconProps) {
 		</Icon>
 	);
 }
+
+/** 停止：圆角方块。 */
+export function IconStop(p: IconProps) {
+	return (
+		<Icon {...p}>
+			<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />
+		</Icon>
+	);
+}
