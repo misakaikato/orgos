@@ -1,8 +1,16 @@
 /**
  * 非消息事件的一行文字描述（会话里的紧凑灰字、列表预览共用）。
  */
-import type { Event } from "@orgos/protocol";
+import type { Event, NEGOTIATION_OUTCOMES } from "@orgos/protocol";
 import type { PrincipalMap } from "@/lib/principals";
+
+type NegotiationOutcome = (typeof NEGOTIATION_OUTCOMES)[number];
+
+const OUTCOME_LABEL: Record<NegotiationOutcome, string> = {
+	agreed: "已谈妥，等双方本人确认",
+	rejected: "未谈成",
+	exhausted: "步数用尽，未谈成",
+};
 
 function nameOf(id: string, map: PrincipalMap, meId: string): string {
 	if (id === meId) return "你";
@@ -33,7 +41,7 @@ export function describeEvent(
 		case "negotiation.step":
 			return `协商第 ${event.payload.step} 步：${event.payload.message}`;
 		case "negotiation.ended":
-			return `协商结束：${event.payload.outcome}`;
+			return `协商结束：${OUTCOME_LABEL[event.payload.outcome]}`;
 		case "confirmation.resolved":
 			return `${actor} ${event.payload.action === "confirm" ? "确认了" : "驳回了"}协商结果`;
 	}

@@ -135,6 +135,28 @@ describe("私聊", () => {
 		await dm(alice.client, chiefOf(bob).id);
 	});
 
+	it("找他人的幕僚长：对方本人以 observer 加入，能看能插话；和自己的代理聊没有 observer", async () => {
+		const conv = await dm(carol.client, chiefOf(bob).id);
+		const listed = (await listOf(bob.client)).find(
+			(x) => x.conversation.id === conv.id,
+		);
+		expect(listed?.members.map((m) => m.id).sort()).toEqual(
+			[carol.me.principal.id, chiefOf(bob).id, bob.me.principal.id].sort(),
+		);
+		await say(carol.client, conv.id, "预算是含税口径吗？");
+		const cut = await say(bob.client, conv.id, "不含税，以共享资料为准。");
+		expect(cut.actorId).toBe(bob.me.principal.id);
+		expect((await eventsOf(carol.client, conv.id)).length).toBe(2);
+		// 再找一次返回同一个会话，不重复加 observer。
+		expect((await dm(carol.client, chiefOf(bob).id, 200)).id).toBe(conv.id);
+
+		const own = await dm(carol.client, chiefOf(carol).id);
+		const ownListed = (await listOf(carol.client)).find(
+			(x) => x.conversation.id === own.id,
+		);
+		expect(ownListed?.members).toHaveLength(2);
+	});
+
 	it("他人的专员 → 400 AGENT_NOT_REACHABLE", async () => {
 		await expectError(
 			await alice.client.request("POST", "/api/conversations", {

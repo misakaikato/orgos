@@ -7,8 +7,10 @@ import { upgradeWs } from "@/lib/ws-upgrade";
 import type { AppEnv } from "@/middleware/auth";
 import { nextWsTarget, proxyToNext } from "@/proxy";
 import { registerConversationRoutes } from "@/routes/conversations";
+import { registerDevRoutes } from "@/routes/dev";
 import { registerMeRoutes } from "@/routes/me";
 import { registerOnboardingRoutes } from "@/routes/onboarding";
+import { registerWorkItemRoutes } from "@/routes/work-items";
 import { registerWsRoutes } from "@/routes/ws";
 
 export function createApp(): Hono<AppEnv> {
@@ -20,7 +22,9 @@ export function createApp(): Hono<AppEnv> {
 	registerOnboardingRoutes(app);
 	registerMeRoutes(app);
 	registerConversationRoutes(app);
+	registerWorkItemRoutes(app);
 	registerWsRoutes(app);
+	registerDevRoutes(app);
 
 	// 具体路由在前；未命中的 /api 返回统一错误体，其余全部反代给内部 Next（含 HMR 的 WS 升级）。
 	app.all("/api/*", (c) =>

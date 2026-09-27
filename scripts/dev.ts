@@ -2,14 +2,22 @@
  * 开发启动：同时起服务端（8930，浏览器唯一入口）与内部 Next（3930）。
  * 任一进程退出即结束另一个；Ctrl+C 一并停止。
  *
- * 运行：bun run dev（已带 ORGOS_DEV=1 与 NO_PROXY）。
+ * 运行：bun run dev（已带 ORGOS_DEV=1 与 NO_PROXY，模拟台在 /sim）。
+ * 环境里没有 DEEPSEEK_API_KEY 时自动 MOCK_LLM=1。
  */
 const env = {
 	...process.env,
 	ORGOS_DEV: "1",
 	NO_PROXY: "localhost,127.0.0.1",
 	no_proxy: "localhost,127.0.0.1",
+	...(process.env.DEEPSEEK_API_KEY ? {} : { MOCK_LLM: "1" }),
 };
+
+console.log(
+	env.MOCK_LLM === "1"
+		? "[dev] 假模型（MOCK_LLM=1）"
+		: "[dev] 真实模型（DEEPSEEK_API_KEY 已设置）",
+);
 
 const root = new URL("../", import.meta.url).pathname;
 

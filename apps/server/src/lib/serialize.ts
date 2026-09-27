@@ -7,6 +7,7 @@ import type {
 	Event,
 	Principal,
 	Tenant,
+	WorkItem,
 } from "@orgos/protocol";
 import type {
 	agents,
@@ -14,6 +15,7 @@ import type {
 	events,
 	principals,
 	tenants,
+	workItems,
 } from "@/db/schema";
 
 type PrincipalRow = typeof principals.$inferSelect;
@@ -21,6 +23,7 @@ type AgentRow = typeof agents.$inferSelect;
 type TenantRow = typeof tenants.$inferSelect;
 type ConversationRow = typeof conversations.$inferSelect;
 type EventRow = typeof events.$inferSelect;
+type WorkItemRow = typeof workItems.$inferSelect;
 
 export function toPrincipal(row: PrincipalRow): Principal {
 	return {
@@ -82,4 +85,28 @@ export function toEvent(row: EventRow): Event {
 		payload: row.payload,
 		createdAt: row.createdAt.toISOString(),
 	} as Event;
+}
+
+/**
+ * 待办行只经 `@/services/work-items` 写入，写入前已按 kind 校验载荷，
+ * 故 kind 与 payload 的配对在此成立。
+ */
+export function toWorkItem(row: WorkItemRow): WorkItem {
+	return {
+		id: row.id,
+		tenantId: row.tenantId,
+		kind: row.kind,
+		title: row.title,
+		body: row.body,
+		ownerId: row.ownerId,
+		requesterId: row.requesterId,
+		status: row.status,
+		conversationId: row.conversationId,
+		sourceEventId: row.sourceEventId,
+		payload: row.payload,
+		resolution: row.resolution ?? null,
+		dueAt: row.dueAt?.toISOString() ?? null,
+		createdAt: row.createdAt.toISOString(),
+		updatedAt: row.updatedAt.toISOString(),
+	} as WorkItem;
 }

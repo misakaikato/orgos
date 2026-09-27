@@ -69,16 +69,25 @@ export function conversationTitle(
 ): string {
 	if (item.conversation.kind !== "dm")
 		return item.conversation.title ?? "未命名群聊";
-	return othersOf(item, meId)[0]?.displayName ?? "私聊";
+	return dmPeer(item, meId)?.displayName ?? "私聊";
 }
 
-/** 私聊的对方；群聊为 null。 */
+/**
+ * 私聊的对方；群聊为 null。找别人幕僚长的私聊里，对方本人是 observer：
+ * 提问的人看到的对方是那位幕僚长；本人看到的对方是来提问的人，而不是自己的幕僚长。
+ */
 export function dmPeer(
 	item: ConversationSummary,
 	meId: string,
 ): Principal | null {
 	if (item.conversation.kind !== "dm") return null;
-	return othersOf(item, meId)[0] ?? null;
+	const others = othersOf(item, meId);
+	return (
+		others.find((p) => p.kind === "agent" && p.ownerId !== meId) ??
+		others.find((p) => p.kind === "human") ??
+		others[0] ??
+		null
+	);
 }
 
 export type ListGroups = {

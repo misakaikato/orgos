@@ -17,6 +17,8 @@ export type AppendInput = EventDraft & {
 	conversationId: string;
 	actorId: string;
 	onBehalfOfId?: string | null;
+	/** 发生时间，缺省为当前时间；只在回放历史（演示数据）时指定，且须与 seq 顺序一致。 */
+	at?: Date;
 };
 
 export type Append = (input: AppendInput) => Promise<Event>;
@@ -45,6 +47,7 @@ export async function appendEvent(
 		actorId: input.actorId,
 		onBehalfOfId: input.onBehalfOfId ?? null,
 		payload,
+		...(input.at ? { createdAt: input.at } : {}),
 	});
 	return toEvent(row);
 }

@@ -86,7 +86,7 @@ function ConversationRow({
 	);
 }
 
-/** 列表栏：五个分组（DESIGN.md §5）。待我处理、代理在对外、协商在后续步骤接入数据。 */
+/** 列表栏：五个分组（DESIGN.md §5）。 */
 export function ConversationList() {
 	const pathname = usePathname();
 	const me = useStore((s) => s.me);
@@ -102,6 +102,12 @@ export function ConversationList() {
 	const talkToChief: EmptyAction | undefined = chief
 		? {
 				label: `和${chief.principal.displayName}聊聊`,
+				onClick: () => void open(chief.principal.id),
+			}
+		: undefined;
+	const askChiefToSchedule: EmptyAction | undefined = chief
+		? {
+				label: "让你的幕僚长去约人",
 				onClick: () => void open(chief.principal.id),
 			}
 		: undefined;
@@ -154,11 +160,7 @@ export function ConversationList() {
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto">
 				<Section title="待我处理">
-					<EmptyState
-						compact
-						text="需要你拍板的事会出现在这里。"
-						action={talkToChief}
-					/>
+					<EmptyState compact text="需要你拍板的事会出现在这里。" />
 				</Section>
 				<Section title="我的代理组" count={groups.agents.length}>
 					{groups.agents.length ? (
@@ -192,7 +194,7 @@ export function ConversationList() {
 						<EmptyState
 							compact
 							text="代理之间替你约事的协商会出现在这里。"
-							action={talkToChief}
+							action={askChiefToSchedule}
 						/>
 					)}
 				</Section>

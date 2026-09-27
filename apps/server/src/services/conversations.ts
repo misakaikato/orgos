@@ -87,13 +87,18 @@ async function requireReachable(
 	return target;
 }
 
-/** 与某主体的私聊；同一对主体已有私聊时返回已有的（created=false）。 */
+/**
+ * 与某主体的私聊；同一对主体已有私聊时返回已有的（created=false）。
+ * 找别人的幕僚长时，幕僚长的本人以 observer 身份加入：能看、能插话，但不算私聊的一方。
+ */
 export async function openDm(
 	s: Scoped,
 	me: PrincipalRow,
 	withPrincipalId: string,
 ): Promise<{ conversation: Conversation; created: boolean }> {
 	const target = await requireReachable(s, me, withPrincipalId);
+	const observerId =
+		target.kind === "agent" && target.ownerId !== me.id ? target.ownerId : null;
 	return s.transaction(async (tx) => {
 		// 同一对主体的建私聊串行化，防止并发请求各建一个。
 		const pair = [me.id, target.id].sort().join(":");
@@ -146,16 +151,27 @@ export async function openDm(
 				role: "member",
 			});
 		}
+		if (observerId) {
+			await tx.insert(conversationMembers, {
+				conversationId: conversation.id,
+				principalId: observerId,
+				role: "observer",
+			});
+		}
 		return { conversation: toConversation(conversation), created: true };
 	});
 }
 
-/** 建群：我与 memberIds 为成员；每位被拉入者落一条 member.joined。 */
+/**
+ * 建群：我与 memberIds 为成员；每位被拉入者落一条 member.joined。
+ * `at` 只在回放历史（演示数据）时指定。
+ */
 export async function createGroup(
 	s: Scoped,
 	me: PrincipalRow,
 	title: string,
 	memberIds: string[],
+	at?: Date,
 ): Promise<Conversation> {
 	const invited: PrincipalRow[] = [];
 	for (const id of new Set(memberIds)) {
@@ -167,6 +183,7 @@ export async function createGroup(
 			kind: "group",
 			title,
 			createdBy: me.id,
+			...(at ? { createdAt: at } : {}),
 		});
 		for (const p of [me, ...invited]) {
 			await tx.insert(conversationMembers, {
@@ -181,6 +198,7 @@ export async function createGroup(
 				actorId: me.id,
 				type: "member.joined",
 				payload: { principalId: p.id },
+				at,
 			});
 		}
 		const fresh = await tx.first(
@@ -225,13 +243,22 @@ export async function addMember(
 	});
 }
 
-export async function postMessage(
+/**
+ * 以 `actor` 的身份发一条消息。人发的由 `postMessage` 进来；代理发的由
+ * `@/services/agent-events` 进来并带上 onBehalfOfId（代理所属的人）。
+ */
+export async function postAs(
 	s: Scoped,
-	me: PrincipalRow,
+	actor: PrincipalRow,
 	conversationId: string,
 	req: PostMessageRequest,
+	opts: { onBehalfOfId?: string | null; at?: Date } = {},
 ): Promise<Event> {
-	const { conversation } = await requireConversation(s, conversationId, me.id);
+	const { conversation } = await requireConversation(
+		s,
+		conversationId,
+		actor.id,
+	);
 	const mentions = [...new Set(req.mentions ?? [])];
 	if (mentions.length > 0) {
 		const rows = await s.select(
@@ -246,11 +273,24 @@ export async function postMessage(
 	return transactWithEvents(s, (_tx, append) =>
 		append({
 			conversationId: conversation.id,
-			actorId: me.id,
+			actorId: actor.id,
+			onBehalfOfId: opts.onBehalfOfId ?? null,
 			type: "message.posted",
 			payload: { text: req.text, mentions },
+			at: opts.at,
 		}),
 	);
+}
+
+/** 本人发消息。`at` 只在回放历史（演示数据）时指定。 */
+export async function postMessage(
+	s: Scoped,
+	me: PrincipalRow,
+	conversationId: string,
+	req: PostMessageRequest,
+	at?: Date,
+): Promise<Event> {
+	return postAs(s, me, conversationId, req, { at });
 }
 
 export async function listEvents(

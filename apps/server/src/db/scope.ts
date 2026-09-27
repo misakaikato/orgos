@@ -156,3 +156,19 @@ export async function findSelfPrincipal(
 		eq(principals.kind, "human"),
 	);
 }
+
+/** 删除租户：业务表经 tenant_id 外键级联清空（演示数据重建用）。 */
+export async function deleteTenant(
+	tenantId: string,
+	executor: Executor = db,
+): Promise<void> {
+	await executor.delete(tenants).where(eq(tenants.id, tenantId));
+}
+
+/** 删除 better-auth 用户；其 session / account 行经外键级联删除。须先删其租户。 */
+export async function deleteUser(
+	userId: string,
+	executor: Executor = db,
+): Promise<void> {
+	await executor.delete(user).where(eq(user.id, userId));
+}

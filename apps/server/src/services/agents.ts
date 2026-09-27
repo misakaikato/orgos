@@ -3,6 +3,7 @@ import { AGENT_ROLES } from "@orgos/protocol";
 import { eq, inArray } from "drizzle-orm";
 import { agents, principals } from "@/db/schema";
 import type { Scoped } from "@/db/scope";
+import { notFound } from "@/lib/errors";
 import { toAgent, toPrincipal } from "@/lib/serialize";
 
 type AgentRole = (typeof AGENT_ROLES)[number];
@@ -93,4 +94,42 @@ export async function listDirectory(
 				: [];
 		})
 		.sort((x, y) => x.principal.handle.localeCompare(y.principal.handle));
+}
+
+/** 改代理的资料与对外政策；不存在或跨租户 → 404。调用方负责"只能改自己的代理"。 */
+export async function updateAgentProfile(
+	s: Scoped,
+	principalId: string,
+	patch: {
+		displayName?: string;
+		description?: string;
+		delegationPolicy?: string;
+	},
+): Promise<Agent> {
+	const principal = await s.first(principals, eq(principals.id, principalId));
+	const agent = await s.first(agents, eq(agents.principalId, principalId));
+	if (!principal || !agent) throw notFound("代理不存在");
+	const nextPrincipal =
+		patch.displayName === undefined
+			? principal
+			: (
+					await s.executor
+						.update(principals)
+						.set({ displayName: patch.displayName })
+						.where(s.where(principals, eq(principals.id, principalId)))
+						.returning()
+				)[0];
+	const { displayName: _, ...agentPatch } = patch;
+	const nextAgent =
+		Object.keys(agentPatch).length === 0
+			? agent
+			: (
+					await s.executor
+						.update(agents)
+						.set(agentPatch)
+						.where(s.where(agents, eq(agents.principalId, principalId)))
+						.returning()
+				)[0];
+	if (!nextPrincipal || !nextAgent) throw notFound("代理不存在");
+	return toAgent(nextPrincipal, nextAgent);
 }

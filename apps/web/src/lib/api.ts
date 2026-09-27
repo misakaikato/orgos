@@ -6,6 +6,9 @@ import {
 	ConversationListResponseSchema,
 	type CreateConversationRequest,
 	CreateConversationResponseSchema,
+	DemoPeopleResponseSchema,
+	DevInfoResponseSchema,
+	DevSessionResponseSchema,
 	DirectoryResponseSchema,
 	ErrorBodySchema,
 	EVENTS_PAGE_MAX,
@@ -16,6 +19,9 @@ import {
 	OnboardingResponseSchema,
 	type PostMessageRequest,
 	PostMessageResponseSchema,
+	ResetDemoResponseSchema,
+	type WORK_ITEM_STATUSES,
+	WorkItemListResponseSchema,
 } from "@orgos/protocol";
 import ky, { HTTPError, type ResponsePromise } from "ky";
 import { authHeaders } from "@/lib/auth-mode";
@@ -129,6 +135,39 @@ export const api = {
 		noContent(http.post(`/api/conversations/${id}/members`, { json: req })),
 	markRead: (id: string, seq: number) =>
 		noContent(http.post(`/api/conversations/${id}/read`, { json: { seq } })),
+
+	/** 我是处理人的待办；`as` 给定时以该 bearer 身份请求（模拟台读各窗格的待办数）。 */
+	workItems: (
+		status: (typeof WORK_ITEM_STATUSES)[number] = "open",
+		as?: string,
+	) =>
+		run(() =>
+			http
+				.get("/api/work-items", {
+					searchParams: { status },
+					...(as ? { headers: authHeaders(as), credentials: "omit" } : {}),
+				})
+				.json(WorkItemListResponseSchema),
+		),
+};
+
+/** 模拟台接口（仅 ORGOS_DEV=1 时存在）。 */
+export const devApi = {
+	info: () => run(() => http.get("/api/dev/info").json(DevInfoResponseSchema)),
+	people: () =>
+		run(() => http.get("/api/dev/people").json(DemoPeopleResponseSchema)),
+	session: (handle: string) =>
+		run(() =>
+			http
+				.post("/api/dev/sessions", { json: { handle } })
+				.json(DevSessionResponseSchema),
+		),
+	resetDemo: () =>
+		run(() =>
+			http
+				.post("/api/dev/reset-demo", { timeout: 60_000 })
+				.json(ResetDemoResponseSchema),
+		),
 };
 
 /** 拉取 `after` 之后的全部事件（按页取到不足一页为止）。 */

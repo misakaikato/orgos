@@ -2,6 +2,7 @@
  * 会话事件：每种 type 一个 Zod 载荷。`events` 表只追加，线上形态见 EventSchema。
  */
 import { z } from "zod";
+import { NEGOTIATION_OUTCOMES, NEGOTIATION_STATUSES } from "./entities";
 
 export const MESSAGE_MAX_LENGTH = 8000;
 
@@ -30,13 +31,13 @@ export const EscalationResolvedPayloadSchema = z.object({
 
 export const NegotiationStepPayloadSchema = z.object({
 	step: z.number().int(),
-	status: z.enum(["continue", "agree", "reject", "need_owner"]),
+	status: z.enum(NEGOTIATION_STATUSES),
 	message: z.string(),
 	proposal: z.unknown().optional(),
 });
 
 export const NegotiationEndedPayloadSchema = z.object({
-	outcome: z.enum(["agreed", "rejected", "exhausted"]),
+	outcome: z.enum(NEGOTIATION_OUTCOMES),
 	proposal: z.unknown().optional(),
 });
 

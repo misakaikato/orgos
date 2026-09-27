@@ -9,6 +9,8 @@ import {
 	PrincipalSchema,
 	TenantSchema,
 	UserSchema,
+	WORK_ITEM_STATUSES,
+	WorkItemSchema,
 } from "./entities";
 import { EventSchema, MESSAGE_MAX_LENGTH } from "./events";
 
@@ -160,3 +162,64 @@ export const MarkReadRequestSchema = z.object({
 	seq: z.number().int().min(0),
 });
 export type MarkReadRequest = z.infer<typeof MarkReadRequestSchema>;
+
+// ─────────────────────────── 待办 ───────────────────────────
+
+/** `GET /api/work-items` 的查询参数。 */
+export const WorkItemsQuerySchema = z.object({
+	status: z.enum(WORK_ITEM_STATUSES).default("open"),
+});
+export type WorkItemsQuery = z.infer<typeof WorkItemsQuerySchema>;
+
+export const WorkItemListResponseSchema = z.object({
+	items: z.array(WorkItemSchema),
+});
+export type WorkItemListResponse = z.infer<typeof WorkItemListResponseSchema>;
+
+// ─────────────────────────── 模拟台（仅 ORGOS_DEV=1） ───────────────────────────
+
+export const MODEL_MODES = ["real", "mock"] as const;
+
+export const DevInfoResponseSchema = z.object({
+	modelMode: z.enum(MODEL_MODES),
+	model: z.string(),
+});
+export type DevInfoResponse = z.infer<typeof DevInfoResponseSchema>;
+
+export const DevSessionRequestSchema = z.object({
+	handle: HandleSchema,
+});
+export type DevSessionRequest = z.infer<typeof DevSessionRequestSchema>;
+
+export const DevSessionResponseSchema = z.object({
+	token: z.string(),
+	principal: PrincipalSchema,
+});
+export type DevSessionResponse = z.infer<typeof DevSessionResponseSchema>;
+
+export const DemoPersonSchema = z.object({
+	handle: z.string(),
+	displayName: z.string(),
+	title: z.string(),
+});
+export type DemoPerson = z.infer<typeof DemoPersonSchema>;
+
+export const DemoCountsSchema = z.object({
+	people: z.number().int(),
+	conversations: z.number().int(),
+	events: z.number().int(),
+	openWorkItems: z.number().int(),
+	notes: z.number().int(),
+});
+export type DemoCounts = z.infer<typeof DemoCountsSchema>;
+
+export const ResetDemoResponseSchema = z.object({
+	counts: DemoCountsSchema,
+});
+export type ResetDemoResponse = z.infer<typeof ResetDemoResponseSchema>;
+
+/** `GET /api/dev/people`：模拟台可扮演的演示人物。 */
+export const DemoPeopleResponseSchema = z.object({
+	people: z.array(DemoPersonSchema),
+});
+export type DemoPeopleResponse = z.infer<typeof DemoPeopleResponseSchema>;

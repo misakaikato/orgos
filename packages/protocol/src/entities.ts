@@ -74,3 +74,107 @@ export const ConversationSchema = z.object({
 	lastSeq: z.number().int(),
 });
 export type Conversation = z.infer<typeof ConversationSchema>;
+
+// ─────────────────────────── 协商 ───────────────────────────
+
+export const NEGOTIATION_STATUSES = [
+	"continue",
+	"agree",
+	"reject",
+	"need_owner",
+] as const;
+export const NEGOTIATION_STATES = [
+	"running",
+	"waiting_owner",
+	"ended",
+] as const;
+export const NEGOTIATION_OUTCOMES = [
+	"agreed",
+	"rejected",
+	"exhausted",
+] as const;
+export const NEGOTIATION_MAX_STEPS = 8;
+
+/** `conversations.negotiation`（kind=negotiation 时）。 */
+export const NegotiationStateSchema = z.object({
+	initiatorAgentId: z.uuid(),
+	responderAgentId: z.uuid(),
+	goal: z.string(),
+	step: z.number().int().min(0),
+	maxSteps: z.number().int().min(1),
+	state: z.enum(NEGOTIATION_STATES),
+	lastProposal: z.unknown().optional(),
+});
+export type NegotiationState = z.infer<typeof NegotiationStateSchema>;
+
+// ─────────────────────────── 待办 ───────────────────────────
+
+/** 各 kind 的 `work_items.payload`。 */
+export const WORK_ITEM_PAYLOAD_SCHEMAS = {
+	question: z.object({}),
+	commitment: z.object({}),
+	decision: z.object({ question: z.string(), askedById: z.uuid() }),
+	approval: z.object({
+		runnerId: z.uuid(),
+		capability: z.string(),
+		args: z.unknown(),
+	}),
+	confirmation: z.object({
+		negotiationConversationId: z.uuid(),
+		proposal: z.unknown(),
+	}),
+} as const satisfies Record<(typeof WORK_ITEM_KINDS)[number], z.ZodType>;
+
+const workItemBase = {
+	id: z.uuid(),
+	tenantId: z.uuid(),
+	title: z.string(),
+	body: z.string(),
+	ownerId: z.uuid(),
+	requesterId: z.uuid(),
+	status: z.enum(WORK_ITEM_STATUSES),
+	conversationId: z.uuid().nullable(),
+	sourceEventId: z.number().int().nullable(),
+	resolution: z.unknown().nullable(),
+	dueAt: z.iso.datetime().nullable(),
+	createdAt: z.iso.datetime(),
+	updatedAt: z.iso.datetime(),
+};
+
+export const WorkItemSchema = z.discriminatedUnion("kind", [
+	z.object({
+		...workItemBase,
+		kind: z.literal("question"),
+		payload: WORK_ITEM_PAYLOAD_SCHEMAS.question,
+	}),
+	z.object({
+		...workItemBase,
+		kind: z.literal("commitment"),
+		payload: WORK_ITEM_PAYLOAD_SCHEMAS.commitment,
+	}),
+	z.object({
+		...workItemBase,
+		kind: z.literal("decision"),
+		payload: WORK_ITEM_PAYLOAD_SCHEMAS.decision,
+	}),
+	z.object({
+		...workItemBase,
+		kind: z.literal("approval"),
+		payload: WORK_ITEM_PAYLOAD_SCHEMAS.approval,
+	}),
+	z.object({
+		...workItemBase,
+		kind: z.literal("confirmation"),
+		payload: WORK_ITEM_PAYLOAD_SCHEMAS.confirmation,
+	}),
+]);
+export type WorkItem = z.infer<typeof WorkItemSchema>;
+export type WorkItemKind = WorkItem["kind"];
+export type WorkItemPayload<K extends WorkItemKind> = Extract<
+	WorkItem,
+	{ kind: K }
+>["payload"];
+/** 写入待办前的形态：kind 与载荷成对校验。 */
+export type WorkItemDraft = {
+	[K in WorkItemKind]: { kind: K; payload: WorkItemPayload<K> };
+}[WorkItemKind];
