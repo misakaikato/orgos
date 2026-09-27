@@ -10,6 +10,8 @@
  * 按本次运行的触发文本决定行为，优先级：
  * 1. 本次运行已有工具结果 → `完成：<工具结果前 60 字>`，不再调工具；
  * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具（`#api <METHOD> <path> <json>` 调 app_api_call）；
+ *    `#claim` 只在文字里说"已转交本人"、不调用工具（收到上报纠正提示后仍如此）；
+ *    `#claim-fix <问题>` 第一步同样只说"已转交本人"，收到纠正提示后调用 escalate_to_owner(<问题>)；
  * 3. 群聊里文本既没有 @ 本代理、也不含本代理 handle → pass；
  * 4. 上报后恢复运行 → `本人答复：<答复原文>`（暂不答复时为 `本人暂不答复`，附言跟在冒号后）；
  * 5. 协商：发起方第一步 continue + `{"slot":"周四 15:00"}`；应答方看到 proposal 时，
@@ -20,6 +22,7 @@
  * 文本按 8 字切片流式输出；每次调用写一行 llm_requests（provider='mock'，tokens 按字数估算）。
  * 假模型不经网关：它替换的正是"经网关调用厂商"这一整段。
  */
+import { ESCALATION_CLAIM_CORRECTION } from "@/agent/escalation-claim";
 import {
 	type ChatMessage,
 	LlmAbortedError,
@@ -160,8 +163,33 @@ function apiArgs(
 	};
 }
 
-function firstDirective(text: string): MockDecision | null {
+const CLAIM = /#claim(-fix)?(?![\w-])\s*([\s\S]*)$/;
+
+/** `#claim` / `#claim-fix <问题>`：口头声称已转交；-fix 在收到纠正提示后真的上报。 */
+function claimDecision(
+	m: RegExpExecArray,
+	messages: readonly ChatMessage[],
+): MockDecision {
+	const question = rest(m, 2);
+	const corrected = messages.some(
+		(x) => x.role === "user" && x.content === ESCALATION_CLAIM_CORRECTION,
+	);
+	if (m[1] && corrected && question)
+		return { kind: "tool", name: "escalate_to_owner", args: { question } };
+	return {
+		kind: "text",
+		text: `已转交本人${question ? `：${question}` : ""}`,
+	};
+}
+
+function firstDirective(
+	text: string,
+	messages: readonly ChatMessage[],
+): MockDecision | null {
 	let best: { at: number; decision: MockDecision } | null = null;
+	const claim = CLAIM.exec(text);
+	if (claim)
+		best = { at: claim.index, decision: claimDecision(claim, messages) };
 	for (const d of DIRECTIVES) {
 		const m = d.pattern.exec(text);
 		if (m && (best === null || m.index < best.at)) {
@@ -307,7 +335,7 @@ export function mockDecide(
 			text: `完成：${Array.from(lastTool.content).slice(0, 60).join("")}`,
 		};
 	}
-	const directive = firstDirective(trigger.text);
+	const directive = firstDirective(trigger.text, messages);
 	if (directive) return directive;
 	if (
 		trigger.conversationKind === "group" &&

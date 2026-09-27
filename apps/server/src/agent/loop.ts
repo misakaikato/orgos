@@ -2,6 +2,8 @@
  * 代理运行循环：组装系统提示 + 当前话题的历史（必要时先压缩）+ 近期工作简报 → 调模型 →
  * 有工具调用则执行并继续 → 无工具调用时把文本作为 message.posted 落在当前话题（正文里的 `[M:…]`
  * 引用解析为依据后剥离；替本人回答他人时记下提问人，供代答记录）。
+ * 为他人办事时，最终回复若声称已转交本人而本轮没有调用 escalate_to_owner，先纠正一次（计入模型调用上限），
+ * 仍如此则照常落回复并记一条未上报的系统动作。
  * 单次运行最多 8 次模型调用。结束型工具（escalate_to_owner、negotiation_reply）执行后本次运行随即结束。
  *
  * 每次运行写一条运行记录（`@/services/runs`）：开始、结束、失败、中止、被打断；模型调用带 runId 记账。
@@ -15,6 +17,10 @@
 import type { Agent } from "@orgos/protocol";
 import { eq } from "drizzle-orm";
 import { contextLimits, recentWorkBrief, topicHistory } from "@/agent/context";
+import {
+	claimsEscalated,
+	ESCALATION_CLAIM_CORRECTION,
+} from "@/agent/escalation-claim";
 import { framesFor } from "@/agent/frames";
 import {
 	type ChatMessage,
@@ -39,7 +45,11 @@ import {
 	toToolSpec,
 } from "@/agent/tools";
 import { delegatableTeammates } from "@/agent/tools/delegate";
-import type { DelegatedOutcome, ToolScope } from "@/agent/tools/tool";
+import {
+	type DelegatedOutcome,
+	deciderIn,
+	type ToolScope,
+} from "@/agent/tools/tool";
 import type { ActingFor } from "@/agent/triggers";
 import { conversations, principals } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
@@ -317,6 +327,11 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 		actingFor.kind === "other" &&
 		!input.trigger.resume &&
 		tools.some((t) => t.name === "memory_search");
+	/** 上报的运行时校验：只在能上报的运行里（为他人、直接被问到），上报答复后的恢复运行除外。 */
+	const checksClaims =
+		tools.some((t) => t.name === "escalate_to_owner") && !input.trigger.resume;
+	const deciderName = deciderIn(scope).displayName;
+	let claimCorrected = false;
 	const messages: ChatMessage[] = [
 		{ role: "system", content: system },
 		...history,
@@ -372,6 +387,15 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 			if (res.toolCalls.length === 0) {
 				const text = res.text.trim() || "（没有可说的）";
 				if (!posts) return { outcome: "returned", text };
+				const unescalated = checksClaims && claimsEscalated(text, deciderName);
+				if (unescalated && !claimCorrected) {
+					claimCorrected = true;
+					messages.push(
+						{ role: "assistant", content: text },
+						{ role: "user", content: ESCALATION_CLAIM_CORRECTION },
+					);
+					continue;
+				}
 				const said = extractCitations(text, session.citable);
 				await postAgentMessage(s, agentId, place, said.text || text, {
 					extra: {
@@ -386,6 +410,12 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 							: {}),
 					},
 				});
+				if (unescalated)
+					await act(
+						"system",
+						`回复声称已转交${deciderName}本人，但本轮没有调用 escalate_to_owner，未上报`,
+						false,
+					);
 				return { outcome: "posted", text };
 			}
 

@@ -2,6 +2,7 @@
  * 单元：假模型的 6 条优先级、8 字切片与记账（不连库）。
  */
 import { describe, expect, it } from "vitest";
+import { ESCALATION_CLAIM_CORRECTION } from "@/agent/escalation-claim";
 import type { ChatMessage, LlmRequest, RunTrigger } from "@/agent/llm-types";
 import { LlmAbortedError } from "@/agent/llm-types";
 import { createMockLlm, MOCK_PROPOSAL, mockDecide } from "@/agent/mock-llm";
@@ -74,6 +75,30 @@ describe("mockDecide 优先级", () => {
 		).toMatchObject({
 			name: "delegate_to_teammate",
 			args: { task: "#note 看牙" },
+		});
+	});
+
+	it("2. #claim 只口头说已转交；#claim-fix 收到纠正提示后调 escalate_to_owner", () => {
+		const corrected: ChatMessage[] = [
+			{ role: "assistant", content: "已转交本人" },
+			{ role: "user", content: ESCALATION_CLAIM_CORRECTION },
+		];
+		expect(mockDecide(trigger("#claim"), [])).toEqual({
+			kind: "text",
+			text: "已转交本人",
+		});
+		expect(mockDecide(trigger("#claim"), corrected)).toEqual({
+			kind: "text",
+			text: "已转交本人",
+		});
+		expect(mockDecide(trigger("#claim-fix 能提前吗"), [])).toEqual({
+			kind: "text",
+			text: "已转交本人：能提前吗",
+		});
+		expect(mockDecide(trigger("#claim-fix 能提前吗"), corrected)).toEqual({
+			kind: "tool",
+			name: "escalate_to_owner",
+			args: { question: "能提前吗" },
 		});
 	});
 
