@@ -112,11 +112,16 @@ async function serve(workspaceArg: string, only?: string): Promise<void> {
 		else if (outbox.length < OUTBOX_MAX) outbox.push(frame);
 		else log.warn("acp.outbox_full", { t: frame.t });
 	};
+	// 在办的事：设备操作数与外部助手会话数，变化时记一条 load（桌面端据此显示与退出前提醒）。
+	let jobs = 0;
+	const reportLoad = () =>
+		log.info("load", { jobs, sessions: acp.running().length });
 	const acp = new AcpManager({
 		runnerWorkspace: workspace,
 		server: config.server,
 		adapters,
 		send: sendAcp,
+		onSessionsChanged: reportLoad,
 	});
 
 	const bridge = startWsBridge(config.server, config.token, {
@@ -140,8 +145,12 @@ async function serve(workspaceArg: string, only?: string): Promise<void> {
 			}
 			// 每个 job 独立执行，互不等待；结果按 jobId 交回。
 			log.info("job.start", { jobId: msg.jobId, capability: msg.capability });
+			jobs += 1;
+			reportLoad();
 			void runCapability(workspace, msg.capability, msg.args).then((r) => {
 				log.info("job.done", { jobId: msg.jobId, ok: r.ok });
+				jobs -= 1;
+				reportLoad();
 				bridge.send({ t: "result", jobId: msg.jobId, ...r });
 			});
 		},

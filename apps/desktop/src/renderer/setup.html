@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'self'; script-src 'self'; style-src 'self'"
+		/>
+		<title>orgos</title>
+		<link rel="stylesheet" href="tokens.css" />
+		<link rel="stylesheet" href="page.css" />
+	</head>
+	<body>
+		<main class="setup">
+			<form class="card stack" id="form">
+				<h1>连接到 orgos</h1>
+				<p class="muted">填写你所在组织的 orgos 服务器地址。之后可以在菜单栏的“Runner 控制”里修改。</p>
+				<div class="field">
+					<label for="server">服务器地址</label>
+					<input id="server" type="url" autocomplete="url" required />
+				</div>
+				<p class="message" id="message" role="status"></p>
+				<div class="row">
+					<button class="primary" type="submit">连接</button>
+				</div>
+			</form>
+		</main>
+		<script src="setup.js"></script>
+	</body>
+</html>

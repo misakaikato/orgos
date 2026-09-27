@@ -19,7 +19,9 @@
 		"seed": "NO_PROXY=localhost,127.0.0.1 bun scripts/seed.ts",
 		"seed:demo": "NO_PROXY=localhost,127.0.0.1 bun scripts/seed-demo.ts",
 		"e2e": "NO_PROXY=localhost,127.0.0.1 MOCK_LLM=1 bun scripts/e2e.ts",
-		"smoke:llm": "NO_PROXY=localhost,127.0.0.1 bun scripts/smoke-llm.ts"
+		"smoke:llm": "NO_PROXY=localhost,127.0.0.1 bun scripts/smoke-llm.ts",
+		"desktop:dev": "NO_PROXY=localhost,127.0.0.1 bun run --cwd apps/desktop dev",
+		"desktop:build": "NO_PROXY=localhost,127.0.0.1 bun run --cwd apps/desktop build"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.6",

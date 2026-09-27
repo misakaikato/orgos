@@ -2,6 +2,9 @@
 	"name": "@orgos/runner",
 	"private": true,
 	"type": "module",
+	"exports": {
+		"./config": "./src/config.ts"
+	},
 	"scripts": {
 		"start": "NO_PROXY=localhost,127.0.0.1 bun run src/main.ts",
 		"test": "NO_PROXY=localhost,127.0.0.1 bun test",

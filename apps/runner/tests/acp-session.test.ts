@@ -18,6 +18,8 @@ let base: string;
 let ws: string;
 let frames: AcpUp[];
 let manager: AcpManager;
+/** 每次会话槽增减后的会话数。 */
+let sessionCounts: number[];
 
 async function until<T>(
 	what: string,
@@ -71,6 +73,7 @@ beforeAll(async () => {
 		expect.objectContaining({ id: "fake", available: true }),
 	]);
 	frames = [];
+	sessionCounts = [];
 	// 模拟 Runner 进程环境里混进了凭据：子进程必须一个都看不到。
 	for (const k of SCRUBBED_ENV_KEYS) process.env[k] = `leak-${k}`;
 	manager = new AcpManager({
@@ -78,6 +81,7 @@ beforeAll(async () => {
 		server: "http://127.0.0.1:8930",
 		adapters,
 		send: (f) => frames.push(f),
+		onSessionsChanged: () => sessionCounts.push(manager.running().length),
 	});
 });
 
@@ -259,5 +263,7 @@ describe("一个任务一个 ACP 会话", () => {
 		expect(err).toMatchObject({ payload: { fatal: true } });
 		expect(JSON.stringify(err)).toContain("超出工作目录");
 		await until("越界任务已移除", () => !manager.running().includes(TASK2));
+		// 起 TASK、取消 TASK、起 TASK2、TASK2 失败移除：每次增减都通知一次。
+		expect(sessionCounts).toEqual([1, 0, 1, 0]);
 	});
 });
