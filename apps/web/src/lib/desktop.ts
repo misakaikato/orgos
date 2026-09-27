@@ -7,7 +7,7 @@
  * 由 store 在每次状态变化后调用。
  */
 import { previewOf } from "@/lib/describe";
-import { buildPrincipalMap, conversationTitle } from "@/lib/principals";
+import { buildPrincipalMap, conversationTitle, dmPeer } from "@/lib/principals";
 import type { State } from "@/lib/store";
 
 type DesktopBridge = {
@@ -35,8 +35,11 @@ export function unreadTotal(state: Pick<State, "conversations">): number {
 }
 
 /**
- * 两次状态之间新出现的、值得提醒本人的事：别人发来的新消息（自己和自己的代理代我发的不算）、
- * 新的待办。
+ * 两次状态之间新出现的、值得提醒本人的事：
+ * - 别人发来的新消息；
+ * - 我自己的代理在我与它的私聊里发给我的消息（例如助手办完事的回复）；
+ *   它在别处代我发出的消息（分身替我回复别人）不算；
+ * - 新的待办。
  */
 export function desktopNotices(before: State, after: State): DesktopNotice[] {
 	const meId = after.me?.principal.id;
@@ -54,12 +57,11 @@ export function desktopNotices(before: State, after: State): DesktopNotice[] {
 	);
 	for (const item of after.conversations) {
 		const last = item.lastEvent;
-		if (
-			last?.type !== "message.posted" ||
-			last.actorId === meId ||
-			last.onBehalfOfId === meId
-		)
-			continue;
+		if (last?.type !== "message.posted" || last.actorId === meId) continue;
+		const toMe =
+			item.conversation.kind === "dm" &&
+			dmPeer(item, meId)?.id === last.actorId;
+		if (last.onBehalfOfId === meId && !toMe) continue;
 		const id = item.conversation.id;
 		const old = previous.get(id);
 		const isNew = old

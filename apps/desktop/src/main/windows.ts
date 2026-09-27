@@ -5,7 +5,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { BrowserWindow, screen, shell } from "electron";
-import { decideNavigation } from "@/main/navigation";
+import {
+	decideNavigation,
+	isServerLoadFailure,
+	localPageWith,
+} from "@/main/navigation";
 import {
 	MIN_SIZE,
 	parseWindowState,
@@ -17,6 +21,7 @@ export type Pages = {
 	/** 打包后的本地页面与 preload 所在目录。 */
 	dir: string;
 	setup: string;
+	offline: string;
 	control: string;
 	chatPreload: string;
 	controlPreload: string;
@@ -90,7 +95,23 @@ export function createChatWindow(opts: {
 	});
 	if (maximized) win.maximize();
 	win.once("ready-to-show", () => win.show());
-	guardNavigation(win, opts.serverOrigin, [pageUrl(opts.pages.setup)]);
+	guardNavigation(win, opts.serverOrigin, [
+		pageUrl(opts.pages.setup),
+		pageUrl(opts.pages.offline),
+	]);
+	win.webContents.on(
+		"did-fail-load",
+		(_event, errorCode, errorDescription, url, isMainFrame) => {
+			const server = opts.serverOrigin();
+			if (!isServerLoadFailure(errorCode, isMainFrame, url, server)) return;
+			void win.loadURL(
+				localPageWith(pageUrl(opts.pages.offline), {
+					server: server ?? "",
+					error: errorDescription,
+				}),
+			);
+		},
+	);
 
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
 	const scheduleSave = () => {

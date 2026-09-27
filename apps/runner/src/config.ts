@@ -14,12 +14,27 @@ export const RunnerConfigSchema = z.object({
 });
 export type RunnerConfig = z.infer<typeof RunnerConfigSchema>;
 
+/** 配对目录的规则（唯一定义处；桌面端经 `@orgos/runner/config` 引用）。 */
+export function runnerHomeFor(
+	env: Record<string, string | undefined>,
+	home: string,
+): string {
+	return env.ORGOS_RUNNER_HOME || path.join(home, ".orgos");
+}
+
+export function configPathFor(
+	env: Record<string, string | undefined>,
+	home: string,
+): string {
+	return path.join(runnerHomeFor(env, home), "runner.json");
+}
+
 export function runnerHome(): string {
-	return process.env.ORGOS_RUNNER_HOME || path.join(homedir(), ".orgos");
+	return runnerHomeFor(process.env, homedir());
 }
 
 export function configPath(): string {
-	return path.join(runnerHome(), "runner.json");
+	return configPathFor(process.env, homedir());
 }
 
 export async function saveConfig(config: RunnerConfig): Promise<string> {

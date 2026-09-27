@@ -11,7 +11,8 @@ const form = document.getElementById("form") as HTMLFormElement;
 const input = document.getElementById("server") as HTMLInputElement;
 const message = document.getElementById("message") as HTMLElement;
 
-input.value = DEFAULT_SERVER_URL;
+input.value =
+	new URLSearchParams(location.search).get("server") || DEFAULT_SERVER_URL;
 input.focus();
 input.select();
 

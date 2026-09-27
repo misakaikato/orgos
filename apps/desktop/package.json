@@ -14,6 +14,7 @@
 	},
 	"devDependencies": {
 		"@orgos/protocol": "workspace:*",
+		"@orgos/runner": "workspace:*",
 		"@types/bun": "1.3.14",
 		"electron": "44.4.5",
 		"electron-builder": "26.15.3",

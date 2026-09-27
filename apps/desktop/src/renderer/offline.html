@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			http-equiv="Content-Security-Policy"
+			content="default-src 'self'; script-src 'self'; style-src 'self'"
+		/>
+		<title>orgos</title>
+		<link rel="stylesheet" href="tokens.css" />
+		<link rel="stylesheet" href="page.css" />
+	</head>
+	<body>
+		<main class="setup">
+			<section class="card stack">
+				<h1>连不上服务器</h1>
+				<p>
+					orgos 服务器 <strong id="server"></strong> 现在连不上。确认服务器已启动、网络正常后重试。
+				</p>
+				<p class="muted" id="error"></p>
+				<div class="row">
+					<button class="primary" id="retry" type="button">重试</button>
+					<button id="change" type="button">更换服务器地址</button>
+				</div>
+			</section>
+		</main>
+		<script src="offline.js"></script>
+	</body>
+</html>

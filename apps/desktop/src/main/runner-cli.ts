@@ -4,16 +4,11 @@
  * app 只判断它是否存在、解除配对时删除它，从不读取其中内容。
  */
 import { existsSync, rmSync } from "node:fs";
-import path from "node:path";
+import { configPathFor } from "@orgos/runner/config";
 import { parseLogLine } from "@/main/runner-log";
 
-/** 与 apps/runner/src/config.ts 的 runnerHome() 同一规则。 */
-export function runnerHome(env: NodeJS.ProcessEnv, home: string): string {
-	return env.ORGOS_RUNNER_HOME || path.join(home, ".orgos");
-}
-
 export function runnerConfigFile(env: NodeJS.ProcessEnv, home: string): string {
-	return path.join(runnerHome(env, home), "runner.json");
+	return configPathFor(env, home);
 }
 
 export function isPaired(env: NodeJS.ProcessEnv, home: string): boolean {

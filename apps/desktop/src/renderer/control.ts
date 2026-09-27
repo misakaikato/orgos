@@ -82,7 +82,9 @@ function render(state: ControlState): void {
 		`${PROCESS_LABEL[status.process]}${pid}${restarts}`;
 	el("fact-problem").textContent = status.link.lastProblem ?? "—";
 
-	el<HTMLButtonElement>("start").disabled = running || !state.paired;
+	const start = el<HTMLButtonElement>("start");
+	start.disabled = running || !state.paired;
+	start.classList.toggle("primary", !start.disabled);
 	el<HTMLButtonElement>("stop").disabled = !running;
 	el<HTMLButtonElement>("restart").disabled = !state.paired;
 

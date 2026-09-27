@@ -64,6 +64,7 @@ const PAGES_DIR = path.join(app.getAppPath(), "dist", "app");
 const pages: Pages = {
 	dir: PAGES_DIR,
 	setup: path.join(PAGES_DIR, "setup.html"),
+	offline: path.join(PAGES_DIR, "offline.html"),
 	control: path.join(PAGES_DIR, "control.html"),
 	chatPreload: path.join(PAGES_DIR, "preload-chat.cjs"),
 	controlPreload: path.join(PAGES_DIR, "preload-control.cjs"),

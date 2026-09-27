@@ -133,7 +133,7 @@ describe("桌面端的角标与通知", () => {
 		]);
 	});
 
-	it("自己发的、自己的代理代我发的、没有变化的、首次加载时的都不通知", () => {
+	it("自己发的、分身在与别人的私聊里代我回复的、没有变化的、首次加载时的都不通知", () => {
 		const base = state({
 			conversations: [summary(DM, "dm", msg(DM, 1, ZHOU, "早"), 1)],
 		});
@@ -149,6 +149,35 @@ describe("桌面端的角标与通知", () => {
 		expect(desktopNotices(base, byTwin)).toEqual([]);
 		expect(desktopNotices(base, base)).toEqual([]);
 		expect(desktopNotices(state({ session: "loading" }), base)).toEqual([]);
+	});
+
+	it("我自己的代理在与我的私聊里发来的消息要通知", () => {
+		const OPS = "77777777-7777-4777-8777-777777777777";
+		const ops = {
+			...person(OPS, "林晓的执行助手"),
+			kind: "agent",
+			ownerId: ME,
+		} as Principal;
+		const own = (last: Event, unread: number) => ({
+			...summary(DM, "dm", last, unread),
+			members: [person(ME, "林晓"), ops],
+		});
+		const reply = {
+			...msg(DM, 2, OPS, "完成：周报已整理"),
+			onBehalfOfId: ME,
+		} as Event;
+		const before = state({
+			conversations: [own(msg(DM, 1, ME, "#delegate 整理周报"), 0)],
+		});
+		const after = state({ conversations: [own(reply, 1)] });
+		expect(desktopNotices(before, after)).toEqual([
+			{
+				key: `message:${DM}:2`,
+				title: "林晓的执行助手",
+				body: "完成：周报已整理",
+				path: `/c/${DM}`,
+			},
+		]);
 	});
 
 	it("列表里新出现的会话，有未读才通知", () => {

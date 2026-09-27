@@ -24,3 +24,32 @@ export function decideNavigation(
 	if (serverOrigin !== null && url.origin === serverOrigin) return "allow";
 	return "external";
 }
+
+/** Chromium 的 ERR_ABORTED：导航被新的导航取代，不算加载失败。 */
+const ERR_ABORTED = -3;
+
+/** 聊天窗口的主框架加载服务器页面失败时，是否改为显示“连不上服务器”页。 */
+export function isServerLoadFailure(
+	errorCode: number,
+	isMainFrame: boolean,
+	url: string,
+	serverOrigin: string | null,
+): boolean {
+	if (!isMainFrame || errorCode === ERR_ABORTED || serverOrigin === null)
+		return false;
+	try {
+		return new URL(url).origin === serverOrigin;
+	} catch {
+		return false;
+	}
+}
+
+/** 带查询参数的本地页面地址（连不上服务器页、更换地址时的服务器地址页）。 */
+export function localPageWith(
+	page: string,
+	params: Record<string, string>,
+): string {
+	const url = new URL(page);
+	for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+	return url.href;
+}

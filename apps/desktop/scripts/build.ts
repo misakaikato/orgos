@@ -59,7 +59,8 @@ await bundle("src/preload/chat.ts", "preload-chat.cjs", "browser", "cjs");
 await bundle("src/preload/control.ts", "preload-control.cjs", "browser", "cjs");
 await bundle("src/renderer/control.ts", "control.js", "browser", "iife");
 await bundle("src/renderer/setup.ts", "setup.js", "browser", "iife");
-for (const file of ["control.html", "setup.html", "page.css"])
+await bundle("src/renderer/offline.ts", "offline.js", "browser", "iife");
+for (const file of ["control.html", "setup.html", "offline.html", "page.css"])
 	await cp(path.join(ROOT, "src/renderer", file), path.join(APP, file));
 await cp(TOKENS, path.join(APP, "tokens.css"));
 await compileRunner();

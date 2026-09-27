@@ -2,7 +2,11 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { decideNavigation } from "@/main/navigation";
+import {
+	decideNavigation,
+	isServerLoadFailure,
+	localPageWith,
+} from "@/main/navigation";
 import {
 	pairArgs,
 	pairOutcome,
@@ -189,6 +193,37 @@ describe("聊天窗口的导航", () => {
 		expect(decideNavigation("http://localhost:8930/", null, [setup])).toBe(
 			"external",
 		);
+	});
+});
+
+describe("连不上服务器", () => {
+	const origin = "http://localhost:8960";
+	it("只有主框架加载服务器页面失败才算", () => {
+		expect(
+			isServerLoadFailure(-102, true, "http://localhost:8960/", origin),
+		).toBe(true);
+		expect(
+			isServerLoadFailure(-102, false, "http://localhost:8960/", origin),
+		).toBe(false);
+		expect(
+			isServerLoadFailure(-3, true, "http://localhost:8960/", origin),
+		).toBe(false);
+		expect(isServerLoadFailure(-6, true, "file:///x/setup.html", origin)).toBe(
+			false,
+		);
+		expect(
+			isServerLoadFailure(-102, true, "http://localhost:8960/", null),
+		).toBe(false);
+	});
+
+	it("本地页面带上服务器地址与原因，导航规则仍认得它", () => {
+		const offline = "file:///app/dist/app/offline.html";
+		const url = localPageWith(offline, {
+			server: origin,
+			error: "ERR_CONNECTION_REFUSED",
+		});
+		expect(new URL(url).searchParams.get("server")).toBe(origin);
+		expect(decideNavigation(url, origin, [offline])).toBe("allow");
 	});
 });
 
