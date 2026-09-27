@@ -11,6 +11,7 @@ import type {
 	DirectoryResponse,
 	Event,
 	MeResponse,
+	OrgUnit,
 	Principal,
 	PrincipalStatus,
 	ResolveWorkItemRequest,
@@ -55,6 +56,8 @@ export type State = {
 	sessionError: string | null;
 	me: MeResponse | null;
 	directory: Person[];
+	/** 组织结构：全部单元（通讯录的组织树、单元分身的"代谁"）。 */
+	org: OrgUnit[];
 	conversations: ConversationSummary[];
 	/** 已加载的事件，按会话（含该会话已加载的各话题），按 seq 升序。 */
 	events: Record<string, Event[]>;
@@ -90,6 +93,7 @@ const initialState: State = {
 	sessionError: null,
 	me: null,
 	directory: [],
+	org: [],
 	conversations: [],
 	events: {},
 	eventsStatus: {},
@@ -154,12 +158,13 @@ export function loadSession(): Promise<void> {
 async function doLoadSession(): Promise<void> {
 	set({ session: "loading", sessionError: null });
 	try {
-		const [me, directory, list] = await Promise.all([
+		const [me, directory, list, org] = await Promise.all([
 			api.me(),
 			api.directory(),
 			api.conversations(),
+			api.org(),
 		]);
-		set({ me, directory: directory.people });
+		set({ me, directory: directory.people, org: org.units });
 		applyConversationList(list.items);
 		set({ session: "ready" });
 	} catch (e) {
@@ -171,6 +176,11 @@ async function doLoadSession(): Promise<void> {
 			set({ session: "error", sessionError: messageOf(e) });
 		}
 	}
+}
+
+/** 重拉组织结构（单元页改了章程、名称或成员之后）。 */
+export async function loadOrg(): Promise<void> {
+	set({ org: (await api.org()).units });
 }
 
 export function resetSession(): void {
@@ -484,11 +494,12 @@ export function applyWorkItem(item: WorkItem): void {
  */
 export async function resync(): Promise<void> {
 	set({ activity: {} });
-	const [directory] = await Promise.all([
+	const [directory, org] = await Promise.all([
 		api.directory(),
+		api.org(),
 		refreshConversations(),
 	]);
-	set({ directory: directory.people });
+	set({ directory: directory.people, org: org.units });
 	const mine = directory.people.find(
 		(p) => p.principal.id === state.me?.principal.id,
 	);

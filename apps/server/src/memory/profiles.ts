@@ -16,7 +16,12 @@ import {
 	principals,
 } from "@/db/schema";
 import type { Scoped } from "@/db/scope";
-import { thirdParties, type Viewer, visibleItems } from "@/memory/access";
+import {
+	redactionOf,
+	unitMembersOf,
+	type Viewer,
+	visibleItems,
+} from "@/memory/access";
 import { callSystemModel } from "@/memory/model";
 import { clipChars, parseJsonObject, scrubSecrets } from "@/memory/text";
 
@@ -227,9 +232,14 @@ export async function visibleSections(
 		eq(memoryProfiles.subjectKind, "person"),
 	);
 	if (!profile) return [];
+	const items = await visibleItems(s, viewer, profile.itemIds);
+	const units = await unitMembersOf(
+		s,
+		items.flatMap((i) => (i.scope.unitId ? [i.scope.unitId] : [])),
+	);
 	const usable = new Set(
-		(await visibleItems(s, viewer, profile.itemIds))
-			.filter((i) => thirdParties(i, viewer).length === 0)
+		items
+			.filter((i) => redactionOf(i, viewer, units) === null)
 			.map((i) => i.id),
 	);
 	return profile.sections.filter((x) =>

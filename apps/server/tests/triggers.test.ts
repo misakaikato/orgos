@@ -362,3 +362,67 @@ describe("群聊一轮的发言顺序", () => {
 		]);
 	});
 });
+
+describe("单元分身", () => {
+	const UNIT = "product";
+	const U_TWIN = "product-twin";
+	const unitTwin = (): TriggerMember => ({
+		...twin(U_TWIN, UNIT),
+		unitTwin: true,
+	});
+
+	it("与单元分身的私聊：任何人发言都触发，为提问人办事（包括负责人本人）", () => {
+		for (const asker of [BOB, ALICE]) {
+			const conv: TriggerConversation = {
+				kind: "dm",
+				members: [human(asker), unitTwin()],
+			};
+			expect(agentsToTrigger(conv, { actorId: asker, mentions: [] })).toEqual([
+				{
+					agentId: U_TWIN,
+					actingFor: { kind: "other", principalId: asker },
+					reason: "unit_dm",
+				},
+			]);
+		}
+	});
+
+	const unitGroup = (bobStatus: PrincipalStatus = "available") =>
+		({
+			kind: "group",
+			members: [
+				unitTwin(),
+				human(ALICE),
+				twin(A_TWIN, ALICE),
+				human(BOB, bobStatus),
+				twin(B_TWIN, BOB),
+			],
+		}) satisfies TriggerConversation;
+
+	it("单元群里不被 @ 不开口", () => {
+		expect(groupRound(unitGroup(), { actorId: ALICE, mentions: [] })).toEqual(
+			[],
+		);
+	});
+
+	it("单元群里被 @ 时开口，为发言者办事", () => {
+		expect(
+			groupRound(unitGroup(), { actorId: ALICE, mentions: [U_TWIN] }),
+		).toEqual([
+			{
+				agentId: U_TWIN,
+				actingFor: { kind: "other", principalId: ALICE },
+				reason: "mentioned",
+			},
+		]);
+	});
+
+	it("@ 本人且问分身、本人忙碌两条规则只对个人分身生效，不触发单元分身", () => {
+		const round = groupRound(unitGroup("busy"), {
+			actorId: ALICE,
+			mentions: [BOB],
+			askTwin: true,
+		});
+		expect(round.map((t) => t.agentId)).toEqual([B_TWIN]);
+	});
+});

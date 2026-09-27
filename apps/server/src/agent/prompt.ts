@@ -5,6 +5,7 @@ import { AGENT_ROLE_LABEL, type Agent, type Event } from "@orgos/protocol";
 import type { ChatMessage, RunTrigger } from "@/agent/llm-types";
 import type { AgentTool, ToolScope } from "@/agent/tools/tool";
 import { COLLEAGUE_SOURCE_LABEL } from "@/memory/access";
+import type { UnitContext } from "@/services/units";
 
 export type PromptInput = {
 	scope: ToolScope;
@@ -36,6 +37,8 @@ function whereLine(input: PromptInput, ownerName: string): string {
 		return `${delegatedBy.principal.displayName}把一件活转交给你，完成后你的回复会原样交回给它。`;
 	if (scope.conversation.kind === "group")
 		return `你在群聊“${conversationTitle ?? "群聊"}”里，多位同事和代理都在。`;
+	if (scope.unit)
+		return `你在${requesterName ?? "同事"}与${ownerName}的私聊里（对方来“问${ownerName}”），代表${ownerName}回答${requesterName ?? "对方"}。`;
 	if (scope.actingFor.kind === "other")
 		return `你在${ownerName}与${requesterName ?? "同事"}的私聊里，替${ownerName}回答${requesterName ?? "对方"}。`;
 	return `你在和${ownerName}本人私聊。`;
@@ -64,6 +67,31 @@ function actingLines(input: PromptInput, ownerName: string): string[] {
 			: `2. 超出授权的（新的承诺、决定，或政策里要求问本人的）说明这需要${ownerName}本人决定、请对方直接问${ownerName}，不要自己答应；`,
 		`3. 涉及${ownerName}设为不可谈的话题，礼貌地直接拒绝。`,
 		...resumeLines(input, ownerName, other),
+	];
+}
+
+/** 单元分身：总是为提问的人办事，章程是它的对外政策，章程之外转给负责人。 */
+function unitLines(input: PromptInput, unit: UnitContext): string[] {
+	const { scope, requesterName, tools } = input;
+	const unitName = scope.owner.displayName;
+	const headName = unit.head.displayName;
+	const other = requesterName ?? "对方";
+	const member = unit.requesterIsMember;
+	const charter =
+		unit.unit.charter.trim() ||
+		`（未设置：只回答单元资料里明确写着的内容，其余转给${headName}）`;
+	const canEscalate = tools.some((t) => t.name === "escalate_to_owner");
+	return [
+		`${other}${member ? "是" : "不是"}${unitName}的成员。你只能使用 memory_search 查到的内容：${unitName}的单元资料${member ? "" : "里对全员公开的部分"}，以及${unitName}允许对外的部门记忆。成员的私聊、私人资料你一概不知道，也不要打听或透露。`,
+		`检索结果里出处写着“${COLLEAGUE_SOURCE_LABEL}”的，只能转述其中的事实：不要推测或透露是谁说的、在哪说的、原话怎么说。`,
+		`${unitName}负责人${headName}写的章程（你的对外政策）：\n${charter}`,
+		"处理对方的问题只有三个出口：",
+		`1. 章程允许的，直接答复或决定，并注明依据（例如“根据${unitName}的《…》”）。按章程替${unitName}做了决定（不只是转述已有信息）时，先调用 record_decision 记下来再回复；`,
+		canEscalate
+			? `2. 章程之外的（新的承诺、决定，或章程要求问${headName}的）调用 escalate_to_owner 转给负责人${headName}，不要自己答应。只有真正调用了 escalate_to_owner 才算转给了${headName}，绝不能只在文字里说“已转给”；每个新问题都要单独调用一次；`
+			: `2. 章程之外的，说明这需要负责人${headName}决定，不要自己答应；`,
+		"3. 不提供按人统计的活动数据（谁发了多少消息、谁多久没回复、谁效率高低之类），这类问题礼貌地直接拒绝。",
+		...resumeLines(input, headName, other),
 	];
 }
 
@@ -98,10 +126,12 @@ function teammateLines(input: PromptInput): string[] {
 
 export function buildSystemPrompt(input: PromptInput): string {
 	const { scope, tools } = input;
-	const { agent, owner } = scope;
+	const { agent, owner, unit } = scope;
 	const ownerName = owner.displayName;
 	const lines = [
-		`你是${ownerName}的${AGENT_ROLE_LABEL[agent.role]}“${agent.principal.displayName}”（@${agent.principal.handle}）。你是 AI，不是${ownerName}本人，不要冒充${ownerName}说话。`,
+		unit
+			? `你是${ownerName}的${AGENT_ROLE_LABEL[agent.role]}“${agent.principal.displayName}”（@${agent.principal.handle}），代表${ownerName}答复同事、按章程做决定。你是 AI，不是负责人${unit.head.displayName}本人，不要冒充任何人说话。`
+			: `你是${ownerName}的${AGENT_ROLE_LABEL[agent.role]}“${agent.principal.displayName}”（@${agent.principal.handle}）。你是 AI，不是${ownerName}本人，不要冒充${ownerName}说话。`,
 	];
 	if (agent.description.trim()) lines.push(`你的职责：${agent.description}`);
 	lines.push(whereLine(input, ownerName));
@@ -109,7 +139,9 @@ export function buildSystemPrompt(input: PromptInput): string {
 		lines.push(
 			`这里是话题“${input.topicTitle}”：你只看得到这个话题里的对话，其他话题的事以近期工作简报为准。`,
 		);
-	lines.push(...actingLines(input, ownerName));
+	lines.push(
+		...(unit ? unitLines(input, unit) : actingLines(input, ownerName)),
+	);
 	if (scope.conversation.kind === "group" && !input.delegatedBy) {
 		lines.push(
 			"群聊规则：只有消息明确是对你说的（@ 了你、叫到你的名字，或问题正属于你的职责），并且你有别人还没说过的有用信息时才发言；否则必须调用 pass 工具保持安静，不要输出任何文字。",

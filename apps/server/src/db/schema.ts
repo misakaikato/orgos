@@ -31,6 +31,7 @@ import {
 	TASK_LOG_KINDS,
 	TASK_STATES,
 	TOPIC_KINDS,
+	UNIT_MEMBER_ROLES,
 	WORK_ITEM_KINDS,
 	WORK_ITEM_STATUSES,
 } from "@orgos/protocol";
@@ -109,6 +110,7 @@ export const principals = pgTable(
 		check(
 			"principals_kind_identity_check",
 			sql`(${t.kind} = 'human' and ${t.userId} is not null and ${t.ownerId} is null)
+				or (${t.kind} = 'unit' and ${t.userId} is null and ${t.ownerId} is null)
 				or (${t.kind} = 'agent' and ${t.userId} is null and ${t.ownerId} is not null)`,
 		),
 		index("principals_owner_idx").on(t.ownerId),
@@ -712,4 +714,58 @@ export const disclosureRules = pgTable(
 		allowed: boolean("allowed").notNull(),
 	},
 	(t) => [primaryKey({ columns: [t.ownerId, t.category] })],
+);
+
+// ─────────────────────────── 组织结构 ───────────────────────────
+
+/**
+ * 组织单元（部门）：principals.kind='unit' 的扩展行。负责人（headId）是唯一的决策人，
+ * 其成员行的 role 恒为 head（经 `@/services/org` 同步）。建单元时同一事务建它的分身与单元群。
+ */
+export const orgUnits = pgTable(
+	"org_units",
+	{
+		principalId: uuid("principal_id")
+			.primaryKey()
+			.references(() => principals.id),
+		tenantId: tenantId(),
+		parentId: uuid("parent_id").references(
+			(): PgColumn => orgUnits.principalId,
+		),
+		headId: uuid("head_id")
+			.notNull()
+			.references(() => principals.id),
+		/** 章程：负责人写给单元分身的对外政策（自然语言）。 */
+		charter: text("charter").notNull().default(""),
+		/** 单元群：成员随单元成员变动。 */
+		groupConversationId: uuid("group_conversation_id").references(
+			() => conversations.id,
+		),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		index("org_units_parent_idx").on(t.parentId),
+		uniqueIndex("org_units_group_unique").on(t.groupConversationId),
+	],
+);
+
+export const unitMemberships = pgTable(
+	"unit_memberships",
+	{
+		unitId: uuid("unit_id")
+			.notNull()
+			.references(() => orgUnits.principalId),
+		principalId: uuid("principal_id")
+			.notNull()
+			.references(() => principals.id),
+		tenantId: tenantId(),
+		role: text("role", { enum: UNIT_MEMBER_ROLES }).notNull(),
+		isPrimary: boolean("is_primary").notNull().default(false),
+		createdAt: createdAt(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.unitId, t.principalId] }),
+		index("unit_memberships_principal_idx").on(t.principalId),
+	],
 );

@@ -7,7 +7,7 @@
  *
  * 返回写入或取代了条目的 subject（画像是否需要重建据此判断）与本次提炼到的最后一条事件。
  */
-import type { Event } from "@orgos/protocol";
+import { type Event, NegotiationStateSchema } from "@orgos/protocol";
 import { asc, desc, eq, gt, inArray, isNotNull, max, sql } from "drizzle-orm";
 import type { LlmClient } from "@/agent/llm-types";
 import { formatNow } from "@/agent/prompt";
@@ -21,7 +21,7 @@ import {
 	workItems,
 } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
-import { toEvent } from "@/lib/serialize";
+import { toEvent, toWorkItem } from "@/lib/serialize";
 import { scopeOfConversation } from "@/memory/access";
 import {
 	candidateText,
@@ -37,6 +37,7 @@ import { writeItem } from "@/memory/store";
 import { clipChars, parseJsonObject, similarity } from "@/memory/text";
 import { describeProposal } from "@/services/negotiations";
 import { findTopic } from "@/services/topics";
+import { cardEventOf } from "@/services/work-items";
 
 /** 一次提炼最多带多少条事件；更多的由续作业接着提炼。 */
 export const EXTRACT_BATCH_EVENTS = 150;
@@ -181,8 +182,12 @@ export async function extractTopic(
 	)
 		return base;
 
-	const { scope, humans } = await scopeOfConversation(s, conversation.id);
+	const { scope, humans, units } = await scopeOfConversation(
+		s,
+		conversation.id,
+	);
 	if (humans.length === 0) return base;
+	const subjectPool = [...humans, ...units];
 	const material = materialText(lines);
 	const pool = await s.executor
 		.select()
@@ -203,11 +208,13 @@ export async function extractTopic(
 		.slice(0, CANDIDATES_SHOWN)
 		.map((x) => x.c);
 	const handleOf = (id: string) =>
-		humans.find((h) => h.id === id)?.handle ?? "?";
+		subjectPool.find((h) => h.id === id)?.handle ?? "?";
+	const dmSide =
+		units.length > 0 ? `与${units.map((u) => u.displayName).join("、")}` : "";
 	const where =
 		conversation.kind === "group"
 			? `群聊“${conversation.title ?? "群聊"}”${topic.isMain ? "" : `的话题“${topic.title}”`}`
-			: `${humans.map((h) => h.displayName).join("与")}${humans.length === 1 ? "与自己代理" : ""}的私聊${topic.isMain ? "" : `里的话题“${topic.title}”`}`;
+			: `${humans.map((h) => h.displayName).join("与")}${dmSide || (humans.length === 1 ? "与自己代理" : "")}的私聊${topic.isMain ? "" : `里的话题“${topic.title}”`}`;
 	const { text, runId } = await callSystemModel({
 		s,
 		llm,
@@ -219,6 +226,7 @@ export async function extractTopic(
 			today: formatNow(now),
 			where,
 			participants: humans,
+			units,
 			material,
 			candidates: candidateText(candidates, handleOf),
 		}),
@@ -230,7 +238,7 @@ export async function extractTopic(
 				{ conversationId: l.conversationId, topicId: l.topicId },
 			]),
 		),
-		humans: new Map(humans.map((h) => [h.handle, h])),
+		subjects: new Map(subjectPool.map((h) => [h.handle, h])),
 		candidates: new Map(candidates.map((c) => [c.id.slice(0, 8), c])),
 	});
 	const at = new Map(lines.map((l) => [String(l.eventId), l.at.getTime()]));
@@ -258,37 +266,61 @@ type Decision = { subjectId: string; content: string };
 async function decisionsOf(s: Scoped, event: Event): Promise<Decision[]> {
 	if (event.type === "escalation.resolved") {
 		if (event.payload.action !== "answer" || !event.payload.text) return [];
-		const item = await s.first(
+		const row = await s.first(
 			workItems,
 			eq(workItems.id, event.payload.workItemId),
 		);
+		if (!row) return [];
+		const item = toWorkItem(row);
 		const who = await s.first(principals, eq(principals.id, event.actorId));
+		// 答复是替上报的那个代理的"本人"做的决定：单元分身上报的，subject 是单元。
+		const card = await cardEventOf(s, item);
+		const agent = card
+			? await s.first(principals, eq(principals.id, card.actorId))
+			: undefined;
+		const subject = agent?.ownerId
+			? await s.first(principals, eq(principals.id, agent.ownerId))
+			: undefined;
+		const forUnit = subject?.kind === "unit";
 		const question =
-			(item?.payload as { question?: string } | undefined)?.question ??
-			item?.title ??
-			"";
+			item.kind === "decision" ? item.payload.question : item.title;
+		const answerer = `${forUnit ? `${subject.displayName}负责人` : ""}${who?.displayName ?? "本人"}`;
 		return [
 			{
-				subjectId: event.actorId,
-				content: `关于“${clipChars(question, 80)}”，${who?.displayName ?? "本人"}的答复是：${clipChars(event.payload.text, 200)}`,
+				subjectId: forUnit ? subject.id : event.actorId,
+				content: `关于“${clipChars(question, 80)}”，${answerer}的答复是：${clipChars(event.payload.text, 200)}`,
 			},
 		];
 	}
 	if (event.type === "negotiation.ended") {
 		if (event.payload.outcome === "exhausted" || !event.conversationId)
 			return [];
-		const { humans } = await scopeOfConversation(s, event.conversationId);
 		const conv = await s.first(
 			conversations,
 			eq(conversations.id, event.conversationId),
 		);
-		const goal = (conv?.negotiation as { goal?: string } | null)?.goal ?? "";
-		const names = humans.map((h) => h.displayName).join("与");
+		const state = NegotiationStateSchema.safeParse(conv?.negotiation);
+		if (!state.success) return [];
+		// 协商的双方是两个分身各自的本人（人或单元）。
+		const agentsOf = await s.select(
+			principals,
+			inArray(principals.id, [
+				state.data.initiatorAgentId,
+				state.data.responderAgentId,
+			]),
+		);
+		const sideIds = agentsOf.flatMap((a) => (a.ownerId ? [a.ownerId] : []));
+		const sides =
+			sideIds.length > 0
+				? await s.select(principals, inArray(principals.id, sideIds))
+				: [];
+		const goal = state.data.goal;
+		const names = sides.map((p) => p.displayName).join("与");
 		const content =
 			event.payload.outcome === "agreed"
 				? `${names}经代理协商约定：${describeProposal(event.payload.proposal)}（事由：${clipChars(goal, 60)}）`
 				: `${names}关于“${clipChars(goal, 60)}”的代理协商未达成一致`;
-		return humans.map((h) => ({ subjectId: h.id, content }));
+		return sides.map((p) => ({ subjectId: p.id, content }));
 	}
 	return [];
 }

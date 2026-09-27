@@ -34,6 +34,7 @@ import {
 	scoped,
 } from "@/db/scope";
 import { writeDemoConversations } from "@/demo/conversations";
+import { writeDemoOrg } from "@/demo/org";
 import {
 	DEMO_TENANTS,
 	type DemoPersonSpec,
@@ -210,6 +211,7 @@ export function resetDemo(now = new Date()): Promise<DemoCounts> {
 		const [main] = casts;
 		if (!main) throw new Error("缺少演示主租户");
 		await writeDemoConversations(main, now);
+		await writeDemoOrg(main, now);
 		await ensureDemoProvider();
 		return demoCounts(main.s);
 	})().finally(() => {

@@ -1,6 +1,7 @@
 /**
- * 代理之间的协商会话（kind=negotiation）：两个分身是成员，双方本人是 observer。
- * 它不出现在会话列表里：发起时在两位本人的私聊里落 `negotiation.started`，界面为协商卡片，
+ * 代理之间的协商会话（kind=negotiation）：两个分身是成员，双方拍板人是 observer。
+ * 分身的本人可以是人或单元；单元一方由它的分身出面，拍板人是负责人（`deciderOf`）。
+ * 它不出现在会话列表里：发起时在两位拍板人的私聊里落 `negotiation.started`，界面为协商卡片，
  * 卡片经本会话的事件展示每一步。状态存 `conversations.negotiation`，每一步与结束各落一条事件。
  *
  * 判定规则（假设 4、C4 第 4 步）只在本文件的 `judgeStep` 与 `agreeProblem`：
@@ -39,6 +40,7 @@ import {
 import { openDm } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
 import { insertConversation, mainTopicOf } from "@/services/topics";
+import { deciderOf } from "@/services/units";
 import {
 	createWorkItem,
 	escalateToOwner,
@@ -80,24 +82,25 @@ async function saveState(
 		.where(tx.where(conversations, eq(conversations.id, conversationId)));
 }
 
-async function requireHuman(s: Scoped, id: string): Promise<PrincipalRow> {
-	const row = await s.first(
-		principals,
-		eq(principals.id, id),
-		eq(principals.kind, "human"),
-	);
-	if (!row) throw notFound("找不到此人");
+/** 协商的一方：分身的本人（人或单元）。 */
+async function requireSide(s: Scoped, id: string): Promise<PrincipalRow> {
+	const row = await s.first(principals, eq(principals.id, id));
+	if (!row || (row.kind !== "human" && row.kind !== "unit"))
+		throw notFound("找不到此人");
 	return row;
 }
 
-/** 两位本人的私聊（没有则新建，含双方分身）。 */
-async function ownersDm(
+/**
+ * 双方拍板人（人是本人，单元是负责人）的私聊（没有则新建，含双方分身）：协商卡片、上报与确认落在这里。
+ */
+async function deciderDm(
 	s: Scoped,
 	initiatorOwnerId: string,
 	responderOwnerId: string,
 ): Promise<string> {
-	const owner = await requireHuman(s, initiatorOwnerId);
-	const { conversation } = await openDm(s, owner, responderOwnerId);
+	const a = await deciderOf(s, initiatorOwnerId);
+	const b = await deciderOf(s, responderOwnerId);
+	const { conversation } = await openDm(s, a, b.id);
 	return conversation.id;
 }
 
@@ -190,9 +193,11 @@ export async function negotiationStateOf(
 	return (await requireNegotiation(s, conversationId)).state;
 }
 
+export const SAME_DECIDER_TEXT = "协商双方由同一个人拍板，不需要协商";
+
 /**
- * 建协商会话：发起方与应答方的代理为成员，双方本人为 observer；
- * 同一事务里在两位本人的私聊落 `negotiation.started`（actor 为发起方代理）。
+ * 建协商会话：发起方与应答方的代理为成员，双方拍板人（人是本人，单元是负责人）为 observer；
+ * 同一事务里在两位拍板人的私聊落 `negotiation.started`（actor 为发起方代理）。
  */
 export async function startNegotiation(
 	s: Scoped,
@@ -212,7 +217,12 @@ export async function startNegotiation(
 	if (initiator.ownerId === responder.ownerId) {
 		throw badRequest("协商双方必须属于不同的人");
 	}
-	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
+	const initiatorDecider = await deciderOf(s, initiator.ownerId);
+	const responderDecider = await deciderOf(s, responder.ownerId);
+	if (initiatorDecider.id === responderDecider.id) {
+		throw badRequest(SAME_DECIDER_TEXT);
+	}
+	const dmId = await deciderDm(s, initiator.ownerId, responder.ownerId);
 	// 协商卡片：发起在两人私聊的某个话题里就落在那里，否则落在私聊主线。
 	const cardTopicId =
 		input.originConversationId === dmId && input.originTopicId
@@ -242,8 +252,8 @@ export async function startNegotiation(
 		const members = [
 			{ principalId: initiator.id, role: "member" as const },
 			{ principalId: responder.id, role: "member" as const },
-			{ principalId: initiator.ownerId, role: "observer" as const },
-			{ principalId: responder.ownerId, role: "observer" as const },
+			{ principalId: initiatorDecider.id, role: "observer" as const },
+			{ principalId: responderDecider.id, role: "observer" as const },
 		];
 		for (const m of members) {
 			await tx.insert(conversationMembers, { conversationId: row.id, ...m });
@@ -364,9 +374,9 @@ async function stepsOf(s: Scoped, conversationId: string) {
 
 /**
  * 结束协商：落 `negotiation.ended`（actor 为发起方代理），并排一个 resolution 作业把结果写成 decision 记忆。
- * 结果为 agreed 时给双方本人
+ * 结果为 agreed 时给双方拍板人
  * 各建一条 confirmation 待办，提问人为对方的代理，关联两人的私聊（协商卡片所在处），
- * 提交后推给各自的本人。协商由本人在某个会话里发起时，发起方分身在那里回一句结果摘要。
+ * 提交后推给各自的拍板人。协商由本人在某个会话里发起时，发起方分身在那里回一句结果摘要。
  */
 export async function endNegotiation(
 	s: Scoped,
@@ -379,7 +389,7 @@ export async function endNegotiation(
 	const initiator = await requireAgentPrincipal(s, state.initiatorAgentId);
 	const responder = await requireAgentPrincipal(s, state.responderAgentId);
 	const proposal = state.lastProposal;
-	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
+	const dmId = await deciderDm(s, initiator.ownerId, responder.ownerId);
 	const main = await mainTopicOf(s, conversationId);
 	const items = await transactWithEvents(s, async (tx, append) => {
 		const ended = await append({
@@ -401,10 +411,10 @@ export async function endNegotiation(
 		});
 		await saveState(tx, conversationId, { ...state, state: "ended" });
 		if (outcome !== "agreed") return [];
-		const owners = new Map(
+		const sides = new Map(
 			await Promise.all(
 				[initiator.ownerId, responder.ownerId].map(
-					async (id) => [id, await requireHuman(tx, id)] as const,
+					async (id) => [id, await requireSide(tx, id)] as const,
 				),
 			),
 		);
@@ -417,14 +427,14 @@ export async function endNegotiation(
 			[initiator, responder],
 			[responder, initiator],
 		] as const) {
-			const otherName = owners.get(other.ownerId)?.displayName ?? "对方";
+			const otherName = sides.get(other.ownerId)?.displayName ?? "对方";
 			items.push(
 				await createWorkItem(tx, {
 					kind: "confirmation",
 					payload: { negotiationConversationId: conversationId, proposal },
 					title: `确认与${otherName}的约定：${matter}`,
 					body: `${other.displayName}与${self.displayName}已谈妥：${describeProposal(proposal)}`,
-					ownerId: self.ownerId,
+					ownerId: (await deciderOf(tx, self.ownerId)).id,
 					requesterId: other.id,
 					conversationId: dmId,
 				}),
@@ -434,7 +444,7 @@ export async function endNegotiation(
 	});
 	for (const item of items) notifyWorkItem(item);
 	if (state.originConversationId) {
-		const other = await requireHuman(s, responder.ownerId);
+		const other = await requireSide(s, responder.ownerId);
 		const last = (await stepsOf(s, conversationId)).at(-1);
 		await postAgentMessage(
 			s,
@@ -451,7 +461,7 @@ export async function endNegotiation(
 
 /**
  * 分身的一步回应（协商驱动的唯一入口）：落一步并判定；结束则经 `endNegotiation` 收尾；
- * need_owner 则经 `escalateToOwner` 给该分身的本人建 decision 待办——卡片落在两位本人的私聊里，
+ * need_owner 则经 `escalateToOwner` 给该分身的拍板人建 decision 待办——卡片落在两位拍板人的私聊里，
  * 提问人为对方的分身。返回推进后的状态。
  */
 export async function recordNegotiationReply(
@@ -473,7 +483,7 @@ export async function recordNegotiationReply(
 	if (state.state === "waiting_owner") {
 		const agent = await requireAgentPrincipal(s, agentId);
 		const other = await requireAgentPrincipal(s, counterpartOf(state, agentId));
-		const dmId = await ownersDm(s, agent.ownerId, other.ownerId);
+		const dmId = await deciderDm(s, agent.ownerId, other.ownerId);
 		const head = Array.from(state.goal).slice(0, 30).join("");
 		await escalateToOwner(s, {
 			agentId,
@@ -545,7 +555,7 @@ export async function negotiationContext(
 		.where(
 			s.where(
 				workItems,
-				eq(workItems.ownerId, self.ownerId),
+				eq(workItems.ownerId, (await deciderOf(s, self.ownerId)).id),
 				eq(workItems.kind, "decision"),
 				eq(workItems.status, "done"),
 				sql`${workItems.payload}->>'negotiationConversationId' = ${conversationId}`,
@@ -556,7 +566,7 @@ export async function negotiationContext(
 		state,
 		role,
 		counterpart,
-		counterpartOwner: await requireHuman(s, counterpart.ownerId),
+		counterpartOwner: await requireSide(s, counterpart.ownerId),
 		steps: await stepsOf(s, conversationId),
 		request: request.map((e) => ({
 			self: e.actorId === self.id,

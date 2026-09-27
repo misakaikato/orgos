@@ -3,6 +3,7 @@
  * 上的"不对"（本人更正并取代被引用的条目）与"不许对外说"（撤回或改成不对外的类别）。
  *
  * "自己的条目" = subject 是本人。别人的条目本人改不了：被引用的若不是本人的，更正照写，但不取代它。
+ * "本人"也可以是单元：负责人经 `?unitId=` 以同一套函数管理单元的条目与单元分身的代答记录（路由层校验负责人）。
  */
 import type {
 	AnswerActionResponse,
@@ -28,7 +29,11 @@ import type { PrincipalRow, Scoped } from "@/db/scope";
 import { badRequest, notFound } from "@/lib/errors";
 import { toEvent } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
-import { allowedCategories, type MemoryItemRow } from "@/memory/access";
+import {
+	allowedCategories,
+	type MemoryItemRow,
+	scopeOfOwn,
+} from "@/memory/access";
 import { rebuildProfile } from "@/memory/profiles";
 import {
 	editItem,
@@ -356,7 +361,7 @@ export async function correctAnswer(
 			category,
 			content: req.text,
 			entities: [...entities.values()],
-			scope: { kind: "owner", principalIds: [me.id] },
+			scope: scopeOfOwn(me),
 			sources: [
 				{
 					kind: "event",

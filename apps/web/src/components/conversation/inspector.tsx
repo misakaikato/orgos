@@ -22,7 +22,8 @@ import { addMember, removeMember, useStore } from "@/lib/store";
 function useFronts(): ReadonlySet<string> {
 	const me = useStore((s) => s.me);
 	const directory = useStore((s) => s.directory);
-	return frontAgentIds(me, directory);
+	const org = useStore((s) => s.org);
+	return frontAgentIds(me, directory, org);
 }
 
 /** 人的副标题：@handle，不在线时带状态。 */

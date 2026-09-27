@@ -6,6 +6,7 @@ import {
 	type Principal,
 } from "@orgos/protocol";
 import { type ReactNode, useState } from "react";
+import { OrgTree } from "@/components/org/org-tree";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -53,12 +54,13 @@ function Identity({ p, note }: { p: Principal; note: string }) {
 }
 
 /**
- * 通讯录：我的代理组、本组织的同事。和同事的私聊里自动带着双方的分身，
- * 想让对方的分身回答就在私聊里切到"问分身"。
+ * 通讯录：组织树（单元 → 成员，"问<单元名>"打开与单元分身的私聊）、我的代理组、本组织的同事。
+ * 和同事的私聊里自动带着双方的分身，想让对方的分身回答就在私聊里切到"问分身"。
  */
 export default function ContactsPage() {
 	const me = useStore((s) => s.me);
 	const directory = useStore((s) => s.directory);
+	const org = useStore((s) => s.org);
 	const { open, pendingId, error } = useOpenDm();
 	const [copied, setCopied] = useState(false);
 	if (!me) return null;
@@ -85,6 +87,17 @@ export default function ContactsPage() {
 						<p role="alert" className="mb-4 text-13 text-danger">
 							{error}
 						</p>
+					) : null}
+
+					{org.length > 0 ? (
+						<Section title="组织" count={org.length}>
+							<OrgTree
+								units={org}
+								meId={meId}
+								pendingId={pendingId}
+								onAsk={(twinId) => void open(twinId)}
+							/>
+						</Section>
 					) : null}
 
 					<Section title="我的代理组" count={me.agents.length}>

@@ -43,6 +43,8 @@ export function navKeyOf(pathname: string): NavKey {
 		"me",
 	] as const)
 		if (pathname === `/${key}` || pathname.startsWith(`/${key}/`)) return key;
+	// 单元页从通讯录的组织树进入，归在通讯录下（导航轨不新增入口）。
+	if (pathname.startsWith("/units/")) return "contacts";
 	return "chats";
 }
 

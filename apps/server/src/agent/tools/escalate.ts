@@ -5,7 +5,7 @@
  */
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { forOwner, makeTool } from "@/agent/tools/tool";
+import { deciderIn, forOwner, makeTool } from "@/agent/tools/tool";
 import { principals } from "@/db/schema";
 import { escalateToOwner } from "@/services/work-items";
 
@@ -51,9 +51,10 @@ export const escalateTool = makeTool({
 			title: titleOf(requesterName, question),
 			sourceEventId: scope.triggerEventId,
 		});
+		const decider = deciderIn(scope);
 		return {
-			result: `已转给${scope.owner.displayName}本人`,
-			summary: `转给${scope.owner.displayName}本人：${headOf(question)}`,
+			result: `已转给${decider.displayName}本人`,
+			summary: `转给${decider.displayName}本人：${headOf(question)}`,
 			ok: true,
 			end: true,
 		};

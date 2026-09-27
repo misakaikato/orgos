@@ -9,7 +9,11 @@ import type {
 } from "@orgos/protocol";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
-import { CategorySelect, errorText } from "@/components/agents/memory-shared";
+import {
+	CategorySelect,
+	errorText,
+	useMemoryUnit,
+} from "@/components/agents/memory-shared";
 import { messageHref } from "@/components/conversation/citations";
 import { AgentName } from "@/components/conversation/message-item";
 import { Avatar } from "@/components/ui/avatar";
@@ -55,12 +59,13 @@ function CorrectForm({
 	);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const unitId = useMemoryUnit();
 	const submit = async (e: FormEvent) => {
 		e.preventDefault();
 		setSaving(true);
 		setError(null);
 		try {
-			await api.correctAnswer(answer.answer.id, { text, replaces });
+			await api.correctAnswer(answer.answer.id, { text, replaces }, unitId);
 			onDone();
 		} catch (err) {
 			setError(errorText(err));
@@ -146,11 +151,12 @@ function WithholdForm({
 	);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const unitId = useMemoryUnit();
 	const act = async (req: Parameters<typeof api.withholdAnswer>[1]) => {
 		setBusy(true);
 		setError(null);
 		try {
-			await api.withholdAnswer(answer.answer.id, req);
+			await api.withholdAnswer(answer.answer.id, req, unitId);
 			onDone();
 		} catch (e) {
 			setError(errorText(e));
@@ -336,20 +342,21 @@ export function AnswersPanel() {
 	const [items, setItems] = useState<TwinAnswer[] | null>(null);
 	const [rules, setRules] = useState<DisclosureRule[]>([]);
 	const [failed, setFailed] = useState(false);
+	const unitId = useMemoryUnit();
 
 	const load = useCallback(async () => {
 		setFailed(false);
 		try {
 			const [answers, disclosure] = await Promise.all([
-				api.twinAnswers(),
-				api.disclosure(),
+				api.twinAnswers(unitId),
+				api.disclosure(unitId),
 			]);
 			setItems(answers.items);
 			setRules(disclosure.rules);
 		} catch {
 			setFailed(true);
 		}
-	}, []);
+	}, [unitId]);
 
 	useEffect(() => {
 		void load();
@@ -361,12 +368,18 @@ export function AnswersPanel() {
 	return (
 		<div className="flex flex-col gap-3">
 			<p className="text-13 text-muted">
-				分身替你回答同事的每一次记录在这里。答错了点“不对”写下正确说法；不该说的点“不许对外说”。
+				{unitId
+					? "部门的分身替部门回答同事的每一次记录在这里。答错了点“不对”写下正确说法；不该说的点“不许对外说”。"
+					: "分身替你回答同事的每一次记录在这里。答错了点“不对”写下正确说法；不该说的点“不许对外说”。"}
 			</p>
 			{items.length === 0 ? (
 				<EmptyState
 					mascotId="orgos-answers-empty"
-					text="分身还没有替你回答过别人。同事在私聊里问你的分身、或你忙碌时，它的回答会出现在这里。"
+					text={
+						unitId
+							? "部门的分身还没有回答过别人。同事来“问部门”时，它的回答会出现在这里。"
+							: "分身还没有替你回答过别人。同事在私聊里问你的分身、或你忙碌时，它的回答会出现在这里。"
+					}
 				/>
 			) : (
 				items.map((item) => (

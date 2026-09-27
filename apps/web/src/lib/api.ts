@@ -16,6 +16,7 @@ import {
 	type CreateNoteRequest,
 	CreatePairingCodeResponseSchema,
 	type CreateTaskRequest,
+	type CreateUnitNoteRequest,
 	DemoPeopleResponseSchema,
 	DevInfoResponseSchema,
 	DevSessionResponseSchema,
@@ -38,6 +39,8 @@ import {
 	NoteResponseSchema,
 	type OnboardingRequest,
 	OnboardingResponseSchema,
+	OrgResponseSchema,
+	OrgUnitResponseSchema,
 	type PostMessageRequest,
 	PostMessageResponseSchema,
 	ProviderModelsResponseSchema,
@@ -57,6 +60,7 @@ import {
 	TopicSourceResponseSchema,
 	type TopicToGroupRequest,
 	TwinAnswerListResponseSchema,
+	UnitDetailResponseSchema,
 	type UpdateAgentRequest,
 	type UpdateDisclosureRequest,
 	type UpdateMemoryItemRequest,
@@ -67,6 +71,8 @@ import {
 	UpdateStatusResponseSchema,
 	type UpdateTenantSettingsRequest,
 	type UpdateTopicRequest,
+	type UpdateUnitNoteRequest,
+	type UpdateUnitRequest,
 	UsageResponseSchema,
 	type WithholdAnswerRequest,
 	type WORK_ITEM_STATUSES,
@@ -134,6 +140,11 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
 
 async function noContent(p: ResponsePromise): Promise<void> {
 	await run(() => p);
+}
+
+/** 记忆接口的可选 `?unitId=`：单元负责人管理单元的记忆与代答记录。 */
+function unitParams(unitId: string | undefined): Record<string, string> {
+	return unitId ? { unitId } : {};
 }
 
 export const api = {
@@ -329,7 +340,32 @@ export const api = {
 		),
 	deleteNote: (id: string) => noContent(http.delete(`/api/notes/${id}`)),
 
-	/** 自己的记忆条目（subject 是我）。 */
+	/** 组织结构：全部单元。 */
+	org: () => run(() => http.get("/api/org").json(OrgResponseSchema)),
+	unitDetail: (id: string) =>
+		run(() => http.get(`/api/org/units/${id}`).json(UnitDetailResponseSchema)),
+	updateUnit: (id: string, req: UpdateUnitRequest) =>
+		run(() =>
+			http
+				.patch(`/api/org/units/${id}`, { json: req })
+				.json(OrgUnitResponseSchema),
+		),
+	createUnitNote: (id: string, req: CreateUnitNoteRequest) =>
+		run(() =>
+			http
+				.post(`/api/org/units/${id}/notes`, { json: req })
+				.json(NoteResponseSchema),
+		),
+	updateUnitNote: (id: string, noteId: string, req: UpdateUnitNoteRequest) =>
+		run(() =>
+			http
+				.patch(`/api/org/units/${id}/notes/${noteId}`, { json: req })
+				.json(NoteResponseSchema),
+		),
+	deleteUnitNote: (id: string, noteId: string) =>
+		noContent(http.delete(`/api/org/units/${id}/notes/${noteId}`)),
+
+	/** 自己的记忆条目（subject 是我）；给了 unitId 时是该单元的条目（仅负责人）。 */
 	memoryItems: (query: MemoryItemsQuery = {}) =>
 		run(() =>
 			http
@@ -340,16 +376,25 @@ export const api = {
 				})
 				.json(MemoryItemListResponseSchema),
 		),
-	updateMemoryItem: (id: string, req: UpdateMemoryItemRequest) =>
+	updateMemoryItem: (
+		id: string,
+		req: UpdateMemoryItemRequest,
+		unitId?: string,
+	) =>
 		run(() =>
 			http
-				.patch(`/api/memory/items/${id}`, { json: req })
+				.patch(`/api/memory/items/${id}`, {
+					json: req,
+					searchParams: unitParams(unitId),
+				})
 				.json(MemoryItemResponseSchema),
 		),
-	retractMemoryItem: (id: string) =>
+	retractMemoryItem: (id: string, unitId?: string) =>
 		run(() =>
 			http
-				.post(`/api/memory/items/${id}/retract`)
+				.post(`/api/memory/items/${id}/retract`, {
+					searchParams: unitParams(unitId),
+				})
 				.json(MemoryItemResponseSchema),
 		),
 	/** 条目出处里我看得到的原消息。 */
@@ -359,31 +404,52 @@ export const api = {
 				.get(`/api/memory/items/${id}/sources`)
 				.json(MemorySourcesResponseSchema),
 		),
-	disclosure: () =>
-		run(() =>
-			http.get("/api/memory/disclosure").json(DisclosureResponseSchema),
-		),
-	updateDisclosure: (req: UpdateDisclosureRequest) =>
+	disclosure: (unitId?: string) =>
 		run(() =>
 			http
-				.put("/api/memory/disclosure", { json: req })
+				.get("/api/memory/disclosure", { searchParams: unitParams(unitId) })
 				.json(DisclosureResponseSchema),
 		),
-	/** 代答记录：分身替我对他人的回答。 */
-	twinAnswers: () =>
-		run(() =>
-			http.get("/api/memory/answers").json(TwinAnswerListResponseSchema),
-		),
-	correctAnswer: (eventId: number, req: CorrectAnswerRequest) =>
+	updateDisclosure: (req: UpdateDisclosureRequest, unitId?: string) =>
 		run(() =>
 			http
-				.post(`/api/memory/answers/${eventId}/correct`, { json: req })
+				.put("/api/memory/disclosure", {
+					json: req,
+					searchParams: unitParams(unitId),
+				})
+				.json(DisclosureResponseSchema),
+		),
+	/** 代答记录：分身替我（或单元分身替单元）对他人的回答。 */
+	twinAnswers: (unitId?: string) =>
+		run(() =>
+			http
+				.get("/api/memory/answers", { searchParams: unitParams(unitId) })
+				.json(TwinAnswerListResponseSchema),
+		),
+	correctAnswer: (
+		eventId: number,
+		req: CorrectAnswerRequest,
+		unitId?: string,
+	) =>
+		run(() =>
+			http
+				.post(`/api/memory/answers/${eventId}/correct`, {
+					json: req,
+					searchParams: unitParams(unitId),
+				})
 				.json(AnswerActionResponseSchema),
 		),
-	withholdAnswer: (eventId: number, req: WithholdAnswerRequest) =>
+	withholdAnswer: (
+		eventId: number,
+		req: WithholdAnswerRequest,
+		unitId?: string,
+	) =>
 		run(() =>
 			http
-				.post(`/api/memory/answers/${eventId}/withhold`, { json: req })
+				.post(`/api/memory/answers/${eventId}/withhold`, {
+					json: req,
+					searchParams: unitParams(unitId),
+				})
 				.json(AnswerActionResponseSchema),
 		),
 

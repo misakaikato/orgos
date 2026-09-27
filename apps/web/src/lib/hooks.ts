@@ -6,14 +6,15 @@ import { appHref } from "@/lib/auth-mode";
 import { buildPrincipalMap, type PrincipalMap } from "@/lib/principals";
 import { openDm, useStore } from "@/lib/store";
 
-/** 已知主体的查找表（本人、通讯录、会话成员）。 */
+/** 已知主体的查找表（本人、通讯录、组织结构、会话成员）。 */
 export function usePrincipalMap(): PrincipalMap {
 	const me = useStore((s) => s.me);
 	const directory = useStore((s) => s.directory);
 	const conversations = useStore((s) => s.conversations);
+	const org = useStore((s) => s.org);
 	return useMemo(
-		() => buildPrincipalMap(me, directory, conversations),
-		[me, directory, conversations],
+		() => buildPrincipalMap(me, directory, conversations, org),
+		[me, directory, conversations, org],
 	);
 }
 

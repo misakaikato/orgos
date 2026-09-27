@@ -151,6 +151,8 @@ export function citationMark(itemId: string): string {
 export const MemoryItemsQuerySchema = z.object({
 	q: z.string().trim().max(200).optional(),
 	status: z.enum(MEMORY_STATUSES).optional(),
+	/** 给了时列该单元的条目（仅负责人）。 */
+	unitId: z.uuid().optional(),
 });
 export type MemoryItemsQuery = z.infer<typeof MemoryItemsQuerySchema>;
 

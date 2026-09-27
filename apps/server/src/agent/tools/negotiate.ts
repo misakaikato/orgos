@@ -1,42 +1,39 @@
 /**
  * 协商（C4）的两个工具。
  *
- * - negotiate：分身为本人办事时，去和另一位同事的分身协商一件事。经 `startNegotiation` 建协商会话
- *   （两人私聊里落协商卡片），随后由调度器驱动两个分身轮流回应；本次运行照常继续。
+ * - negotiate：分身为本人办事时（单元分身为本单元成员办事时），去和另一位同事或另一个单元的分身协商一件事。
+ *   经 `startNegotiation` 建协商会话（双方拍板人的私聊里落协商卡片），随后由调度器驱动两个分身轮流回应；
+ *   本次运行照常继续。
  * - negotiation_reply：只在协商会话里可用，每一步必须以它结束；回应交给调度器按
  *   `@/services/negotiations` 的规则判定。agree 不成立时退回给模型改正，不算一步。
  */
 import { NEGOTIATION_STATUSES } from "@orgos/protocol";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { forOwner, makeTool } from "@/agent/tools/tool";
+import { deciderIn, forOwner, makeTool } from "@/agent/tools/tool";
 import { principals } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { requireTwinOf } from "@/services/agents";
 import {
 	agreeProblem,
 	negotiationStateOf,
+	SAME_DECIDER_TEXT,
 	startNegotiation,
 } from "@/services/negotiations";
+import { deciderOf } from "@/services/units";
 
 export const NOT_FOUND_TEXT = "找不到此人";
 const TITLE_CHARS = 40;
 
-/** 本租户里的人：按 handle（可带 @），否则按唯一的显示名。 */
-async function findPerson(
-	s: Scoped,
-	who: string,
-): Promise<PrincipalRow | null> {
+/** 本租户里的人或单元：按 handle（可带 @），否则按唯一的显示名。 */
+async function findParty(s: Scoped, who: string): Promise<PrincipalRow | null> {
 	const key = who.trim().replace(/^@/, "");
-	const byHandle = await s.first(
-		principals,
-		eq(principals.kind, "human"),
-		eq(principals.handle, key),
-	);
+	const party = inArray(principals.kind, ["human", "unit"]);
+	const byHandle = await s.first(principals, party, eq(principals.handle, key));
 	if (byHandle) return byHandle;
 	const byName = await s.select(
 		principals,
-		eq(principals.kind, "human"),
+		party,
 		eq(principals.displayName, key),
 	);
 	return byName.length === 1 ? (byName[0] ?? null) : null;
@@ -45,23 +42,31 @@ async function findPerson(
 export const negotiateTool = makeTool({
 	name: "negotiate",
 	description:
-		"替本人去和另一位同事的分身协商一件事（例如约会议时间）。personHandle 是对方的 handle 或姓名；goal 用一两句话写清要谈成什么，带上本人说过的全部约束（时长、可选日期与时段、议题等），不要添加本人没说过的要求。协商在后台自动进行，结果会发回这里并请双方本人确认；调用后简短告诉本人已经开始即可，不要等待。",
+		"替本人去和另一位同事（或另一个部门）的分身协商一件事（例如约会议时间）。personHandle 是对方的 handle 或姓名（部门写部门的 handle 或名称）；goal 用一两句话写清要谈成什么，带上本人说过的全部约束（时长、可选日期与时段、议题等），不要添加本人没说过的要求。协商在后台自动进行，结果会发回这里并请双方本人确认；调用后简短告诉本人已经开始即可，不要等待。",
 	label: "正在发起协商…",
 	schema: z.object({
 		personHandle: z.string().trim().min(1).max(60),
 		goal: z.string().trim().min(1).max(2000),
 	}),
+	// 单元分身替本单元成员出面（单元与单元、单元与个人）；个人分身只替本人。
 	available: (scope) =>
 		scope.agent.role === "front" &&
-		forOwner(scope) &&
+		(forOwner(scope) || scope.unit?.requesterIsMember === true) &&
 		scope.depth === 0 &&
 		scope.conversation.kind !== "negotiation",
 	run: async ({ personHandle, goal }, scope) => {
-		const person = await findPerson(scope.s, personHandle);
+		const person = await findParty(scope.s, personHandle);
 		if (!person || person.id === scope.owner.id) {
 			return {
 				result: NOT_FOUND_TEXT,
 				summary: `发起协商失败：找不到“${personHandle}”`,
+				ok: false,
+			};
+		}
+		if ((await deciderOf(scope.s, person.id)).id === deciderIn(scope).id) {
+			return {
+				result: SAME_DECIDER_TEXT,
+				summary: `发起协商失败：${SAME_DECIDER_TEXT}`,
 				ok: false,
 			};
 		}

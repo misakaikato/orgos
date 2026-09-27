@@ -32,6 +32,7 @@ import { requireConversation } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
 import { createNote } from "@/services/notes";
 import { mainTopicOf } from "@/services/topics";
+import { deciderOf, unitOfAgent } from "@/services/units";
 
 export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 
@@ -95,8 +96,8 @@ export async function listWorkItems(
 
 /**
  * 代理把超出授权的问题转给本人（上报的唯一入口）：一个事务内建 decision 待办
- * （处理人 = 代理的本人，提问人 = requesterId）并在会话里落 `escalation.created`，
- * 提交后把待办推给本人。
+ * （处理人 = 替代理的本人拍板的人：人是本人，单元是负责人；提问人 = requesterId）
+ * 并在会话里落 `escalation.created`，提交后把待办推给处理人。
  */
 export async function escalateToOwner(
 	s: Scoped,
@@ -115,10 +116,16 @@ export async function escalateToOwner(
 	},
 ): Promise<WorkItem> {
 	const agent = await requireAgentPrincipal(s, input.agentId);
+	const decider = await deciderOf(s, agent.ownerId);
 	const negotiation = input.negotiationConversationId
 		? { negotiationConversationId: input.negotiationConversationId }
 		: {};
-	await requireConversation(s, input.conversationId, agent.id);
+	// 协商中请本人拍板时，卡片落在拍板人的私聊里（单元分身不在任何人的私聊里）。
+	await requireConversation(
+		s,
+		input.conversationId,
+		input.negotiationConversationId ? decider.id : agent.id,
+	);
 	const item = await transactWithEvents(s, async (tx, append) => {
 		const item = await createWorkItem(tx, {
 			kind: "decision",
@@ -129,7 +136,7 @@ export async function escalateToOwner(
 			},
 			title: input.title,
 			body: input.question,
-			ownerId: agent.ownerId,
+			ownerId: decider.id,
 			requesterId: input.requesterId,
 			conversationId: input.conversationId,
 			sourceEventId: input.sourceEventId ?? null,
@@ -289,15 +296,18 @@ async function resolveDecision(
 	req: Extract<ResolveWorkItemRequest, { action: "answer" | "decline" }>,
 ): Promise<WorkItem> {
 	const text = req.text?.trim() || undefined;
+	const card = await cardEventOf(s, item);
+	const unit = card ? await unitOfAgent(s, card.actorId) : null;
 	const resolved = await transactWithEvents(s, async (tx, append) => {
 		let noteId: string | undefined;
 		if (req.action === "answer" && req.saveAsNote && text) {
+			// 单元分身上报的问题：答复存为单元资料（仅成员可见）；否则存为本人的共享资料。
 			const note = await createNote(tx, {
-				ownerId: me.id,
+				ownerId: unit?.id ?? me.id,
 				authorId: me.id,
 				title: noteTitleOf(item.payload.question),
 				body: `问：${item.payload.question}\n答：${text}`,
-				visibility: "shared",
+				visibility: unit ? "unit" : "shared",
 			});
 			noteId = note.id;
 		}
@@ -307,7 +317,6 @@ async function resolveDecision(
 			...(noteId ? { noteId } : {}),
 		};
 		const updated = await closeOpen(tx, item.id, resolution);
-		const card = await cardEventOf(tx, item);
 		if (item.conversationId && card) {
 			const resolved = await append({
 				conversationId: item.conversationId,

@@ -14,6 +14,7 @@ import type { PrincipalRow, Scoped } from "@/db/scope";
 import {
 	type MemoryItemRow,
 	presentItem,
+	unitMembersOf,
 	type Viewer,
 	visibilityFilter,
 } from "@/memory/access";
@@ -156,8 +157,21 @@ export async function searchMemory(
 	const picked = scored.slice(0, MEMORY_SEARCH_LIMIT - sections.length);
 	if (sections.length === 0 && picked.length === 0) return none;
 
+	const units = await unitMembersOf(
+		s,
+		picked.flatMap((p) =>
+			p.kind === "item" && p.row.scope.unitId ? [p.row.scope.unitId] : [],
+		),
+	);
 	const scopeIds = picked.flatMap((p) =>
-		p.kind === "item" ? (p.row.scope.principalIds ?? []) : [],
+		p.kind === "item"
+			? [
+					...(p.row.scope.principalIds ?? []),
+					...(p.row.scope.unitId
+						? [p.row.scope.unitId, ...(units.get(p.row.scope.unitId) ?? [])]
+						: []),
+				]
+			: [],
 	);
 	const people = new Map(
 		(
@@ -186,7 +200,7 @@ export async function searchMemory(
 			continue;
 		}
 		itemCount += 1;
-		const shown = presentItem(p.row, viewer, people);
+		const shown = presentItem(p.row, viewer, people, units);
 		const mark = citationMark(p.row.id);
 		citable.set(mark, { id: p.row.id, content: shown.content });
 		const corrected = p.row.ownerCorrected ? "本人更正，以此为准；" : "";

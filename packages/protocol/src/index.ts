@@ -7,6 +7,7 @@ export * from "./events";
 export * from "./memory";
 export * from "./models";
 export * from "./naming";
+export * from "./org";
 export * from "./rest";
 export * from "./runner";
 export * from "./ws";

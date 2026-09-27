@@ -1,10 +1,11 @@
 /**
- * 基础工具：pass、memory_search、memory_save、create_commitment。
+ * 基础工具：pass、memory_search、memory_save、record_decision、create_commitment。
  */
 import { z } from "zod";
-import { forOwner, makeTool } from "@/agent/tools/tool";
+import { deciderIn, forOwner, makeTool } from "@/agent/tools/tool";
 import { searchMemory } from "@/memory/search";
 import { createNote } from "@/services/notes";
+import { recordUnitDecision } from "@/services/unit-notes";
 import { createWorkItem, notifyWorkItem } from "@/services/work-items";
 
 export const passTool = makeTool({
@@ -47,27 +48,64 @@ export const memorySearchTool = makeTool({
 	},
 });
 
+/**
+ * memory_save：个人代理为本人时记进本人的私有记忆；单元分身记进单元资料（仅单元成员可见）。
+ */
 export const memorySaveTool = makeTool({
 	name: "memory_save",
 	description:
-		"把值得以后记住的事记进本人的私有记忆（只有本人和替本人办事的代理能看到）。",
+		"把值得以后记住的事记下来：替本人办事时记进本人的私有记忆；部门的分身记进部门的单元资料（只有部门成员看得到）。",
 	label: "正在记下…",
 	schema: z.object({
 		title: z.string().trim().min(1).max(120),
 		body: z.string().trim().max(8000),
 	}),
-	available: forOwner,
+	available: (scope) => forOwner(scope) || scope.unit !== null,
 	run: async ({ title, body }, scope) => {
+		const unit = scope.unit !== null;
 		await createNote(scope.s, {
 			ownerId: scope.owner.id,
 			authorId: scope.agent.principal.id,
 			title,
 			body,
-			visibility: "private",
+			visibility: unit ? "unit" : "private",
 		});
 		return {
-			result: `已记下《${title}》`,
-			summary: `记下了《${title}》`,
+			result: unit
+				? `已记进${scope.owner.displayName}的单元资料《${title}》`
+				: `已记下《${title}》`,
+			summary: unit ? `记进单元资料《${title}》` : `记下了《${title}》`,
+			ok: true,
+		};
+	},
+});
+
+/**
+ * record_decision：单元分身按章程做了决定时记下来——写一条单元资料（visibility=unit，作者为分身），
+ * 同时写一条 subject = 单元、可见范围为该单元的 decision 记忆，出处指向这条资料。
+ */
+export const recordDecisionTool = makeTool({
+	name: "record_decision",
+	description:
+		"按章程替部门做了决定（不是单纯答复已有信息）时调用，把决定记进部门的单元资料与记忆。title 一句话概括决定；body 写清决定内容、依据的章程条款、是替谁做的。",
+	label: "正在记下决定…",
+	schema: z.object({
+		title: z.string().trim().min(1).max(120),
+		body: z.string().trim().min(1).max(4000),
+	}),
+	available: (scope) =>
+		scope.unit !== null && scope.conversation.kind !== "negotiation",
+	run: async ({ title, body }, scope) => {
+		await recordUnitDecision(scope.s, {
+			unitId: scope.owner.id,
+			authorId: scope.agent.principal.id,
+			title,
+			body,
+			runId: scope.runId,
+		});
+		return {
+			result: `已记下决定《${title}》`,
+			summary: `记下决定《${title}》`,
 			ok: true,
 		};
 	},
@@ -88,19 +126,20 @@ export const createCommitmentTool = makeTool({
 			scope.actingFor.kind === "other"
 				? scope.actingFor.principalId
 				: scope.owner.id;
+		const decider = deciderIn(scope);
 		const item = await createWorkItem(scope.s, {
 			kind: "commitment",
 			payload: {},
 			title,
 			body: `${scope.agent.principal.displayName}记下的承诺`,
-			ownerId: scope.owner.id,
+			ownerId: decider.id,
 			requesterId,
 			conversationId: scope.conversation.id,
 			dueAt: dueAt ? new Date(dueAt) : null,
 		});
 		notifyWorkItem(item);
 		return {
-			result: `已给${scope.owner.displayName}建待办：${title}`,
+			result: `已给${decider.displayName}建待办：${title}`,
 			summary: `建了待办“${title}”`,
 			ok: true,
 		};

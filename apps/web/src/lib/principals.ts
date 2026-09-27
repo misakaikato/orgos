@@ -5,6 +5,7 @@ import {
 	AGENT_ROLE_LABEL,
 	type ConversationSummary,
 	type MeResponse,
+	type OrgUnit,
 	type Principal,
 	type PrincipalStatus,
 } from "@orgos/protocol";
@@ -12,15 +13,20 @@ import type { Person } from "@/lib/store";
 
 export type PrincipalMap = ReadonlyMap<string, Principal>;
 
-/** 由本人、通讯录与会话成员汇总出已知主体。 */
+/** 由本人、通讯录、组织结构与会话成员汇总出已知主体（单元与单元分身来自组织结构）。 */
 export function buildPrincipalMap(
 	me: MeResponse | null,
 	directory: readonly Person[],
 	conversations: readonly ConversationSummary[],
+	org: readonly OrgUnit[] = [],
 ): PrincipalMap {
 	const map = new Map<string, Principal>();
 	for (const item of conversations)
 		for (const p of item.members) map.set(p.id, p);
+	for (const u of org) {
+		map.set(u.unit.id, u.unit);
+		map.set(u.twin.id, u.twin);
+	}
 	for (const person of directory) {
 		map.set(person.principal.id, person.principal);
 		map.set(person.front.id, person.front);
@@ -55,12 +61,16 @@ export function onBehalfLabel(
 	return owner.id === meId ? "你" : owner.displayName;
 }
 
-/** 各人的分身 id：我的取自 me.agents，同事的取自通讯录。 */
+/** 各人与各单元的分身 id：我的取自 me.agents，同事的取自通讯录，单元的取自组织结构。 */
 export function frontAgentIds(
 	me: MeResponse | null,
 	directory: readonly Person[],
+	org: readonly OrgUnit[] = [],
 ): ReadonlySet<string> {
-	const ids = new Set(directory.map((p) => p.front.id));
+	const ids = new Set([
+		...directory.map((p) => p.front.id),
+		...org.map((u) => u.twin.id),
+	]);
 	for (const a of me?.agents ?? [])
 		if (a.role === "front") ids.add(a.principal.id);
 	return ids;

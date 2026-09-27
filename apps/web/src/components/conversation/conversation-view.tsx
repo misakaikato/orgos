@@ -72,6 +72,7 @@ export function ConversationView({
 	const allEvents = useStore((s) => s.events[conversationId]);
 	const topicSeen = useStore((s) => s.topicSeen);
 	const directory = useStore((s) => s.directory);
+	const org = useStore((s) => s.org);
 	const agentsAt = useStore((s) => s.activity[conversationId]);
 	const map = usePrincipalMap();
 	const wide = useMediaQuery(WIDE);
@@ -216,7 +217,7 @@ export function ConversationView({
 		kind === "group"
 			? `${item.members.filter((m) => m.kind === "human").length} 位成员`
 			: avatar?.kind === "agent"
-				? agentRoleLine(avatar, map, meId, frontAgentIds(me, directory))
+				? agentRoleLine(avatar, map, meId, frontAgentIds(me, directory, org))
 				: avatar
 					? [
 							`@${avatar.handle}`,

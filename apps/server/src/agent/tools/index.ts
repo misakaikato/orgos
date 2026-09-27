@@ -1,5 +1,5 @@
 /**
- * 代理工具表：唯一的注册处。本阶段注册 pass、memory_search、memory_save、
+ * 代理工具表：唯一的注册处。本阶段注册 pass、memory_search、memory_save、record_decision（单元分身）、
  * delegate_to_teammate、escalate_to_owner、create_commitment、negotiate、negotiation_reply，
  * 以及设备的 device_list / device_read / device_write / device_exec。
  */
@@ -9,6 +9,7 @@ import {
 	memorySaveTool,
 	memorySearchTool,
 	passTool,
+	recordDecisionTool,
 } from "@/agent/tools/builtin";
 import { delegateTool } from "@/agent/tools/delegate";
 import {
@@ -25,6 +26,7 @@ export const TOOLS: readonly AgentTool[] = [
 	passTool,
 	memorySearchTool,
 	memorySaveTool,
+	recordDecisionTool,
 	delegateTool,
 	escalateTool,
 	createCommitmentTool,

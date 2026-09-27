@@ -5,7 +5,7 @@ import {
 	type DisclosureRule,
 } from "@orgos/protocol";
 import { useCallback, useEffect, useState } from "react";
-import { errorText } from "@/components/agents/memory-shared";
+import { errorText, useMemoryUnit } from "@/components/agents/memory-shared";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/input";
@@ -77,13 +77,11 @@ function RuleGroup({
 }
 
 /**
- * 对外政策：分身替我回答别人时，哪些类别的记忆可以说（逐类开关），以及我写给分身的自然语言政策。
- * 来自对方也在场的交流不受开关影响（对方本来就知道）。
+ * 类别授权：分身替本人（或单元分身替单元）回答别人时，哪些类别的记忆可以说（逐类开关）。
+ * 来自对方也在场的交流不受开关影响（对方本来就知道）。管理的是谁由 `MemoryUnitProvider` 决定。
  */
-export function PolicyPanel({ onEditPolicy }: { onEditPolicy: () => void }) {
-	const policy = useStore(
-		(s) => s.me?.agents.find((a) => a.role === "front")?.delegationPolicy ?? "",
-	);
+export function DisclosureRules({ intro }: { intro: string }) {
+	const unitId = useMemoryUnit();
 	const [rules, setRules] = useState<DisclosureRule[] | null>(null);
 	const [failed, setFailed] = useState(false);
 	const [busy, setBusy] = useState<string | null>(null);
@@ -92,11 +90,11 @@ export function PolicyPanel({ onEditPolicy }: { onEditPolicy: () => void }) {
 	const load = useCallback(async () => {
 		setFailed(false);
 		try {
-			setRules((await api.disclosure()).rules);
+			setRules((await api.disclosure(unitId)).rules);
 		} catch {
 			setFailed(true);
 		}
-	}, []);
+	}, [unitId]);
 
 	useEffect(() => {
 		void load();
@@ -107,8 +105,12 @@ export function PolicyPanel({ onEditPolicy }: { onEditPolicy: () => void }) {
 		setError(null);
 		try {
 			setRules(
-				(await api.updateDisclosure({ category: rule.category, allowed }))
-					.rules,
+				(
+					await api.updateDisclosure(
+						{ category: rule.category, allowed },
+						unitId,
+					)
+				).rules,
 			);
 		} catch (e) {
 			setError(errorText(e));
@@ -126,26 +128,8 @@ export function PolicyPanel({ onEditPolicy }: { onEditPolicy: () => void }) {
 		(r) => !DEFAULT_DISCLOSED_CATEGORIES.has(r.category),
 	);
 	return (
-		<div className="flex flex-col gap-3">
-			<section className="rounded-card border border-line bg-bg p-4">
-				<div className="flex items-start gap-3">
-					<div className="min-w-0 flex-1">
-						<h3 className="text-14 font-semibold text-ink">写给分身的政策</h3>
-						<p
-							className={cx(
-								"mt-1 text-14 whitespace-pre-wrap break-words",
-								policy ? "text-ink" : "text-muted",
-							)}
-						>
-							{policy || "还没写。没写时分身只回答资料和记忆里明确写着的内容。"}
-						</p>
-					</div>
-					<Button onClick={onEditPolicy}>编辑</Button>
-				</div>
-			</section>
-			<p className="text-13 text-muted">
-				分身替你回答别人时，按下面的类别决定能不能用你的记忆。对方也在场的交流不受这里限制；来自你与其他同事的交流，分身只转述事实，不透露是谁、在哪说的。
-			</p>
+		<>
+			<p className="text-13 text-muted">{intro}</p>
 			{error ? (
 				<p role="alert" className="text-12 text-danger">
 					{error}
@@ -165,6 +149,34 @@ export function PolicyPanel({ onEditPolicy }: { onEditPolicy: () => void }) {
 				busy={busy}
 				onToggle={(r, next) => void toggle(r, next)}
 			/>
+		</>
+	);
+}
+
+/** 对外政策：我写给分身的自然语言政策，以及按类别的对外授权。 */
+export function PolicyPanel({ onEditPolicy }: { onEditPolicy: () => void }) {
+	const policy = useStore(
+		(s) => s.me?.agents.find((a) => a.role === "front")?.delegationPolicy ?? "",
+	);
+	return (
+		<div className="flex flex-col gap-3">
+			<section className="rounded-card border border-line bg-bg p-4">
+				<div className="flex items-start gap-3">
+					<div className="min-w-0 flex-1">
+						<h3 className="text-14 font-semibold text-ink">写给分身的政策</h3>
+						<p
+							className={cx(
+								"mt-1 text-14 whitespace-pre-wrap break-words",
+								policy ? "text-ink" : "text-muted",
+							)}
+						>
+							{policy || "还没写。没写时分身只回答资料和记忆里明确写着的内容。"}
+						</p>
+					</div>
+					<Button onClick={onEditPolicy}>编辑</Button>
+				</div>
+			</section>
+			<DisclosureRules intro="分身替你回答别人时，按下面的类别决定能不能用你的记忆。对方也在场的交流不受这里限制；来自你与其他同事的交流，分身只转述事实，不透露是谁、在哪说的。" />
 		</div>
 	);
 }

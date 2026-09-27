@@ -15,6 +15,7 @@ import { registerMemoryRoutes } from "@/routes/memory";
 import { registerModelRoutes } from "@/routes/models";
 import { registerNoteRoutes } from "@/routes/notes";
 import { registerOnboardingRoutes } from "@/routes/onboarding";
+import { registerOrgRoutes } from "@/routes/org";
 import { registerRunnerRoutes } from "@/routes/runners";
 import { registerRunRoutes } from "@/routes/runs";
 import { registerTaskRoutes } from "@/routes/tasks";
@@ -36,6 +37,7 @@ export function createApp(): Hono<AppEnv> {
 	registerAgentRoutes(app);
 	registerNoteRoutes(app);
 	registerMemoryRoutes(app);
+	registerOrgRoutes(app);
 	registerRunnerRoutes(app);
 	registerTaskRoutes(app);
 	registerTopicRoutes(app);

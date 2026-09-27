@@ -6,7 +6,8 @@ import { AcpPermissionOptionSchema, AcpToolCallSchema } from "./acp";
 import { EXTERNAL_AGENT_MODES } from "./models";
 
 export const MEMBER_ROLES = ["owner", "member"] as const;
-export const PRINCIPAL_KINDS = ["human", "agent"] as const;
+/** 主体：人、代理、组织单元（部门）。单元的"本人"职责由负责人承担。 */
+export const PRINCIPAL_KINDS = ["human", "agent", "unit"] as const;
 export const AGENT_ROLES = ["front", "specialist"] as const;
 /** 代理由谁驱动：orgos 自己的运行循环，或经设备 Runner 以 ACP 接入的外部 agent。 */
 export const AGENT_ENGINES = ["builtin", "acp"] as const;
@@ -21,7 +22,12 @@ export const WORK_ITEM_KINDS = [
 	"confirmation",
 ] as const;
 export const WORK_ITEM_STATUSES = ["open", "done", "cancelled"] as const;
-export const NOTE_VISIBILITIES = ["private", "shared"] as const;
+/** unit：单元名下的资料，仅该单元成员可见。 */
+export const NOTE_VISIBILITIES = ["private", "shared", "unit"] as const;
+/** 个人资料可选的可见性。 */
+export const PERSONAL_NOTE_VISIBILITIES = ["private", "shared"] as const;
+/** 单元资料可选的可见性：unit 仅成员可见，shared 全员可见。 */
+export const UNIT_NOTE_VISIBILITIES = ["unit", "shared"] as const;
 export const RUNNER_STATUSES = ["online", "offline"] as const;
 /** 人的在线状态；忙碌与离开时，别人在私聊里发给他的消息由他的分身先回复。 */
 export const PRINCIPAL_STATUSES = ["available", "busy", "away"] as const;

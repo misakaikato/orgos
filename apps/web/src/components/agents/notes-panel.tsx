@@ -1,6 +1,6 @@
 "use client";
 
-import type { Note } from "@orgos/protocol";
+import type { Note, PERSONAL_NOTE_VISIBILITIES } from "@orgos/protocol";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,13 @@ import { usePrincipalMap } from "@/lib/hooks";
 import type { PrincipalMap } from "@/lib/principals";
 
 const SHARE_LABEL = "共享给同事的分身";
+
+/** 个人资料的表单结果（个人资料只有仅自己与共享两种）。 */
+type NoteDraft = {
+	title: string;
+	body: string;
+	visibility: (typeof PERSONAL_NOTE_VISIBILITIES)[number];
+};
 
 function errorText(e: unknown): string {
 	return e instanceof Error ? e.message : "操作失败";
@@ -25,7 +32,7 @@ function NoteForm({
 }: {
 	initial: Pick<Note, "title" | "body" | "visibility">;
 	submitLabel: string;
-	onSubmit: (v: Pick<Note, "title" | "body" | "visibility">) => Promise<void>;
+	onSubmit: (v: NoteDraft) => Promise<void>;
 	onCancel: () => void;
 }) {
 	const [title, setTitle] = useState(initial.title);

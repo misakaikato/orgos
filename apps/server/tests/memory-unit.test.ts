@@ -96,7 +96,7 @@ describe("提炼输出的校验", () => {
 	};
 	const ctx: ExtractionContext = {
 		events: new Map([[101, { conversationId: CONV, topicId: TOPIC }]]),
-		humans: new Map([
+		subjects: new Map([
 			["alice", human(ALICE, "alice", "Alice")],
 			["carol", human(CAROL, "carol", "Carol")],
 		]),

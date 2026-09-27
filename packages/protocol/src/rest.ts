@@ -6,8 +6,8 @@ import {
 	AgentSchema,
 	ConversationSchema,
 	HandleSchema,
-	NOTE_VISIBILITIES,
 	NoteSchema,
+	PERSONAL_NOTE_VISIBILITIES,
 	PRINCIPAL_STATUSES,
 	PrincipalSchema,
 	RunLogSchema,
@@ -627,14 +627,14 @@ export type NoteListResponse = z.infer<typeof NoteListResponseSchema>;
 export const CreateNoteRequestSchema = z.object({
 	title: NoteTitleSchema,
 	body: NoteBodySchema,
-	visibility: z.enum(NOTE_VISIBILITIES).default("private"),
+	visibility: z.enum(PERSONAL_NOTE_VISIBILITIES).default("private"),
 });
 export type CreateNoteRequest = z.input<typeof CreateNoteRequestSchema>;
 
 export const UpdateNoteRequestSchema = z.object({
 	title: NoteTitleSchema.optional(),
 	body: NoteBodySchema.optional(),
-	visibility: z.enum(NOTE_VISIBILITIES).optional(),
+	visibility: z.enum(PERSONAL_NOTE_VISIBILITIES).optional(),
 });
 export type UpdateNoteRequest = z.infer<typeof UpdateNoteRequestSchema>;
 

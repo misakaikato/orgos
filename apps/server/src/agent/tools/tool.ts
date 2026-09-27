@@ -11,11 +11,15 @@ import type { RunSession } from "@/agent/session";
 import type { ActingFor } from "@/agent/triggers";
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import type { NegotiationReply } from "@/services/negotiations";
+import type { UnitContext } from "@/services/units";
 
 export type ToolScope = {
 	s: Scoped;
 	agent: Agent;
+	/** 代理的本人：人，或单元（单元分身）。 */
 	owner: PrincipalRow;
+	/** 单元分身：单元、负责人、提问的人是否成员；个人代理为 null。 */
+	unit: UnitContext | null;
 	/** 本次运行所在的会话与话题（卡片、动作都落在这个话题里）。 */
 	conversation: {
 		id: string;
@@ -110,3 +114,7 @@ export function makeTool<S extends z.ZodType>(def: {
 }
 
 export const forOwner = (scope: ToolScope) => scope.actingFor.kind === "owner";
+
+/** 替本人拍板的人：个人代理是本人，单元分身是负责人。 */
+export const deciderIn = (scope: ToolScope): PrincipalRow =>
+	scope.unit?.head ?? scope.owner;

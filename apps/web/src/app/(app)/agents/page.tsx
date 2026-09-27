@@ -11,8 +11,8 @@ import { NotesPanel } from "@/components/agents/notes-panel";
 import { PolicyPanel } from "@/components/agents/policy-panel";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import { Tabs } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
-import { cx } from "@/lib/cx";
 import {
 	loadRunners,
 	loadTenantSettings,
@@ -31,34 +31,6 @@ const TABS: { key: Tab; label: string }[] = [
 	{ key: "answers", label: "代答记录" },
 	{ key: "policy", label: "对外政策" },
 ];
-
-function Tabs({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
-	return (
-		<div
-			role="tablist"
-			aria-label="代理组"
-			className="flex w-full max-w-lg gap-1 rounded-pill bg-surface-2 p-1"
-		>
-			{TABS.map((t) => (
-				<button
-					key={t.key}
-					type="button"
-					role="tab"
-					aria-selected={tab === t.key}
-					onClick={() => onChange(t.key)}
-					className={cx(
-						"inline-flex h-7 min-w-0 flex-1 items-center justify-center rounded-pill px-1 text-13 whitespace-nowrap transition-colors duration-150",
-						tab === t.key
-							? "bg-bg font-medium text-ink shadow-card-hover"
-							: "text-muted hover:text-ink",
-					)}
-				>
-					{t.label}
-				</button>
-			))}
-		</div>
-	);
-}
 
 function AgentsPanel({
 	agents,
@@ -158,7 +130,7 @@ export default function AgentsPage() {
 			/>
 			<div className="min-h-0 flex-1 overflow-y-auto bg-sidebar">
 				<div className="mx-auto flex w-full max-w-thread flex-col gap-4 px-4 py-6 md:px-6">
-					<Tabs tab={tab} onChange={setTab} />
+					<Tabs tabs={TABS} tab={tab} onChange={setTab} label="代理组" />
 					{tab === "agents" ? (
 						<AgentsPanel agents={me.agents} ownerHandle={me.principal.handle} />
 					) : tab === "notes" ? (

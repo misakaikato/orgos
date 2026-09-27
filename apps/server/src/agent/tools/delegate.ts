@@ -76,7 +76,8 @@ export const delegateTool = makeTool({
 		handle: HandleSchema,
 		task: z.string().trim().min(1).max(4000),
 	}),
-	available: (scope) => scope.depth < MAX_DELEGATE_DEPTH,
+	// 单元没有助手：单元分身不交办。
+	available: (scope) => scope.unit === null && scope.depth < MAX_DELEGATE_DEPTH,
 	run: async ({ handle, task }, scope) => {
 		const target = await findAgent(scope.s, { handle });
 		const teammate =

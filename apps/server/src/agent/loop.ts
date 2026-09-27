@@ -60,6 +60,7 @@ import {
 } from "@/services/runs";
 import { openTaskOfTopic } from "@/services/tasks";
 import { topicIn } from "@/services/topics";
+import { unitContextOf } from "@/services/units";
 
 export const STEP_LIMIT_TEXT = "这件事步骤太多，我先停在这里。";
 /**
@@ -224,6 +225,11 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 		s,
 		agent,
 		owner,
+		unit: await unitContextOf(
+			s,
+			owner,
+			actingFor.kind === "other" ? actingFor.principalId : null,
+		),
 		conversation: {
 			id: conversation.id,
 			kind: conversation.kind,

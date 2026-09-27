@@ -12,6 +12,7 @@ import {
 	errorText,
 	SourceButton,
 	scopeLabel,
+	useMemoryUnit,
 } from "@/components/agents/memory-shared";
 import { IconSearch } from "@/components/icons";
 import { Tag } from "@/components/ui/badge";
@@ -44,15 +45,20 @@ function EditForm({
 	const [category, setCategory] = useState<MemoryCategory>(item.category);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const unitId = useMemoryUnit();
 	const submit = async (e: FormEvent) => {
 		e.preventDefault();
 		setSaving(true);
 		setError(null);
 		try {
-			const { item: next } = await api.updateMemoryItem(item.id, {
-				...(content.trim() !== item.content ? { content } : {}),
-				...(category !== item.category ? { category } : {}),
-			});
+			const { item: next } = await api.updateMemoryItem(
+				item.id,
+				{
+					...(content.trim() !== item.content ? { content } : {}),
+					...(category !== item.category ? { category } : {}),
+				},
+				unitId,
+			);
 			onSaved(next);
 		} catch (err) {
 			setError(errorText(err));
@@ -105,6 +111,7 @@ function ItemCard({
 	const [editing, setEditing] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const unitId = useMemoryUnit();
 	const active = item.status === "active";
 
 	if (editing)
@@ -125,7 +132,7 @@ function ItemCard({
 		setBusy(true);
 		setError(null);
 		try {
-			onChanged((await api.retractMemoryItem(item.id)).item);
+			onChanged((await api.retractMemoryItem(item.id, unitId)).item);
 		} catch (e) {
 			setError(errorText(e));
 		} finally {
@@ -187,6 +194,7 @@ export function MemoryPanel() {
 	const [applied, setApplied] = useState("");
 	const [items, setItems] = useState<MemoryItem[] | null>(null);
 	const [failed, setFailed] = useState(false);
+	const unitId = useMemoryUnit();
 
 	const load = useCallback(async () => {
 		setFailed(false);
@@ -197,13 +205,14 @@ export function MemoryPanel() {
 					await api.memoryItems({
 						status,
 						...(applied.trim() ? { q: applied.trim() } : {}),
+						...(unitId ? { unitId } : {}),
 					})
 				).items,
 			);
 		} catch {
 			setFailed(true);
 		}
-	}, [status, applied]);
+	}, [status, applied, unitId]);
 
 	useEffect(() => {
 		void load();

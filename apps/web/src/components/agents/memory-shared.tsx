@@ -8,7 +8,7 @@ import {
 	type MemorySourceLink,
 } from "@orgos/protocol";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { messageHref } from "@/components/conversation/citations";
 import { IconChevronRight } from "@/components/icons";
 import { selectClass } from "@/components/ui/input";
@@ -19,6 +19,18 @@ export function errorText(e: unknown): string {
 	return e instanceof Error ? e.message : "操作失败";
 }
 
+/**
+ * 记忆、代答记录与对外政策三块面板管理的是谁：缺省是我；单元页里由负责人管理单元时是该单元。
+ * 面板里的每次请求都带上它（接口的 `?unitId=`）。
+ */
+const MemoryUnitContext = createContext<string | undefined>(undefined);
+
+export const MemoryUnitProvider = MemoryUnitContext.Provider;
+
+export function useMemoryUnit(): string | undefined {
+	return useContext(MemoryUnitContext);
+}
+
 /** 可见范围的说法（给本人看）。 */
 export function scopeLabel(
 	scope: MemoryScope,
@@ -26,6 +38,8 @@ export function scopeLabel(
 	meId: string,
 ): string {
 	if (scope.kind === "tenant") return "全员可见";
+	if (scope.kind === "unit")
+		return `${map.get(scope.unitId ?? "")?.displayName ?? "部门"}成员可见`;
 	if (scope.kind === "owner") return "仅自己";
 	const others = (scope.principalIds ?? [])
 		.filter((id) => id !== meId)

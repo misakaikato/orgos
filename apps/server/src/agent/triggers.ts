@@ -4,6 +4,8 @@
  * - 本人与自己某个代理的私聊：本人发言时该代理总是回应，为本人办事。
  * - 两个真人的私聊（含双方分身）：对方 @ 了我的分身、切到"问分身"发送、或我忙碌 / 离开时，
  *   我的分身为对方办事；我自己的消息永远不触发我的分身；否则谁也不触发。
+ * - 某人与单元分身的私聊（"问产品部"）：单元分身总是回应，为提问的人办事。
+ * - 单元群：单元分身只在被 @ 时开口（为发言者办事）；群聊里"@ 本人且问分身 / 本人忙碌"两条对它不适用。
  * - 群聊：`agentsToTrigger` 只返回被点到的代理（被 @ 的代理；某人的分身在被 @、或本人被 @ 且
  *   切到"问分身"或忙碌 / 离开时开口；本人 @ 自己的分身时为本人办事，其余为发言者办事）；`groupRound` 给出一轮的完整发言顺序
  *   （被点到的在前，其余非分身代理按入群顺序），轮次的推进由调度器实现。
@@ -28,6 +30,8 @@ export type TriggerMember = {
 	status: PrincipalStatus | null;
 	/** 在会话里的身份：observer 旁听，不参与判定。 */
 	role: (typeof CONVERSATION_MEMBER_ROLES)[number];
+	/** 单元的分身（本人是单元）：总是为提问的人办事。 */
+	unitTwin?: boolean;
 };
 
 export type TriggerConversation = {
@@ -51,6 +55,8 @@ export type TriggerReason =
 	| "mentioned"
 	| "ask_twin"
 	| "owner_unavailable"
+	/** 与单元分身的私聊：总是回应。 */
+	| "unit_dm"
 	/** 群聊里没被点名、按轮次轮到（可以无声跳过）。 */
 	| "round";
 
@@ -142,6 +148,14 @@ export function agentsToTrigger(
 			const pair = humanPairOf(conv);
 			if (pair) return inHumanPairDm(pair, conv, msg);
 			const [agent, ...rest] = members.filter((m) => m.kind === "agent");
+			if (agent?.unitTwin && rest.length === 0 && members.length === 2)
+				return [
+					{
+						agentId: agent.id,
+						actingFor: { kind: "other", principalId: actor.id },
+						reason: "unit_dm",
+					},
+				];
 			const ownDm =
 				agent &&
 				rest.length === 0 &&
@@ -169,7 +183,7 @@ export function agentsToTrigger(
 /**
  * 群聊里某人 P 的分身 T 何时开口：消息 @ 了 T（P 自己 @ 时为本人办事，否则为发言者）；
  * 或 @ 了 P 本人且切到"问分身"；或 @ 了 P 本人且 P 忙碌 / 离开（后两种为发言者办事）。
- * P 没被点名时 T 不开口；P 自己没 @ T 的消息不触发 T。
+ * P 没被点名时 T 不开口；P 自己没 @ T 的消息不触发 T。单元分身只在被 @ 时开口。
  */
 function twinTrigger(
 	conv: TriggerConversation,
@@ -177,7 +191,7 @@ function twinTrigger(
 	msg: TriggerMessage,
 ): TriggerReason | null {
 	if (msg.mentions.includes(twin.id)) return "mentioned";
-	if (twin.ownerId === msg.actorId) return null;
+	if (twin.unitTwin || twin.ownerId === msg.actorId) return null;
 	if (!twin.ownerId || !msg.mentions.includes(twin.ownerId)) return null;
 	if (msg.askTwin) return "ask_twin";
 	const owner = conv.members.find((m) => m.id === twin.ownerId);

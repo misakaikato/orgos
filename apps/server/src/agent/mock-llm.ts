@@ -4,7 +4,7 @@
  * 生成压缩检查点时：按固定格式列出被压缩的第一句、最后一句与条数（同样确定性）。
  *
  * 记忆提炼时：材料里每条含 `#fact <类别>|<内容>` 的发言产出一条 fact 条目（subject 为发言人或代理的本人，
- * 出处为该条材料）；再带 `|supersede` 时取代候选里同一 subject、同一类别的最后一条。
+ * 写成 `#fact:<handle>` 时为该 handle，例如部门；出处为该条材料）；再带 `|supersede` 时取代候选里同一 subject、同一类别的最后一条。
  * 整理画像时：每条记忆各成一段，小标题按 kind 归类。
  *
  * 按本次运行的触发文本决定行为，优先级：
@@ -82,6 +82,14 @@ const DIRECTIVES: Directive[] = [
 		args: (m) => {
 			const [title, body] = splitPipe(rest(m));
 			return { title, body };
+		},
+	},
+	{
+		pattern: /#decide\s+([\s\S]*)$/,
+		tool: "record_decision",
+		args: (m) => {
+			const [title, body] = splitPipe(rest(m));
+			return { title, body: body || title };
 		},
 	},
 	{
@@ -177,7 +185,8 @@ function mockCheckpoint(messages: readonly ChatMessage[]): string {
 }
 
 const MATERIAL_LINE = /^\[E(\d+)[^\]]*\] @([a-z][a-z0-9-]*)[^：]*：(.*)$/;
-const FACT = /#fact\s+([^|\n]+?)\|([^|\n]+?)(?:\|(supersede))?\s*$/;
+const FACT =
+	/#fact(?::([a-z][a-z0-9-]*))?\s+([^|\n]+?)\|([^|\n]+?)(?:\|(supersede))?\s*$/;
 const CANDIDATE_LINE = /^\[M:([0-9a-f]{8})\] @([a-z0-9-]+)｜([^｜]+)｜/;
 
 /** 提炼：材料里的 `#fact 类别|内容[|supersede]` → 条目。 */
@@ -193,9 +202,10 @@ function mockExtraction(messages: readonly ChatMessage[]): string {
 		const line = MATERIAL_LINE.exec(l);
 		const fact = line ? FACT.exec(line[3] ?? "") : null;
 		if (!line || !fact) return [];
-		const [, eventId, handle] = line;
-		const category = (fact[1] ?? "").trim();
-		const target = fact[3]
+		const [, eventId, speaker] = line;
+		const handle = fact[1] ?? speaker;
+		const category = (fact[2] ?? "").trim();
+		const target = fact[4]
 			? candidates.findLast(
 					(c) => c.handle === handle && c.category === category,
 				)
@@ -205,7 +215,7 @@ function mockExtraction(messages: readonly ChatMessage[]): string {
 				subject: handle,
 				kind: "fact",
 				category,
-				content: (fact[2] ?? "").trim(),
+				content: (fact[3] ?? "").trim(),
 				entities: [],
 				sources: [Number(eventId)],
 				confidence: 1,

@@ -1,7 +1,7 @@
 /**
  * 提炼的输入与输出：把一段话题事件写成带编号的材料，交给模型；模型的 JSON 输出逐条校验。
  *
- * 校验（`validateExtraction`，纯函数）：kind、category 须在白名单；subject 须是这段交流里的真人；
+ * 校验（`validateExtraction`，纯函数）：kind、category 须在白名单；subject 须是这段交流里的真人或部门；
  * sources 须全部是本批材料里真实存在的事件编号，有一个不是就整条丢弃；取代的对象须是给出的候选、
  * 同一 subject 与类别、且不是本人更正过的条目，否则按新增处理；action=skip 的丢弃。
  */
@@ -61,7 +61,7 @@ export const EXTRACTION_SYSTEM_PROMPT = [
 	"要求：",
 	"1. 每条只写一件事，用第三人称陈述句，写清是谁、什么事、什么时间（相对时间换成绝对日期）；不要引用原话，不要写“某某说”“某某提到”。",
 	"2. 只提炼有长期价值的：项目进展、排期、技术方案、决定、客户进展、流程、协作偏好、分工等；寒暄、临时安排、代理复述资料的内容不要。",
-	"3. subject 是这件事关于谁，只能是材料里出现的真人的 handle（不带 @）。",
+	"3. subject 是这件事关于谁，只能是“参与的真人”或“相关部门”里的 handle（不带 @）；关于部门本身的决定、承诺、进展，subject 写部门的 handle。",
 	`4. category 只能从这些里选：${MEMORY_CATEGORIES.join("、")}。涉及个人生活、薪酬、健康、家庭、对人的评价、密码与密钥的，按实归入对应类别，不要改头换面归到工作类别。`,
 	`5. kind 只能是：${MEMORY_KINDS.join("、")}（事实、决定、承诺、进展、偏好、关系）。`,
 	"6. sources 写依据的材料编号（[E123｜…] 写 123），只能用材料里出现过的编号；材料里的时间是消息发出的时间，据此换算日期。",
@@ -77,13 +77,20 @@ export function extractionUserPrompt(input: {
 	today: string;
 	where: string;
 	participants: readonly PrincipalRow[];
+	/** 参与这段交流的部门（可作 subject）。 */
+	units?: readonly PrincipalRow[];
 	material: string;
 	candidates: string;
 }): string {
+	const named = (ps: readonly PrincipalRow[]) =>
+		ps.map((p) => `@${p.handle}（${p.displayName}）`).join("、");
 	return [
 		`今天是 ${input.today}。`,
 		`材料来自${input.where}。`,
-		`参与的真人：${input.participants.map((p) => `@${p.handle}（${p.displayName}）`).join("、")}`,
+		`参与的真人：${named(input.participants)}`,
+		...(input.units && input.units.length > 0
+			? [`相关部门：${named(input.units)}`]
+			: []),
 		"",
 		"已有记忆：",
 		input.candidates || "（无）",
@@ -98,8 +105,8 @@ export type ValidDraft = Omit<ItemDraft, "scope" | "createdByRunId">;
 export type ExtractionContext = {
 	/** 本批材料里的事件：编号 → 所在会话与话题。 */
 	events: ReadonlyMap<number, { conversationId: string; topicId: string }>;
-	/** 这段交流里的真人，按 handle。 */
-	humans: ReadonlyMap<string, PrincipalRow>;
+	/** 可作 subject 的主体（这段交流里的真人与部门），按 handle。 */
+	subjects: ReadonlyMap<string, PrincipalRow>;
 	/** 候选的已有条目，按 8 位短编号。 */
 	candidates: ReadonlyMap<string, MemoryItemRow>;
 };
@@ -108,7 +115,7 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 
 function entitiesOf(
 	raw: unknown,
-	humans: ExtractionContext["humans"],
+	humans: ExtractionContext["subjects"],
 ): MemoryEntity[] {
 	if (!Array.isArray(raw)) return [];
 	const out: MemoryEntity[] = [];
@@ -168,7 +175,7 @@ export function validateExtraction(
 		const kind = str(o.kind);
 		const category = str(o.category);
 		const content = str(o.content);
-		const subject = ctx.humans.get(str(o.subject).replace(/^@/, ""));
+		const subject = ctx.subjects.get(str(o.subject).replace(/^@/, ""));
 		if (!(MEMORY_KINDS as readonly string[]).includes(kind)) continue;
 		if (!isMemoryCategory(category) || !content || !subject) continue;
 		const sources = sourcesOf(o.sources, ctx.events);
@@ -193,7 +200,7 @@ export function validateExtraction(
 			kind: kind as MemoryKind,
 			category,
 			content,
-			entities: entitiesOf(o.entities, ctx.humans),
+			entities: entitiesOf(o.entities, ctx.subjects),
 			sources,
 			confidence,
 			supersedes,
