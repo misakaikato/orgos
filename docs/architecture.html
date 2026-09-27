@@ -145,7 +145,7 @@
 <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="arM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker></defs>
 <rect class="box " x="150" y="18" width="560" height="62" rx="10"/>
 <text class="t" x="164" y="40">Web 应用</text>
-<text class="s" x="164" y="60">聊天与话题 · 待办 · 代理组 · 设备 · 通讯录 · 模型页（组织树待做）</text>
+<text class="s" x="164" y="60">聊天与话题 · 待办 · 代理组 · 设备 · 通讯录 · 模型页 · 组织树与部门页</text>
 <rect class="box " x="725" y="18" width="160" height="62" rx="10"/>
 <text class="t" x="739" y="40">模拟台</text>
 <text class="s" x="739" y="60">一个浏览器扮演多人</text>
@@ -193,7 +193,7 @@
 <rect class="box " x="150" y="412" width="235" height="96" rx="10"/>
 <text class="t" x="164" y="434">身份与主体</text>
 <text class="s" x="164" y="454">人 · 代理 · 租户</text>
-<text class="s" x="164" y="472">部门（待做）· 在线状态</text>
+<text class="s" x="164" y="472">部门 · 单元树 · 在线状态</text>
 <rect class="box " x="400" y="412" width="240" height="96" rx="10"/>
 <text class="t" x="414" y="434">会话与话题</text>
 <text class="s" x="414" y="454">私聊 · 群聊都含分身</text>
@@ -275,8 +275,8 @@
 <rect class="box " x="140" y="20" width="165" height="112" rx="10"/>
 <text class="t" x="152" y="42">页面</text>
 <text class="s" x="152" y="62">消息 · 待办 · 通讯录</text>
-<text class="s" x="152" y="80">代理组 · 设备 · 模型</text>
-<text class="s" x="152" y="98">登录 · 引导 · 我</text>
+<text class="s" x="152" y="80">组织树 · 部门页</text>
+<text class="s" x="152" y="98">代理组 · 设备 · 模型</text>
 <text class="c" x="152" y="122">app/(app)/*</text>
 <rect class="box " x="320" y="20" width="165" height="112" rx="10"/>
 <text class="t" x="332" y="42">会话视图</text>
@@ -306,7 +306,7 @@
 <text class="c" x="20" y="226">routes/</text>
 <rect class="box " x="140" y="180" width="165" height="112" rx="10"/>
 <text class="t" x="152" y="202">REST 路由</text>
-<text class="s" x="152" y="222">68 个端点</text>
+<text class="s" x="152" y="222">77 个端点</text>
 <text class="s" x="152" y="240">Zod 校验入参出参</text>
 <text class="s" x="152" y="258">统一错误体</text>
 <text class="c" x="152" y="282">routes/*.ts</text>
@@ -361,10 +361,10 @@
 <text class="s" x="692" y="464">近期简报 ≤10 行</text>
 <text class="c" x="692" y="488">context.ts · prompt.ts</text>
 <rect class="box " x="860" y="386" width="165" height="112" rx="10"/>
-<text class="t" x="872" y="408">工具 12 个</text>
+<text class="t" x="872" y="408">工具 13 个</text>
 <text class="s" x="872" y="428">memory_search · save</text>
-<text class="s" x="872" y="446">escalate · negotiate</text>
-<text class="s" x="872" y="464">delegate · device ×4</text>
+<text class="s" x="872" y="446">record_decision</text>
+<text class="s" x="872" y="464">escalate · negotiate 等</text>
 <text class="c" x="872" y="488">tools/*.ts</text>
 <text class="t" x="20" y="572">业务层</text>
 <text class="c" x="20" y="592">services/</text>
@@ -375,11 +375,11 @@
 <text class="s" x="152" y="624">会话 · 成员 · 话题</text>
 <text class="c" x="152" y="648">events · topics</text>
 <rect class="box " x="320" y="546" width="165" height="112" rx="10"/>
-<text class="t" x="332" y="568">主体与设置</text>
-<text class="s" x="332" y="588">人 · 代理 · 在线状态</text>
-<text class="s" x="332" y="606">引导建租户 · 目录</text>
-<text class="s" x="332" y="624">租户设置</text>
-<text class="c" x="332" y="648">agents · presence</text>
+<text class="t" x="332" y="568">主体与组织</text>
+<text class="s" x="332" y="588">人 · 代理 · 部门</text>
+<text class="s" x="332" y="606">单元树 · 成员 · 部门群</text>
+<text class="s" x="332" y="624">deciderOf：谁来拍板</text>
+<text class="c" x="332" y="648">org · units · agents</text>
 <rect class="box " x="500" y="546" width="165" height="112" rx="10"/>
 <text class="t" x="512" y="568">工作对象</text>
 <text class="s" x="512" y="588">待办：上报 · 审批 · 确认</text>
@@ -427,7 +427,7 @@
 <rect class="box " x="860" y="706" width="165" height="112" rx="10"/>
 <text class="t" x="872" y="728">数据访问</text>
 <text class="s" x="872" y="748">scoped(tenantId)</text>
-<text class="s" x="872" y="766">Drizzle · 迁移 0000–0005</text>
+<text class="s" x="872" y="766">Drizzle · 迁移 0000–0006</text>
 <text class="s" x="872" y="784">key 用 AES-256-GCM</text>
 <text class="c" x="872" y="808">db/scope · secret</text>
 <rect class="box frame" x="140" y="304" width="885" height="42" rx="8"/>
@@ -447,7 +447,7 @@
 <line class="ln " x1="402" y1="658" x2="402" y2="704" marker-end="url(#mm)"/>
 <text class="lbl" x="412" y="686">提炼 · 检索</text>
 <rect class="box " x="140" y="856" width="885" height="44" rx="8"/>
-<text class="s" x="154" y="883">PostgreSQL 16 · 25 张业务表 + 5 张鉴权表，全部带 tenant_id（见下方数据模型）</text>
+<text class="s" x="154" y="883">PostgreSQL 16 · 27 张业务表 + 5 张鉴权表，全部带 tenant_id（见下方数据模型）</text>
 <line class="ln " x1="582" y1="818" x2="582" y2="854" marker-end="url(#mm)" marker-start="url(#mm)"/>
 <rect class="box frame" x="1040" y="20" width="100" height="880" rx="12"/>
 <text class="t" x="1052" y="46">共享协议</text>
@@ -468,7 +468,7 @@
 <text class="s" x="1052" y="420">可选</text>
 </svg>
 			</div>
-			<figcaption>箭头只画层与层之间的主要调用。几条贯穿全局的约束：写事件只经 <code>services/events.ts</code>；可见性过滤只在 <code>memory/access.ts</code> 的 <code>visibilityFilter</code>；模型调用只经 <code>gateway/core.ts</code> 的同一个函数（代理引擎进程内调用、外部 agent 经 <code>/llm/v1</code>）；所有查询经 <code>scoped(tenantId)</code>。数字（68 个端点、12 个工具、16 种事件、30 张表）按 2026 年 9 月 27 日的代码统计。</figcaption>
+			<figcaption>箭头只画层与层之间的主要调用。几条贯穿全局的约束：写事件只经 <code>services/events.ts</code>；可见性过滤只在 <code>memory/access.ts</code> 的 <code>visibilityFilter</code>；模型调用只经 <code>gateway/core.ts</code> 的同一个函数（代理引擎进程内调用、外部 agent 经 <code>/llm/v1</code>）；所有查询经 <code>scoped(tenantId)</code>。数字（77 个端点、13 个工具、16 种事件、32 张表）按 2026 年 9 月 27 日的代码统计。</figcaption>
 		</figure>
 	</section>
 
@@ -926,12 +926,12 @@
 
 	<section aria-labelledby="fData">
 		<h2 id="fData">数据模型</h2>
-		<p class="prose">PostgreSQL 16，30 张表分五组。每张表都带 <code>tenant_id</code>，按租户隔离；<code>events</code> 与 <code>task_logs</code> 只追加。</p>
+		<p class="prose">PostgreSQL 16，32 张表分五组。每张表都带 <code>tenant_id</code>，按租户隔离；<code>events</code> 与 <code>task_logs</code> 只追加。</p>
 		<figure>
 			<div class="scroll">
-<svg viewBox="0 0 1160 500" width="1160" role="img" aria-label="数据模型：身份与设备、会话、工作与运行、模型、记忆五组共 30 张表，每张表注明作用。">
-<rect class="box frame" x="20" y="20" width="215" height="460" rx="12"/>
-<text class="t" x="34" y="46">身份与设备</text>
+<svg viewBox="0 0 1160 620" width="1160" role="img" aria-label="数据模型：身份、组织与设备，会话，工作与运行，模型，记忆五组共 32 张表，每张表注明作用。">
+<rect class="box frame" x="20" y="20" width="215" height="580" rx="12"/>
+<text class="t" x="34" y="46">身份、组织与设备</text>
 <rect class="box" x="32" y="62" width="191" height="48" rx="8"/>
 <text class="c b" x="44" y="82">user 等 5 张</text>
 <text class="s" x="44" y="100">better-auth：账号 · 会话</text>
@@ -943,17 +943,23 @@
 <text class="s" x="44" y="216">账号在租户里的身份 · 角色</text>
 <rect class="box" x="32" y="236" width="191" height="48" rx="8"/>
 <text class="c b" x="44" y="256">principals</text>
-<text class="s" x="44" y="274">主体：人 · 代理 · 在线状态</text>
+<text class="s" x="44" y="274">主体：人 · 代理 · 部门</text>
 <rect class="box" x="32" y="294" width="191" height="48" rx="8"/>
-<text class="c b" x="44" y="314">agents</text>
-<text class="s" x="44" y="332">代理配置 → 主体 · 设备</text>
+<text class="c b" x="44" y="314">org_units</text>
+<text class="s" x="44" y="332">单元树 · 负责人 · 章程 · 部门群</text>
 <rect class="box" x="32" y="352" width="191" height="48" rx="8"/>
-<text class="c b" x="44" y="372">runners</text>
-<text class="s" x="44" y="390">设备 · 在线 · 能力声明</text>
+<text class="c b" x="44" y="372">unit_memberships</text>
+<text class="s" x="44" y="390">单元成员 · 角色</text>
 <rect class="box" x="32" y="410" width="191" height="48" rx="8"/>
-<text class="c b" x="44" y="430">pairing_codes</text>
-<text class="s" x="44" y="448">一次性配对码</text>
-<rect class="box frame" x="247" y="20" width="215" height="460" rx="12"/>
+<text class="c b" x="44" y="430">agents</text>
+<text class="s" x="44" y="448">代理配置 → 主体 · 设备</text>
+<rect class="box" x="32" y="468" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="488">runners</text>
+<text class="s" x="44" y="506">设备 · 在线 · 能力声明</text>
+<rect class="box" x="32" y="526" width="191" height="48" rx="8"/>
+<text class="c b" x="44" y="546">pairing_codes</text>
+<text class="s" x="44" y="564">一次性配对码</text>
+<rect class="box frame" x="247" y="20" width="215" height="580" rx="12"/>
 <text class="t" x="261" y="46">会话</text>
 <rect class="box" x="259" y="62" width="191" height="48" rx="8"/>
 <text class="c b" x="271" y="82">conversations</text>
@@ -970,7 +976,7 @@
 <rect class="box" x="259" y="294" width="191" height="48" rx="8"/>
 <text class="c b" x="271" y="314">compactions</text>
 <text class="s" x="271" y="332">压缩检查点 → 话题</text>
-<rect class="box frame" x="474" y="20" width="215" height="460" rx="12"/>
+<rect class="box frame" x="474" y="20" width="215" height="580" rx="12"/>
 <text class="t" x="488" y="46">工作与运行</text>
 <rect class="box" x="486" y="62" width="191" height="48" rx="8"/>
 <text class="c b" x="498" y="82">work_items</text>
@@ -984,7 +990,7 @@
 <rect class="box" x="486" y="236" width="191" height="48" rx="8"/>
 <text class="c b" x="498" y="256">runs</text>
 <text class="s" x="498" y="274">每次运行 → 代理 · 话题 · 任务</text>
-<rect class="box frame" x="701" y="20" width="215" height="460" rx="12"/>
+<rect class="box frame" x="701" y="20" width="215" height="580" rx="12"/>
 <text class="t" x="715" y="46">模型</text>
 <rect class="box" x="713" y="62" width="191" height="48" rx="8"/>
 <text class="c b" x="725" y="82">tenant_settings</text>
@@ -1001,7 +1007,7 @@
 <rect class="box" x="713" y="294" width="191" height="48" rx="8"/>
 <text class="c b" x="725" y="314">llm_requests</text>
 <text class="s" x="725" y="332">每次尝试一行 · 成本</text>
-<rect class="box frame" x="928" y="20" width="215" height="460" rx="12"/>
+<rect class="box frame" x="928" y="20" width="215" height="580" rx="12"/>
 <text class="t" x="942" y="46">记忆</text>
 <rect class="box" x="940" y="62" width="191" height="48" rx="8"/>
 <text class="c b" x="952" y="82">notes</text>
@@ -1020,7 +1026,7 @@
 <text class="s" x="952" y="332">本人的类别授权</text>
 </svg>
 			</div>
-			<figcaption>主干关系：主体（<code>principals</code>）是人和代理的统一身份，会话、事件、运行、记忆都指向它；话题（<code>topics</code>）是上下文边界，事件、任务、运行、压缩检查点和提炼作业都挂在话题上；记忆条目的出处指回 <code>events</code> 等第 0 层证据。迁移共 6 个（<code>0000_init</code> 到 <code>0005_memory_layer</code>），都可重复执行。</figcaption>
+			<figcaption>主干关系：主体（<code>principals</code>）是人和代理的统一身份，会话、事件、运行、记忆都指向它；话题（<code>topics</code>）是上下文边界，事件、任务、运行、压缩检查点和提炼作业都挂在话题上；记忆条目的出处指回 <code>events</code> 等第 0 层证据。迁移共 7 个（<code>0000_init</code> 到 <code>0006_org_units</code>），都可重复执行。</figcaption>
 		</figure>
 	</section>
 
@@ -1030,7 +1036,7 @@
 			<table>
 				<thead><tr><th>连接</th><th>端点</th><th>内容</th><th>凭据</th></tr></thead>
 				<tbody>
-					<tr><td class="k">浏览器 → 服务端</td><td><code>/api/*</code>（68 个）· <code>/ws</code></td><td>下行帧：event · task · topic · work_item · presence · draft · status · runner · ping</td><td>better-auth 会话或 Bearer</td></tr>
+					<tr><td class="k">浏览器 → 服务端</td><td><code>/api/*</code>（77 个）· <code>/ws</code></td><td>下行帧：event · task · topic · work_item · presence · draft · status · runner · ping</td><td>better-auth 会话或 Bearer</td></tr>
 					<tr><td class="k">Runner → 服务端</td><td><code>/runner/ws</code></td><td>上行：hello · capabilities · result · acp_event · acp_permission · acp_turn_end<br>下行：invoke · acp_start · acp_prompt · acp_permission_reply · acp_interrupt · acp_cancel</td><td>设备令牌（配对码换取）</td></tr>
 					<tr><td class="k">外部 agent → 服务端</td><td><code>/llm/v1/chat/completions</code> · <code>/responses</code> · <code>/messages</code> · <code>/models</code></td><td>OpenAI Chat、OpenAI Responses、Anthropic Messages 三种协议</td><td>任务令牌（随会话吊销）</td></tr>
 					<tr><td class="k">Runner → 本机 agent</td><td>标准输入输出</td><td>ACP（JSON-RPC）：initialize · session/new · session/prompt · session/update · session/request_permission · session/cancel · fs/read_text_file · fs/write_text_file · terminal/create</td><td>无；子进程环境已清洗</td></tr>
@@ -1049,7 +1055,7 @@
 					<tr><td class="k">分身</td><td>每人一个</td><td>服务端内置引擎</td><td>本人随时；别人在私聊或群里点名、问分身、或本人忙碌时</td><td>已完成</td></tr>
 					<tr><td class="k">助手</td><td>本人（可建多个）</td><td>服务端内置引擎，可绑设备</td><td>只替本人干活；被分身转交时受"为他人"限制</td><td>已完成</td></tr>
 					<tr><td class="k">外部助手</td><td>本人</td><td>设备 Runner 上的 Claude Code、Codex、pi、Hermes</td><td>只替本人干活，用本人订阅或网关令牌</td><td>已完成（Claude Code 真机验收）</td></tr>
-					<tr><td class="k">部门分身</td><td>部门（负责人拍板）</td><td>服务端内置引擎</td><td>任何同事可直接问；章程内自己决定，章程外上报负责人；部门群里只在被 @ 时开口</td><td>施工中</td></tr>
+					<tr><td class="k">部门分身</td><td>部门（负责人拍板）</td><td>服务端内置引擎</td><td>任何同事可直接私聊（"问产品部"）；章程内自己答复或记录决定，章程外上报负责人；部门群里只在被 @ 时开口</td><td>已完成</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -1061,7 +1067,9 @@
 					<tr><td class="k">和真人聊</td><td>普通私聊、群聊；分身在场但不插嘴</td><td>多窗格实时收发</td></tr>
 					<tr><td class="k">别人问我的分身</td><td>见第二张图；授权外上报，本人答复后接着回复</td><td>85 折上报后按"最低 9 折"转告</td></tr>
 					<tr><td class="k">分身之间协商</td><td>结构化提案往返，最多 8 步；拿不准问各自本人；谈成后双方确认</td><td>约到"10 月 5 日 10:00–10:30"，8 次模型调用</td></tr>
-					<tr><td class="k">代理用我的电脑</td><td>设备 Runner；读直接做，写与执行先审批</td><td>批准后 done.txt 真实写入磁盘</td></tr>
+					<tr><td class="k">问部门</td><td>私聊部门分身；按章程答复并附依据，章程外上报负责人</td><td>产品部按路线图答出"10 月 31 日上线、24 日起灰度"；插队需求上报林晓后转告</td></tr>
+						<tr><td class="k">部门之间协商</td><td>部门分身出面，拍板人是负责人</td><td>销售部与研发部约定 10 月 9 日 14:00–15:00 联调，两步谈成</td></tr>
+						<tr><td class="k">代理用我的电脑</td><td>设备 Runner；读直接做，写与执行先审批</td><td>批准后 done.txt 真实写入磁盘</td></tr>
 				</tbody>
 			</table>
 		</div>
@@ -1075,7 +1083,7 @@
 				<tbody>
 					<tr><td class="k">代理循环</td><td>自写最小循环，不用 pi-agent-core；多厂商时再评估</td><td>decisions/0001</td></tr>
 					<tr><td class="k">外部 agent 怎么映射</td><td>任务（A2A 状态机）+ 会话内话题；每话题一个 ACP 会话</td><td>0002、0004</td></tr>
-					<tr><td class="k">组织</td><td>部门是主体，部门分身归部门、上报负责人；不做个人行为统计</td><td>0002</td></tr>
+					<tr><td class="k">组织</td><td>部门是主体，部门分身归部门、上报与协商拍板都交负责人（唯一解释处 deciderOf）；部门群内容只对当前成员可见，对外按第三人规则抹名；不读成员私聊与私有资料，不做个人行为统计</td><td>0002</td></tr>
 					<tr><td class="k">模型</td><td>企业模型网关：三种入口（OpenAI Chat、OpenAI Responses、Anthropic Messages）三进三出；上游支持同协议就直通，不支持就经内部统一中间结构互转（3 个解析器 + 3 个生成器，不写两两转换）；计量一处；外部 agent 默认企业模式</td><td>0003</td></tr>
 					<tr><td class="k">订阅</td><td>只作"执行者"：由官方 CLI 用本人登录干活；不读取令牌、不转成 API</td><td>0003</td></tr>
 					<tr><td class="k">驱动本机 agent</td><td>ACP（Zed 的 Agent Client Protocol，40 多个 agent 支持）。MCP 管工具、A2A 管跨公司、AG-UI 属前端层，都不替代它；注意与 IBM 的同名协议（已并入 A2A）区分</td><td>本页</td></tr>
@@ -1090,9 +1098,9 @@
 		<h2 id="f5">进度</h2>
 		<div class="road">
 			<div class="col"><h3><i class="dot done"></i>已完成并验收</h3><ul>
-				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li></ul></div>
+				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li><li>组织结构与部门分身（问部门、章程外上报、部门协商真机通过）</li></ul></div>
 			<div class="col"><h3><i class="dot review"></i>施工中</h3><ul>
-				<li>组织结构与部门分身</li></ul></div>
+				<li>暂无</li></ul></div>
 			<div class="col"><h3><i class="dot plan"></i>下一步（按顺序）</h3><ul>
 				<li>端到端总验收</li></ul></div>
 			<div class="col"><h3><i class="dot later"></i>阶段二</h3><ul>
