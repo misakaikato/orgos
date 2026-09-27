@@ -5,7 +5,7 @@
  * 1. 本次运行已有工具结果 → `完成：<工具结果前 60 字>`，不再调工具；
  * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具；
  * 3. 群聊里文本既没有 @ 本代理、也不含本代理 handle → pass；
- * 4. 上报后恢复运行 → `本人答复：<答复原文>`；
+ * 4. 上报后恢复运行 → `本人答复：<答复原文>`（暂不答复时为 `本人暂不答复`，附言跟在冒号后）；
  * 5. 协商：发起方第一步 continue + `{"slot":"周四 15:00"}`；应答方看到 proposal 时，
  *    目标含 #needowner → need_owner，含 #reject → reject，否则 agree 同一 proposal；
  * 6. 其余 → `收到：<触发文本>`。
@@ -161,8 +161,15 @@ export function mockDecide(
 	) {
 		return { kind: "tool", name: "pass", args: {} };
 	}
-	if (trigger.resume)
-		return { kind: "text", text: `本人答复：${trigger.resume.answer}` };
+	if (trigger.resume) {
+		const { answer, declined } = trigger.resume;
+		return {
+			kind: "text",
+			text: declined
+				? `本人暂不答复${answer ? `：${answer}` : ""}`
+				: `本人答复：${answer}`,
+		};
+	}
 	if (trigger.negotiation) {
 		return {
 			kind: "tool",

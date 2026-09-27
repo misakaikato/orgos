@@ -1,6 +1,6 @@
 /**
  * 代理工具表：唯一的注册处。本阶段注册 pass、knowledge_search、memory_save、
- * delegate_to_teammate、create_commitment。
+ * delegate_to_teammate、escalate_to_owner、create_commitment。
  */
 import type { ToolSpec } from "@/agent/llm-types";
 import {
@@ -10,6 +10,7 @@ import {
 	passTool,
 } from "@/agent/tools/builtin";
 import { delegateTool } from "@/agent/tools/delegate";
+import { escalateTool } from "@/agent/tools/escalate";
 import type { AgentTool, ToolOutcome, ToolScope } from "@/agent/tools/tool";
 
 export const TOOLS: readonly AgentTool[] = [
@@ -17,6 +18,7 @@ export const TOOLS: readonly AgentTool[] = [
 	knowledgeSearchTool,
 	memorySaveTool,
 	delegateTool,
+	escalateTool,
 	createCommitmentTool,
 ];
 

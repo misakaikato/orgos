@@ -41,7 +41,9 @@ export function describeEvent(
 			return `${actor}已转给${to}：${event.payload.question}`;
 		}
 		case "escalation.resolved":
-			return `${actor}已答复转来的问题`;
+			return event.payload.action === "decline"
+				? `${actor}暂不答复转来的问题`
+				: `${actor}已答复转来的问题`;
 		case "negotiation.started":
 			return `两位的分身开始协商：${event.payload.goal}`;
 		case "negotiation.step":

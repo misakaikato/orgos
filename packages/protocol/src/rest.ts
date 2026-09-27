@@ -13,6 +13,7 @@ import {
 	TenantSchema,
 	UserSchema,
 	WORK_ITEM_STATUSES,
+	type WorkItem,
 	WorkItemSchema,
 } from "./entities";
 import { EventSchema, MESSAGE_MAX_LENGTH } from "./events";
@@ -37,6 +38,9 @@ export const ERROR_CODES = {
 	INVITE_CODE_INVALID: "INVITE_CODE_INVALID",
 	AGENT_NOT_REACHABLE: "AGENT_NOT_REACHABLE",
 	ALREADY_MEMBER: "ALREADY_MEMBER",
+	WORK_ITEM_NOT_OPEN: "WORK_ITEM_NOT_OPEN",
+	WORK_ITEM_ACTION_MISMATCH: "WORK_ITEM_ACTION_MISMATCH",
+	NOT_IMPLEMENTED: "NOT_IMPLEMENTED",
 	INTERNAL: "INTERNAL",
 } as const;
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -190,6 +194,45 @@ export const WorkItemListResponseSchema = z.object({
 	items: z.array(WorkItemSchema),
 });
 export type WorkItemListResponse = z.infer<typeof WorkItemListResponseSchema>;
+
+export const RESOLUTION_TEXT_MAX_LENGTH = 4000;
+
+/**
+ * `POST /api/work-items/:id/resolve`：动作须与待办的 kind 对应——
+ * decision 用 answer / decline，approval 用 approve / deny，confirmation 用 confirm / reject。
+ */
+export const ResolveWorkItemRequestSchema = z.discriminatedUnion("action", [
+	z.object({
+		action: z.literal("answer"),
+		text: z.string().trim().min(1).max(RESOLUTION_TEXT_MAX_LENGTH),
+		/** 同时把问题与答复存为本人的共享资料。 */
+		saveAsNote: z.boolean().optional(),
+	}),
+	z.object({
+		action: z.literal("decline"),
+		text: z.string().trim().max(RESOLUTION_TEXT_MAX_LENGTH).optional(),
+	}),
+	z.object({ action: z.enum(["approve", "deny"]) }),
+	z.object({ action: z.enum(["confirm", "reject"]) }),
+]);
+export type ResolveWorkItemRequest = z.infer<
+	typeof ResolveWorkItemRequestSchema
+>;
+export type ResolveAction = ResolveWorkItemRequest["action"];
+
+/** 各 kind 可用的处理动作。 */
+export const RESOLVE_ACTIONS_BY_KIND = {
+	question: [],
+	commitment: [],
+	decision: ["answer", "decline"],
+	approval: ["approve", "deny"],
+	confirmation: ["confirm", "reject"],
+} as const satisfies Record<WorkItem["kind"], readonly ResolveAction[]>;
+
+export const WorkItemResponseSchema = z.object({
+	workItem: WorkItemSchema,
+});
+export type WorkItemResponse = z.infer<typeof WorkItemResponseSchema>;
 
 // ─────────────────────────── 代理组 ───────────────────────────
 

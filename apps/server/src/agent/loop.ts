@@ -1,6 +1,7 @@
 /**
  * 代理运行循环：组装系统提示 + 最近 40 条会话消息 → 调模型 → 有工具调用则执行并继续 →
  * 无工具调用时把文本作为 message.posted 落库。单次运行最多 8 次模型调用。
+ * 结束型工具（escalate_to_owner）执行后本次运行随即结束，不再产生回复。
  *
  * 直接被触发的运行（depth 0）经 draft / status 帧向会话成员直播；被转交的运行（depth ≥ 1）
  * 不发帧、不发消息，最终文本交回转交者，它的工具动作记在转交链顶端的代理名下。
@@ -48,6 +49,8 @@ export type RunInput = {
 	actingFor: ActingFor;
 	/** 触发文本与其中的 @；代理身份与会话类型由循环补齐。 */
 	trigger: Omit<RunTrigger, "agent" | "conversationKind">;
+	/** 引起本次运行的人类消息。 */
+	triggerEventId?: number;
 	session: RunSession;
 	llm: LlmClient;
 	/** 转交：谁转交来的、动作记在谁名下、当前深度。 */
@@ -55,7 +58,14 @@ export type RunInput = {
 };
 
 export type RunResult = {
-	outcome: "posted" | "returned" | "passed" | "stopped" | "failed" | "limit";
+	outcome:
+		| "posted"
+		| "returned"
+		| "passed"
+		| "ended"
+		| "stopped"
+		| "failed"
+		| "limit";
 	/** 转交运行交回的文本。 */
 	text?: string;
 };
@@ -110,6 +120,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
 		conversation: { id: conversation.id, kind: conversation.kind },
 		actingFor,
 		depth,
+		triggerEventId: visible ? (input.triggerEventId ?? null) : null,
 		session,
 		async delegate(target, task) {
 			const result = await runAgent({
@@ -129,6 +140,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
 			actingFor.kind === "other" ? nameOf(actingFor.principalId) : null,
 		conversationTitle: conversation.title,
 		delegatedBy: delegation?.from ?? null,
+		resume: input.trigger.resume ?? null,
 	});
 	const messages: ChatMessage[] = [
 		{ role: "system", content: system },
@@ -215,6 +227,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
 				const out = await executeToolCall(toolCall, scope);
 				if (out.pass) return { outcome: "passed" };
 				await act(toolCall.name, out.summary, out.ok);
+				if (out.end) return { outcome: "ended" };
 				messages.push({
 					role: "tool",
 					tool_call_id: toolCall.id,

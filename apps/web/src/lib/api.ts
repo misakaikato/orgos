@@ -26,6 +26,7 @@ import {
 	type PostMessageRequest,
 	PostMessageResponseSchema,
 	ResetDemoResponseSchema,
+	type ResolveWorkItemRequest,
 	type UpdateAgentRequest,
 	type UpdateNoteRequest,
 	type UpdateStatusRequest,
@@ -33,6 +34,7 @@ import {
 	UsageResponseSchema,
 	type WORK_ITEM_STATUSES,
 	WorkItemListResponseSchema,
+	WorkItemResponseSchema,
 } from "@orgos/protocol";
 import ky, { HTTPError, type ResponsePromise } from "ky";
 import { authHeaders } from "@/lib/auth-mode";
@@ -189,6 +191,12 @@ export const api = {
 					...(as ? { headers: authHeaders(as), credentials: "omit" } : {}),
 				})
 				.json(WorkItemListResponseSchema),
+		),
+	resolveWorkItem: (id: string, req: ResolveWorkItemRequest) =>
+		run(() =>
+			http
+				.post(`/api/work-items/${id}/resolve`, { json: req })
+				.json(WorkItemResponseSchema),
 		),
 };
 

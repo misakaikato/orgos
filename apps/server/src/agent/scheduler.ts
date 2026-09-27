@@ -4,27 +4,35 @@
  * - 谁该回应只问 `@/agent/triggers`：私聊用 agentsToTrigger，群聊用 groupRound 给出的顺序；
  * - 新的人类消息到来：正在跑的运行在步边界停止，然后从新消息开始新一轮（排队中的旧轮直接作废）；
  * - `stop`：立即中止（取消进行中的模型调用），不再开始排队中的轮次；
+ * - 上报被本人处理后，恢复上报的代理（resume）：排进同一队列，不被新的人类消息作废或打断；
  * - 群聊轮次（假设 5）：被 @ 的先说，其余按入群顺序各轮到一次（pass 无声）；有人发言才进下一轮，
  *   只点听到新内容的代理；最多 4 轮。第 2 轮起的每次运行、每次转交都算一次交接，累计到 8 次停止；
  * - 因上限停止时落一条 agent.action{tool:'system', ok:false}，summary 写明是哪个上限。
  */
-import type { Event } from "@orgos/protocol";
+import {
+	DecisionResolutionSchema,
+	type Event,
+	type WorkItem,
+} from "@orgos/protocol";
 import { desc, eq, gt, ne } from "drizzle-orm";
 import { getLlmClient } from "@/agent/llm";
-import type { LlmClient } from "@/agent/llm-types";
+import type { LlmClient, RunTrigger } from "@/agent/llm-types";
 import { runAgent } from "@/agent/loop";
 import { LIMIT_SUMMARY, MAX_ROUNDS, RunSession } from "@/agent/session";
 import {
+	type ActingFor,
+	actingFor,
 	agentsToTrigger,
 	groupRound,
 	type Trigger,
 	type TriggerMessage,
 } from "@/agent/triggers";
-import { conversations, events } from "@/db/schema";
+import { conversations, events, principals } from "@/db/schema";
 import type { Scoped } from "@/db/scope";
 import { toEvent } from "@/lib/serialize";
 import { recordAgentAction } from "@/services/agent-events";
 import { triggerConversationOf } from "@/services/conversations";
+import { escalatingAgentOf } from "@/services/work-items";
 
 export type MessageEvent = Extract<Event, { type: "message.posted" }>;
 
@@ -33,6 +41,10 @@ type ConversationState = {
 	gen: number;
 	tail: Promise<void>;
 	current: RunSession | null;
+	/** 当前运行能否被新的人类消息打断（上报后恢复的运行不能：本人的答复必须送达）。 */
+	interruptible: boolean;
+	/** 排队与运行中的任务数；归零时释放该会话的状态。 */
+	pending: number;
 };
 
 export type SchedulerDeps = { llm: () => LlmClient };
@@ -45,6 +57,14 @@ type ChainInput = {
 	llm: LlmClient;
 };
 
+/** 恢复上报代理的运行所需的信息。 */
+export type ResumeInput = {
+	conversationId: string;
+	agentId: string;
+	actingFor: ActingFor;
+	resume: NonNullable<RunTrigger["resume"]>;
+};
+
 export class Scheduler {
 	private readonly states = new Map<string, ConversationState>();
 
@@ -53,10 +73,45 @@ export class Scheduler {
 	private stateOf(conversationId: string): ConversationState {
 		let st = this.states.get(conversationId);
 		if (!st) {
-			st = { gen: 0, tail: Promise.resolve(), current: null };
+			st = {
+				gen: 0,
+				tail: Promise.resolve(),
+				current: null,
+				interruptible: true,
+				pending: 0,
+			};
 			this.states.set(conversationId, st);
 		}
 		return st;
+	}
+
+	/**
+	 * 把一个任务排进会话的队列：同一会话同一时刻只有一个任务在跑。
+	 * `gen` 给定时，任务开始前若会话已被新的人类消息或 stop 推进则作废。
+	 */
+	private enqueue(
+		conversationId: string,
+		opts: { gen?: number; interruptible: boolean },
+		job: (session: RunSession) => Promise<void>,
+	): Promise<void> {
+		const st = this.stateOf(conversationId);
+		st.pending += 1;
+		st.tail = st.tail.then(async () => {
+			try {
+				if (opts.gen !== undefined && opts.gen !== st.gen) return;
+				const session = new RunSession();
+				st.current = session;
+				st.interruptible = opts.interruptible;
+				await job(session);
+			} catch (e) {
+				console.error("[agent] 调度出错", e);
+			} finally {
+				st.current = null;
+				st.pending -= 1;
+				if (st.pending === 0) this.states.delete(conversationId);
+			}
+		});
+		return st.tail;
 	}
 
 	/**
@@ -68,27 +123,70 @@ export class Scheduler {
 		if (!conversationId) return Promise.resolve();
 		const st = this.stateOf(conversationId);
 		const gen = ++st.gen;
-		st.current?.interrupt();
-		st.tail = st.tail.then(async () => {
-			if (gen !== st.gen) return;
-			const session = new RunSession();
-			st.current = session;
-			try {
-				await this.chain({
+		if (st.interruptible) st.current?.interrupt();
+		return this.enqueue(
+			conversationId,
+			{ gen, interruptible: true },
+			(session) =>
+				this.chain({
 					s,
 					conversationId,
 					event,
 					session,
 					llm: this.deps.llm(),
+				}),
+		);
+	}
+
+	/**
+	 * 本人答复（或暂不答复）了上报：以答复为触发，恢复当初上报的那个代理，
+	 * 仍为原提问者办事，在同一会话里回复。排在该会话当前的运行之后，不会被作废或打断。
+	 */
+	resume(s: Scoped, input: ResumeInput): Promise<void> {
+		return this.enqueue(
+			input.conversationId,
+			{ interruptible: false },
+			async (session) => {
+				await runAgent({
+					s,
+					agentId: input.agentId,
+					conversationId: input.conversationId,
+					actingFor: input.actingFor,
+					trigger: {
+						text: input.resume.answer,
+						mentions: [],
+						resume: input.resume,
+					},
+					session,
+					llm: this.deps.llm(),
 				});
-			} catch (e) {
-				console.error("[agent] 调度出错", e);
-			} finally {
-				st.current = null;
-				if (gen === st.gen) this.states.delete(conversationId);
-			}
+			},
+		);
+	}
+
+	/**
+	 * 一条 decision 待办被本人处理后：找到当初上报的代理，仍为原提问者恢复运行。
+	 * 返回时恢复运行已排进队列（之后可用 idle 等它结束）。
+	 */
+	async onEscalationResolved(
+		s: Scoped,
+		item: Extract<WorkItem, { kind: "decision" }>,
+	): Promise<void> {
+		const resolution = DecisionResolutionSchema.safeParse(item.resolution);
+		const agentId = await escalatingAgentOf(s, item);
+		if (!item.conversationId || !agentId || !resolution.success) return;
+		const agent = await s.first(principals, eq(principals.id, agentId));
+		if (!agent) return;
+		const { action, text } = resolution.data;
+		void this.resume(s, {
+			conversationId: item.conversationId,
+			agentId,
+			actingFor: actingFor(agent, item.payload.askedById),
+			resume: {
+				answer: text ?? "",
+				...(action === "decline" ? { declined: true } : {}),
+			},
 		});
-		return st.tail;
 	}
 
 	/** POST /stop：立即中止正在跑的运行，排队中的轮次不再开始。 */
@@ -146,6 +244,7 @@ export class Scheduler {
 				text: trigger.payload.text,
 				mentions: trigger.payload.mentions,
 			},
+			triggerEventId: trigger.id,
 			session: input.session,
 			llm: input.llm,
 		});

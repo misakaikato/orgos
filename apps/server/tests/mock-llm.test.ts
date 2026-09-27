@@ -97,6 +97,15 @@ describe("mockDecide 优先级", () => {
 		expect(
 			mockDecide(trigger("可以", { resume: { answer: "可以" } }), []),
 		).toEqual({ kind: "text", text: "本人答复：可以" });
+		expect(
+			mockDecide(trigger("", { resume: { answer: "", declined: true } }), []),
+		).toEqual({ kind: "text", text: "本人暂不答复" });
+		expect(
+			mockDecide(
+				trigger("下周再说", { resume: { answer: "下周再说", declined: true } }),
+				[],
+			),
+		).toEqual({ kind: "text", text: "本人暂不答复：下周再说" });
 	});
 
 	it("5. 协商：发起方先提议，应答方按目标 agree / need_owner / reject", () => {

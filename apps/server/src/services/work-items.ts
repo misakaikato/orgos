@@ -2,20 +2,26 @@
  * 待办（"待我处理"）：处理人必为人。写入只经本文件，写入前按 kind 校验载荷。
  */
 import {
+	type DecisionResolution,
+	ERROR_CODES,
+	RESOLVE_ACTIONS_BY_KIND,
+	type ResolveWorkItemRequest,
 	WORK_ITEM_PAYLOAD_SCHEMAS,
 	type WORK_ITEM_STATUSES,
 	type WorkItem,
 	type WorkItemDraft,
 } from "@orgos/protocol";
-import { desc, eq } from "drizzle-orm";
-import { principals, workItems } from "@/db/schema";
-import type { Scoped } from "@/db/scope";
-import { badRequest } from "@/lib/errors";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { events, principals, workItems } from "@/db/schema";
+import type { PrincipalRow, Scoped } from "@/db/scope";
+import { AppError, badRequest, notFound } from "@/lib/errors";
 import { toWorkItem } from "@/lib/serialize";
+import { isUuid } from "@/lib/uuid";
 import { browserHub } from "@/realtime/browser-hub";
 import { requireAgentPrincipal } from "@/services/agent-events";
 import { requireConversation } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
+import { createNote } from "@/services/notes";
 
 export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 
@@ -78,8 +84,9 @@ export async function listWorkItems(
 }
 
 /**
- * 代理把超出授权的问题转给本人：一个事务内建 decision 待办（处理人 = 代理的本人，
- * 提问人 = requesterId）并在会话里落 `escalation.created`。
+ * 代理把超出授权的问题转给本人（上报的唯一入口）：一个事务内建 decision 待办
+ * （处理人 = 代理的本人，提问人 = requesterId）并在会话里落 `escalation.created`，
+ * 提交后把待办推给本人。
  */
 export async function escalateToOwner(
 	s: Scoped,
@@ -95,7 +102,7 @@ export async function escalateToOwner(
 ): Promise<WorkItem> {
 	const agent = await requireAgentPrincipal(s, input.agentId);
 	await requireConversation(s, input.conversationId, agent.id);
-	return transactWithEvents(s, async (tx, append) => {
+	const item = await transactWithEvents(s, async (tx, append) => {
 		const item = await createWorkItem(tx, {
 			kind: "decision",
 			payload: { question: input.question, askedById: input.requesterId },
@@ -116,4 +123,124 @@ export async function escalateToOwner(
 		});
 		return item;
 	});
+	notifyWorkItem(item);
+	return item;
+}
+
+/** 上报了这条 decision 待办的代理（取自会话里对应的 `escalation.created`）。 */
+export async function escalatingAgentOf(
+	s: Scoped,
+	item: WorkItem,
+): Promise<string | null> {
+	if (!item.conversationId) return null;
+	const [row] = await s.executor
+		.select({ actorId: events.actorId })
+		.from(events)
+		.where(
+			s.where(
+				events,
+				eq(events.conversationId, item.conversationId),
+				eq(events.type, "escalation.created"),
+				sql`${events.payload}->>'workItemId' = ${item.id}`,
+			),
+		)
+		.limit(1);
+	return row?.actorId ?? null;
+}
+
+export const NOTE_TITLE_MAX_CHARS = 30;
+
+function noteTitleOf(question: string): string {
+	return Array.from(question.trim()).slice(0, NOTE_TITLE_MAX_CHARS).join("");
+}
+
+/**
+ * 本人处理一条待办。不存在、跨租户、不是我的 → 404；动作与 kind 不符 → 400；
+ * 已处理 → 409。本阶段接通 decision 的 answer / decline；approve / deny、confirm / reject
+ * 返回 400 NOT_IMPLEMENTED。
+ *
+ * decision：待办置 done 并写入 resolution；answer 且 saveAsNote 时以本人为作者写一条共享资料
+ * （标题取问题前 30 字）；在原会话落 `escalation.resolved`。提交后推 work_item 帧。
+ * 恢复上报代理的运行由调用方交给调度器。
+ */
+export async function resolveWorkItem(
+	s: Scoped,
+	me: PrincipalRow,
+	workItemId: string,
+	req: ResolveWorkItemRequest,
+): Promise<WorkItem> {
+	if (!isUuid(workItemId)) throw notFound("待办不存在");
+	const row = await s.first(
+		workItems,
+		eq(workItems.id, workItemId),
+		eq(workItems.ownerId, me.id),
+	);
+	if (!row) throw notFound("待办不存在");
+	const item = toWorkItem(row);
+	const allowed: readonly string[] = RESOLVE_ACTIONS_BY_KIND[item.kind];
+	if (!allowed.includes(req.action)) {
+		throw new AppError(
+			400,
+			ERROR_CODES.WORK_ITEM_ACTION_MISMATCH,
+			`这类待办不能执行 ${req.action}`,
+		);
+	}
+	if (item.status !== "open")
+		throw new AppError(409, ERROR_CODES.WORK_ITEM_NOT_OPEN, "待办已处理");
+	if (
+		item.kind !== "decision" ||
+		(req.action !== "answer" && req.action !== "decline")
+	)
+		throw new AppError(
+			400,
+			ERROR_CODES.NOT_IMPLEMENTED,
+			"这类待办的处理还未开放",
+		);
+
+	const text = req.text?.trim() || undefined;
+	const resolved = await transactWithEvents(s, async (tx, append) => {
+		let noteId: string | undefined;
+		if (req.action === "answer" && req.saveAsNote && text) {
+			const note = await createNote(tx, {
+				ownerId: me.id,
+				authorId: me.id,
+				title: noteTitleOf(item.payload.question),
+				body: `问：${item.payload.question}\n答：${text}`,
+				visibility: "shared",
+			});
+			noteId = note.id;
+		}
+		const resolution: DecisionResolution = {
+			action: req.action,
+			...(text ? { text } : {}),
+			...(noteId ? { noteId } : {}),
+		};
+		const [updated] = await tx.executor
+			.update(workItems)
+			.set({ status: "done", resolution })
+			.where(
+				tx.where(
+					workItems,
+					and(eq(workItems.id, item.id), eq(workItems.status, "open")),
+				),
+			)
+			.returning();
+		if (!updated)
+			throw new AppError(409, ERROR_CODES.WORK_ITEM_NOT_OPEN, "待办已处理");
+		if (item.conversationId) {
+			await append({
+				conversationId: item.conversationId,
+				actorId: me.id,
+				type: "escalation.resolved",
+				payload: {
+					workItemId: item.id,
+					action: req.action,
+					...(text ? { text } : {}),
+				},
+			});
+		}
+		return toWorkItem(updated);
+	});
+	notifyWorkItem(resolved);
+	return resolved;
 }

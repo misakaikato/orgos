@@ -12,6 +12,7 @@ import type {
 	Event,
 	MeResponse,
 	PrincipalStatus,
+	ResolveWorkItemRequest,
 	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
@@ -358,6 +359,15 @@ export function applyPresence(
 				? { ...s.me, principal: { ...s.me.principal, status } }
 				: s.me,
 	}));
+}
+
+/** 处理一条待办：处理结果立即并入待办列表（会话里的卡片随 escalation.resolved 事件更新）。 */
+export async function resolveWorkItem(
+	id: string,
+	req: ResolveWorkItemRequest,
+): Promise<void> {
+	const { workItem } = await api.resolveWorkItem(id, req);
+	applyWorkItem(workItem);
 }
 
 /** 中止会话里正在运行的代理。 */

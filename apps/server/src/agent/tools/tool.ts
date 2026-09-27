@@ -19,6 +19,8 @@ export type ToolScope = {
 	actingFor: ActingFor;
 	/** 转交深度：直接被触发的运行为 0。 */
 	depth: number;
+	/** 引起本次运行的人类消息（上报待办的来源事件）；恢复运行与转交时为 null。 */
+	triggerEventId: number | null;
 	session: RunSession;
 	/** 同步运行一位同组代理一次，返回它的最终文本。 */
 	delegate(target: Agent, task: string): Promise<string>;
@@ -32,6 +34,8 @@ export type ToolOutcome = {
 	ok: boolean;
 	/** pass：本次运行无声结束。 */
 	pass?: true;
+	/** 记下动作后本次运行随即结束，不再产生回复消息（上报后等本人答复）。 */
+	end?: true;
 };
 
 export type AgentTool = {

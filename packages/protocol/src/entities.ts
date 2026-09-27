@@ -130,6 +130,15 @@ export const WORK_ITEM_PAYLOAD_SCHEMAS = {
 	}),
 } as const satisfies Record<(typeof WORK_ITEM_KINDS)[number], z.ZodType>;
 
+/** decision 待办处理后的 `work_items.resolution`。 */
+export const DecisionResolutionSchema = z.object({
+	action: z.enum(["answer", "decline"]),
+	text: z.string().optional(),
+	/** 勾选"存为共享资料"时写入的资料。 */
+	noteId: z.uuid().optional(),
+});
+export type DecisionResolution = z.infer<typeof DecisionResolutionSchema>;
+
 const workItemBase = {
 	id: z.uuid(),
 	tenantId: z.uuid(),

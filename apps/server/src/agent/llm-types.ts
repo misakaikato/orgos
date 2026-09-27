@@ -43,8 +43,8 @@ export type RunTrigger = {
 	mentions: readonly string[];
 	agent: { id: string; handle: string };
 	conversationKind: (typeof CONVERSATION_KINDS)[number];
-	/** 上报后本人答复、恢复运行。 */
-	resume?: { answer: string };
+	/** 上报后本人答复（或暂不答复）、恢复运行；answer 为答复原文（暂不答复时可为空）。 */
+	resume?: { answer: string; declined?: boolean };
 	/** 协商中的一步。 */
 	negotiation?: {
 		role: "initiator" | "responder";

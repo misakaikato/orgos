@@ -2,7 +2,7 @@
  * 代理的系统提示与会话历史（转成模型消息）。
  */
 import { AGENT_ROLE_LABEL, type Agent, type Event } from "@orgos/protocol";
-import type { ChatMessage } from "@/agent/llm-types";
+import type { ChatMessage, RunTrigger } from "@/agent/llm-types";
 import type { AgentTool, ToolScope } from "@/agent/tools/tool";
 
 export type PromptInput = {
@@ -14,6 +14,8 @@ export type PromptInput = {
 	conversationTitle: string | null;
 	/** 被同组代理转交时的转交者。 */
 	delegatedBy: Agent | null;
+	/** 上报后本人处理了、恢复运行。 */
+	resume: RunTrigger["resume"] | null;
 	now?: Date;
 };
 
@@ -54,10 +56,26 @@ function actingLines(input: PromptInput, ownerName: string): string[] {
 		"处理对方的问题只有三个出口：",
 		`1. 能答就答，并注明依据（例如“根据${ownerName}共享的《…》”）；`,
 		canEscalate
-			? `2. 超出授权的（新的承诺、决定，或政策里要求问本人的）调用 escalate_to_owner 转给${ownerName}本人，不要自己答应；`
+			? `2. 超出授权的（新的承诺、决定，或政策里要求问本人的）调用 escalate_to_owner 转给${ownerName}本人，不要自己答应。只有真正调用了 escalate_to_owner 才算转给了${ownerName}，绝不能只在文字里说“已转给”；每个新问题（哪怕和之前转过的相似）都要单独调用一次；`
 			: `2. 超出授权的（新的承诺、决定，或政策里要求问本人的）说明这需要${ownerName}本人决定、请对方直接问${ownerName}，不要自己答应；`,
 		`3. 涉及${ownerName}设为不可谈的话题，礼貌地直接拒绝。`,
+		...resumeLines(input, ownerName, other),
 	];
+}
+
+function resumeLines(
+	input: PromptInput,
+	ownerName: string,
+	other: string,
+): string[] {
+	if (!input.resume) return [];
+	return input.resume.declined
+		? [
+				`${ownerName}本人刚刚看了你转交的问题，决定暂不答复（附言见历史里最新的系统消息）。现在礼貌地告诉${other}：${ownerName}暂时不答复这个问题；不要替${ownerName}回答，也不要再次转交。`,
+			]
+		: [
+				`${ownerName}本人刚刚答复了你转交的问题（见历史里最新的系统消息）。现在把答复转告${other}，注明这是${ownerName}本人的答复，不要改变答复的意思；不要再次转交同一个问题。`,
+			];
 }
 
 export function buildSystemPrompt(input: PromptInput): string {
@@ -90,8 +108,8 @@ export function buildSystemPrompt(input: PromptInput): string {
 }
 
 /**
- * 会话历史 → 模型消息：本代理自己的消息为 assistant，其余带“【显示名】”前缀为 user。
- * 只取消息事件（动作、卡片等不进上下文）。
+ * 会话历史 → 模型消息：本代理自己的消息为 assistant，其余带“【显示名】”前缀为 user；
+ * 上报与本人的答复以“【系统】”消息进入上下文。代理动作与协商卡片不进上下文。
  */
 export function historyMessages(
 	events: readonly Event[],
@@ -100,6 +118,24 @@ export function historyMessages(
 ): ChatMessage[] {
 	const out: ChatMessage[] = [];
 	for (const e of events) {
+		if (e.type === "escalation.created") {
+			out.push({
+				role: "user",
+				content: `【系统】${nameOf(e.actorId)}已把问题转给本人，等待本人答复：${e.payload.question}`,
+			});
+			continue;
+		}
+		if (e.type === "escalation.resolved") {
+			const text = e.payload.text ? `：${e.payload.text}` : "";
+			out.push({
+				role: "user",
+				content:
+					e.payload.action === "decline"
+						? `【系统】${nameOf(e.actorId)}本人暂不答复转来的问题${text}`
+						: `【系统】${nameOf(e.actorId)}本人答复了转来的问题${text}`,
+			});
+			continue;
+		}
 		if (e.type !== "message.posted") continue;
 		out.push(
 			e.actorId === agentId

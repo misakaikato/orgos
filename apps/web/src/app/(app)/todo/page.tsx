@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { SoonButton } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/ui/states";
+import { DecisionForm } from "@/components/work-items/decision-form";
 import { appHref } from "@/lib/auth-mode";
 import { nameOf } from "@/lib/describe";
 import { formatListTime } from "@/lib/format";
@@ -24,13 +25,24 @@ const KIND_LABEL: Record<WorkItem["kind"], string> = {
 	commitment: "你答应过的事",
 };
 
-const PRIMARY_LABEL: Record<WorkItem["kind"], string> = {
-	decision: "答复",
-	confirmation: "确认",
-	approval: "批准",
-	question: "答复",
-	commitment: "标记完成",
-};
+/** 尚未接通的处理动作：审批在 S6、协商确认在 S5 接通。 */
+function PendingActions({ item }: { item: WorkItem }) {
+	if (item.kind === "approval")
+		return (
+			<>
+				<SoonButton variant="primary">批准</SoonButton>
+				<SoonButton variant="danger">拒绝</SoonButton>
+			</>
+		);
+	if (item.kind === "confirmation")
+		return (
+			<>
+				<SoonButton variant="primary">确认</SoonButton>
+				<SoonButton variant="danger">驳回</SoonButton>
+			</>
+		);
+	return null;
+}
 
 function WorkItemCard({
 	item,
@@ -42,23 +54,17 @@ function WorkItemCard({
 	meId: string;
 }) {
 	const requester = map.get(item.requesterId);
+	const pendingActions =
+		item.kind === "approval" || item.kind === "confirmation" ? (
+			<PendingActions item={item} />
+		) : null;
 	return (
 		<MessageCard
 			pending
 			title={KIND_LABEL[item.kind]}
 			meta={formatListTime(item.createdAt)}
 			className="w-full"
-			actions={
-				<>
-					<SoonButton variant="primary">{PRIMARY_LABEL[item.kind]}</SoonButton>
-					{item.kind === "confirmation" ? (
-						<SoonButton variant="danger">驳回</SoonButton>
-					) : null}
-					{item.kind === "approval" ? (
-						<SoonButton variant="danger">拒绝</SoonButton>
-					) : null}
-				</>
-			}
+			actions={pendingActions}
 		>
 			<p className="font-semibold break-words">{item.title}</p>
 			{item.body && item.body !== item.title ? (
@@ -81,11 +87,17 @@ function WorkItemCard({
 					</Link>
 				) : null}
 			</div>
+			{item.kind === "decision" ? (
+				<DecisionForm
+					workItemId={item.id}
+					requesterName={nameOf(item.requesterId, map, meId)}
+				/>
+			) : null}
 		</MessageCard>
 	);
 }
 
-/** 待办：一切需要本人拍板的事（DESIGN.md §5）。处理动作在后续阶段接通。 */
+/** 待办：一切需要本人拍板的事（DESIGN.md §5）。处理后从列表消失（随 work_item 推送）。 */
 export default function TodoPage() {
 	const me = useStore((s) => s.me);
 	const items = useStore((s) => s.workItems);
