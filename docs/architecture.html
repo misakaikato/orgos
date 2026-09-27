@@ -213,7 +213,7 @@
 <text class="s" x="414" y="584">审批挂起 · ACP 帧</text>
 <rect class="box plan" x="655" y="524" width="230" height="86" rx="10"/>
 <text class="t" x="669" y="546">企业模型网关</text>
-<text class="s" x="669" y="566">三协议互转 · 路由组</text>
+<text class="s" x="669" y="566">三进三出 · 统一中间结构</text>
 <text class="s" x="669" y="584">计量一处 · 任务令牌</text>
 <line class="ln " x1="517" y1="266" x2="517" y2="288" marker-end="url(#ar)"/>
 <text class="lbl " x="528" y="282">调用</text>
@@ -481,7 +481,7 @@
 					<tr><td class="k">代理循环</td><td>自写最小循环，不用 pi-agent-core；多厂商时再评估</td><td>decisions/0001</td></tr>
 					<tr><td class="k">外部 agent 怎么映射</td><td>任务（A2A 状态机）+ 会话内话题；每话题一个 ACP 会话</td><td>0002、0004</td></tr>
 					<tr><td class="k">组织</td><td>部门是主体，部门分身归部门、上报负责人；不做个人行为统计</td><td>0002</td></tr>
-					<tr><td class="k">模型</td><td>企业模型网关，三协议互转，计量一处；外部 agent 默认企业模式</td><td>0003</td></tr>
+					<tr><td class="k">模型</td><td>企业模型网关：三种入口（OpenAI Chat、OpenAI Responses、Anthropic Messages）三进三出；上游支持同协议就直通，不支持就经内部统一中间结构互转（3 个解析器 + 3 个生成器，不写两两转换）；计量一处；外部 agent 默认企业模式</td><td>0003</td></tr>
 					<tr><td class="k">订阅</td><td>只作"执行者"：由官方 CLI 用本人登录干活；不读取令牌、不转成 API</td><td>0003</td></tr>
 					<tr><td class="k">驱动本机 agent</td><td>ACP（Zed 的 Agent Client Protocol，40 多个 agent 支持）。MCP 管工具、A2A 管跨公司、AG-UI 属前端层，都不替代它；注意与 IBM 的同名协议（已并入 A2A）区分</td><td>本页</td></tr>
 					<tr><td class="k">设备联网</td><td>保持 Runner 主动连出的 WebSocket，不组 VPN；暴露本机服务时做经这条连接的端口转发；设备间大流量阶段二再考虑 iroh 或 tsnet</td><td>本页</td></tr>
