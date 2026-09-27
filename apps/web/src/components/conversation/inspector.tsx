@@ -11,7 +11,9 @@ import {
 	agentRoleLine,
 	conversationAvatar,
 	frontAgentIds,
+	humanPair,
 	type PrincipalMap,
+	STATUS_LABEL,
 } from "@/lib/principals";
 import { addMember, useStore } from "@/lib/store";
 
@@ -19,6 +21,13 @@ function useFronts(): ReadonlySet<string> {
 	const me = useStore((s) => s.me);
 	const directory = useStore((s) => s.directory);
 	return frontAgentIds(me, directory);
+}
+
+/** 人的副标题：@handle，不在线时带状态。 */
+function personLine(p: Principal): string {
+	return p.status && p.status !== "available"
+		? `@${p.handle} · ${STATUS_LABEL[p.status]}`
+		: `@${p.handle}`;
 }
 
 /** 我在最前，其后是人，再后是代理；同类按显示名。 */
@@ -42,9 +51,10 @@ function MemberRow({
 	meId: string;
 	fronts: ReadonlySet<string>;
 }) {
+	const current = map.get(p.id) ?? p;
 	return (
 		<li className="flex items-center gap-3 px-4 py-2">
-			<Avatar principal={p} size={40} />
+			<Avatar principal={current} size={40} showStatus />
 			<span className="flex min-w-0 flex-1 flex-col">
 				{p.kind === "agent" ? (
 					<AgentName agent={p} map={map} meId={meId} />
@@ -59,7 +69,7 @@ function MemberRow({
 				<span className="truncate text-12 text-muted">
 					{p.kind === "agent"
 						? agentRoleLine(p, map, meId, fronts)
-						: `@${p.handle}`}
+						: personLine(current)}
 				</span>
 			</span>
 		</li>
@@ -78,20 +88,21 @@ function Profile({
 	meId: string;
 	fronts: ReadonlySet<string>;
 }) {
+	const current = map.get(p.id) ?? p;
 	return (
 		<div className="flex flex-col items-center gap-2 border-b border-line px-4 pt-6 pb-5 text-center">
-			<Avatar principal={p} size={72} />
+			<Avatar principal={current} size={72} showStatus />
 			<p className="mt-1 text-16 font-semibold text-ink">{p.displayName}</p>
 			<p className="text-12 text-muted">
 				{p.kind === "agent"
 					? agentRoleLine(p, map, meId, fronts)
-					: `@${p.handle}`}
+					: personLine(current)}
 			</p>
 		</div>
 	);
 }
 
-/** 可拉进群的人：同事、同事的幕僚长、我自己的代理（他人的专员不可达）。 */
+/** 可拉进群的人：同事、同事的分身、我自己的代理（他人的助手不可达）。 */
 function useCandidates(exclude: ReadonlySet<string>): Principal[] {
 	const me = useStore((s) => s.me);
 	const directory = useStore((s) => s.directory);
@@ -164,7 +175,7 @@ function AddMemberPanel({
 	);
 }
 
-/** 检查器：私聊对象的名片、会话成员；群聊可以加人。 */
+/** 检查器：私聊对象的名片、会话成员（真人私聊里双方分身单列一栏）；群聊可以加人。 */
 export function Inspector({
 	item,
 	map,
@@ -182,6 +193,13 @@ export function Inspector({
 		item.conversation.kind === "dm" ? conversationAvatar(item, meId) : null;
 	const memberIds = new Set(item.members.map((m) => m.id));
 	const isGroup = item.conversation.kind === "group";
+	const pair = humanPair(item, meId);
+	const people = pair
+		? item.members.filter((p) => p.kind === "human")
+		: item.members;
+	const twins = pair
+		? [pair.peerTwin, pair.myTwin].filter((p): p is Principal => p !== null)
+		: [];
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<header className="flex h-header shrink-0 items-center justify-between gap-2 border-b border-line px-4">
@@ -195,14 +213,35 @@ export function Inspector({
 					<Profile p={profile} map={map} meId={meId} fronts={fronts} />
 				) : null}
 				<h3 className="px-4 pt-4 pb-1 text-13 font-semibold text-ink">
-					成员{" "}
-					<span className="font-normal text-muted">{item.members.length}</span>
+					成员 <span className="font-normal text-muted">{people.length}</span>
 				</h3>
 				<ul className="pb-2">
-					{sortMembers(item.members, meId).map((p) => (
+					{sortMembers(people, meId).map((p) => (
 						<MemberRow key={p.id} p={p} map={map} meId={meId} fronts={fronts} />
 					))}
 				</ul>
+				{twins.length > 0 ? (
+					<>
+						<h3 className="px-4 pt-2 pb-1 text-13 font-semibold text-ink">
+							分身{" "}
+							<span className="font-normal text-muted">{twins.length}</span>
+						</h3>
+						<p className="px-4 pb-1 text-12 text-muted">
+							平时不开口；被点名、切到“问分身”或本人忙碌时替本人回答。
+						</p>
+						<ul className="pb-2">
+							{twins.map((p) => (
+								<MemberRow
+									key={p.id}
+									p={p}
+									map={map}
+									meId={meId}
+									fronts={fronts}
+								/>
+							))}
+						</ul>
+					</>
+				) : null}
 				{isGroup && !adding ? (
 					<div className="px-4 pb-4">
 						<Button onClick={() => setAdding(true)}>

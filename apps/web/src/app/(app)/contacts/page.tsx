@@ -1,13 +1,17 @@
 "use client";
 
-import type { Principal } from "@orgos/protocol";
+import {
+	AGENT_ROLE_DUTY,
+	AGENT_ROLE_LABEL,
+	type Principal,
+} from "@orgos/protocol";
 import { type ReactNode, useState } from "react";
-import { Mascot } from "@/components/mascot";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
 import { useOpenDm } from "@/lib/hooks";
+import { STATUS_LABEL } from "@/lib/principals";
 import { useStore } from "@/lib/store";
 
 function Section({
@@ -37,7 +41,7 @@ function Section({
 function Identity({ p, note }: { p: Principal; note: string }) {
 	return (
 		<span className="flex min-w-0 flex-1 items-center gap-3">
-			<Avatar principal={p} size={40} />
+			<Avatar principal={p} size={40} showStatus />
 			<span className="flex min-w-0 flex-col">
 				<span className="truncate text-14 font-semibold text-ink">
 					{p.displayName}
@@ -48,7 +52,10 @@ function Identity({ p, note }: { p: Principal; note: string }) {
 	);
 }
 
-/** 通讯录：我的代理组、本组织的同事及其幕僚长；可发私聊，或去找对方的幕僚长。 */
+/**
+ * 通讯录：我的代理组、本组织的同事。和同事的私聊里自动带着双方的分身，
+ * 想让对方的分身回答就在私聊里切到"问分身"。
+ */
 export default function ContactsPage() {
 	const me = useStore((s) => s.me);
 	const directory = useStore((s) => s.directory);
@@ -59,7 +66,7 @@ export default function ContactsPage() {
 	const meId = me.principal.id;
 	const others = directory.filter((p) => p.principal.id !== meId);
 	const inviteCode = me.tenant.inviteCode;
-	const chief = me.agents.find((a) => a.role === "front");
+	const twin = me.agents.find((a) => a.role === "front");
 	const busy = (id: string) => pendingId === id;
 	const copy = () => {
 		if (!inviteCode) return;
@@ -89,11 +96,7 @@ export default function ContactsPage() {
 								>
 									<Identity
 										p={a.principal}
-										note={
-											a.role === "front"
-												? "幕僚长 · 对外代表你"
-												: "专员 · 只替你办事"
-										}
+										note={`${AGENT_ROLE_LABEL[a.role]} · ${AGENT_ROLE_DUTY[a.role]}`}
 									/>
 									<Button
 										disabled={busy(a.principal.id)}
@@ -122,10 +125,10 @@ export default function ContactsPage() {
 									mascotId="contacts-empty"
 									text="组织里还没有其他同事。"
 									action={
-										chief
+										twin
 											? {
-													label: `先和${chief.principal.displayName}聊聊`,
-													onClick: () => void open(chief.principal.id),
+													label: `先和${twin.principal.displayName}聊聊`,
+													onClick: () => void open(twin.principal.id),
 												}
 											: undefined
 									}
@@ -133,29 +136,25 @@ export default function ContactsPage() {
 							)
 						) : (
 							<ul className="divide-y divide-line">
-								{others.map(({ principal, front }) => (
+								{others.map(({ principal }) => (
 									<li
 										key={principal.id}
-										className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center"
+										className="flex items-center gap-3 px-4 py-3"
 									>
-										<Identity p={principal} note={`@${principal.handle}`} />
-										<span className="flex shrink-0 items-center gap-2 pl-[52px] sm:pl-0">
-											<Button
-												disabled={busy(principal.id)}
-												onClick={() => void open(principal.id)}
-											>
-												{busy(principal.id) ? "打开中…" : "发消息"}
-											</Button>
-											<Button
-												title={front.displayName}
-												disabled={busy(front.id)}
-												onClick={() => void open(front.id)}
-												className="pl-1.5"
-											>
-												<Mascot id={front.id} size={24} />
-												{busy(front.id) ? "打开中…" : "找其幕僚长"}
-											</Button>
-										</span>
+										<Identity
+											p={principal}
+											note={
+												principal.status && principal.status !== "available"
+													? `@${principal.handle} · ${STATUS_LABEL[principal.status]}，分身会先回复`
+													: `@${principal.handle}`
+											}
+										/>
+										<Button
+											disabled={busy(principal.id)}
+											onClick={() => void open(principal.id)}
+										>
+											{busy(principal.id) ? "打开中…" : "发消息"}
+										</Button>
 									</li>
 								))}
 							</ul>

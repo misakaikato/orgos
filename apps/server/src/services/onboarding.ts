@@ -1,5 +1,11 @@
 import type { OnboardingRequest, OnboardingResponse } from "@orgos/protocol";
-import { ERROR_CODES } from "@orgos/protocol";
+import {
+	defaultAssistantHandle,
+	defaultAssistantName,
+	ERROR_CODES,
+	twinHandle,
+	twinName,
+} from "@orgos/protocol";
 import { db } from "@/db";
 import { members, principals } from "@/db/schema";
 import {
@@ -28,7 +34,7 @@ export function normalizeInviteCode(code: string): string {
 }
 
 /**
- * 注册后的入驻：一个事务内建（或加入）租户、成员、本人主体与两个代理（幕僚长、执行助理）。
+ * 注册后的入驻：一个事务内建（或加入）租户、成员、本人主体与两个代理（分身、执行助手）。
  * 已有成员身份 → 409 ALREADY_ONBOARDED；handle 冲突 → 409 HANDLE_TAKEN；邀请码无效 → 400。
  */
 export async function onboard(
@@ -63,24 +69,24 @@ export async function onboard(
 				handle: req.handle,
 				displayName: req.displayName,
 			});
-			const chief = await createAgent(s, {
+			const twin = await createAgent(s, {
 				ownerId: human.id,
 				role: "front",
-				handle: `${req.handle}-chief`,
-				displayName: `${req.displayName}的幕僚长`,
-				description: `代表${req.displayName}对外沟通：回答同事的问题，把具体事务分派给组内专员，超出授权的事转给${req.displayName}本人。`,
+				handle: twinHandle(req.handle),
+				displayName: twinName(req.displayName),
+				description: `代表${req.displayName}和同事沟通：${req.displayName}忙碌、离开或被点名时替${req.displayName}回答，只用${req.displayName}共享的资料，拿不准的转给${req.displayName}本人。`,
 			});
 			const ops = await createAgent(s, {
 				ownerId: human.id,
 				role: "specialist",
-				handle: `${req.handle}-ops`,
-				displayName: `${req.displayName}的执行助理`,
-				description: `执行${req.displayName}交办的具体事务；绑定设备后可在${req.displayName}的电脑上读写文件、执行命令。`,
+				handle: defaultAssistantHandle(req.handle),
+				displayName: defaultAssistantName(req.displayName),
+				description: `替${req.displayName}干具体的活：整理资料、跟进待办；绑定设备后可在${req.displayName}的电脑上读写文件、执行命令，有风险的操作先请${req.displayName}批准。`,
 			});
 			return {
 				tenant: toTenant(tenant, isOwner),
 				principal: toPrincipal(human),
-				agents: [chief, ops],
+				agents: [twin, ops],
 			};
 		});
 	} catch (e) {

@@ -2,6 +2,7 @@
  * 浏览器 WS 帧（仅服务端 → 浏览器）。发送一律走 REST。
  */
 import { z } from "zod";
+import { PRINCIPAL_STATUSES } from "./entities";
 import { EventSchema } from "./events";
 
 export const BROWSER_PING_INTERVAL_MS = 20_000;
@@ -15,6 +16,12 @@ export const WS_CLOSE = {
 export const BrowserFrameSchema = z.discriminatedUnion("t", [
 	z.object({ t: z.literal("event"), event: EventSchema }),
 	z.object({ t: z.literal("ping") }),
+	/** 同租户某人的在线状态变了。 */
+	z.object({
+		t: z.literal("presence"),
+		principalId: z.uuid(),
+		status: z.enum(PRINCIPAL_STATUSES),
+	}),
 ]);
 export type BrowserFrame = z.infer<typeof BrowserFrameSchema>;
 

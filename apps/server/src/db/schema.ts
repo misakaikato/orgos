@@ -12,6 +12,7 @@ import {
 	MEMBER_ROLES,
 	NOTE_VISIBILITIES,
 	PRINCIPAL_KINDS,
+	PRINCIPAL_STATUSES,
 	RUNNER_STATUSES,
 	WORK_ITEM_KINDS,
 	WORK_ITEM_STATUSES,
@@ -78,6 +79,10 @@ export const principals = pgTable(
 		ownerId: uuid("owner_id").references((): PgColumn => principals.id),
 		handle: text("handle").notNull(),
 		displayName: text("display_name").notNull(),
+		/** 仅人有意义；代理行保持默认值。 */
+		status: text("status", { enum: PRINCIPAL_STATUSES })
+			.notNull()
+			.default("available"),
 		createdAt: createdAt(),
 	},
 	(t) => [

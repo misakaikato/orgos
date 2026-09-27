@@ -1,6 +1,6 @@
 "use client";
 
-import type { NEGOTIATION_STATUSES, Principal } from "@orgos/protocol";
+import type { Principal } from "@orgos/protocol";
 import { type ReactNode, useState } from "react";
 import { IconCheck, IconChevronRight, IconClose } from "@/components/icons";
 import { mascotInkClass } from "@/components/mascot";
@@ -14,17 +14,9 @@ import {
 	type ActionEvent,
 	type BubbleSide,
 	type MessageEvent,
-	type StepEvent,
 	type SystemEvent,
 	splitMentions,
 } from "@/lib/thread";
-
-const STEP_LABEL: Record<(typeof NEGOTIATION_STATUSES)[number], string> = {
-	continue: "提议",
-	agree: "同意",
-	reject: "拒绝",
-	need_owner: "请本人定",
-};
 
 /** 找不到主体时的占位（已离开或不可见的成员）。 */
 export function fallbackPrincipal(
@@ -170,7 +162,7 @@ export function Bubble({
 	handles,
 	isGroup,
 }: {
-	event: MessageEvent | StepEvent;
+	event: MessageEvent;
 	side: BubbleSide;
 	continued: boolean;
 	actions: readonly ActionEvent[];
@@ -180,10 +172,7 @@ export function Bubble({
 	isGroup: boolean;
 }) {
 	const gap = continued ? "mt-0.5" : "mt-3";
-	const text =
-		event.type === "message.posted"
-			? event.payload.text
-			: event.payload.message;
+	const text = event.payload.text;
 
 	if (side === "me") {
 		return (
@@ -231,22 +220,7 @@ export function Bubble({
 							agent ? "border border-line bg-bg" : "bg-surface-2",
 						)}
 					>
-						{event.type === "negotiation.step" ? (
-							<div className="mb-1.5 flex items-center gap-2">
-								<Tag
-									tone={
-										event.payload.status === "reject" ? "danger" : "neutral"
-									}
-								>
-									{`第 ${event.payload.step} 步 · ${STEP_LABEL[event.payload.status]}`}
-								</Tag>
-							</div>
-						) : null}
 						<MessageText text={text} handles={handles} />
-						{event.type === "negotiation.step" &&
-						event.payload.proposal !== undefined ? (
-							<ProposalBlock proposal={event.payload.proposal} />
-						) : null}
 					</div>
 					<HoverTime at={event.createdAt} />
 				</div>

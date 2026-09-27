@@ -12,6 +12,7 @@ import { ERROR_CODES } from "@orgos/protocol";
 import { and, asc, count, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
+import { isHumanPairDm, type TriggerConversation } from "@/agent/triggers";
 import {
 	agents,
 	conversationMembers,
@@ -22,6 +23,7 @@ import {
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
 import { toConversation, toEvent, toPrincipal } from "@/lib/serialize";
+import { requireTwinOf } from "@/services/agents";
 import { transactWithEvents } from "@/services/events";
 
 type ConversationRow = typeof conversations.$inferSelect;
@@ -63,10 +65,29 @@ export async function requireConversation(
 }
 
 /**
- * 我能否把 `targetId` 拉进会话：同租户的任何人、我自己的任何代理、他人的幕僚长。
- * 不存在或跨租户 → 404；是我自己 → 400；他人的专员 → 400 AGENT_NOT_REACHABLE。
+ * 我能否把 `targetId` 拉进群：同租户的任何人、我自己的任何代理、他人的分身。
+ * 不存在或跨租户 → 404；是我自己 → 400；他人的助手 → 400 AGENT_NOT_REACHABLE。
  */
-async function requireReachable(
+async function requireGroupReachable(
+	s: Scoped,
+	me: PrincipalRow,
+	targetId: string,
+): Promise<PrincipalRow> {
+	const target = await requireSomeoneElse(s, me, targetId);
+	if (target.kind === "agent" && target.ownerId !== me.id) {
+		const agent = await s.first(agents, eq(agents.principalId, target.id));
+		if (agent?.role !== "front") {
+			throw new AppError(
+				400,
+				ERROR_CODES.AGENT_NOT_REACHABLE,
+				"别人的助手只替本人办事，只能拉入对方的分身",
+			);
+		}
+	}
+	return target;
+}
+
+async function requireSomeoneElse(
 	s: Scoped,
 	me: PrincipalRow,
 	targetId: string,
@@ -74,92 +95,155 @@ async function requireReachable(
 	const target = await s.first(principals, eq(principals.id, targetId));
 	if (!target) throw notFound("找不到此人");
 	if (target.id === me.id) throw badRequest("不能和自己建会话");
-	if (target.kind === "agent" && target.ownerId !== me.id) {
-		const agent = await s.first(agents, eq(agents.principalId, target.id));
-		if (agent?.role !== "front") {
-			throw new AppError(
-				400,
-				ERROR_CODES.AGENT_NOT_REACHABLE,
-				"只能找对方的幕僚长",
-			);
-		}
-	}
 	return target;
 }
 
 /**
- * 与某主体的私聊；同一对主体已有私聊时返回已有的（created=false）。
- * 找别人的幕僚长时，幕僚长的本人以 observer 身份加入：能看、能插话，但不算私聊的一方。
+ * 私聊的成员：和同事私聊时是两人加双方的分身；和自己的代理私聊时是我与该代理。
+ * 别人的任何代理不能单独私聊 → 400 AGENT_NOT_REACHABLE。
+ */
+async function dmMembersWith(
+	s: Scoped,
+	me: PrincipalRow,
+	withPrincipalId: string,
+): Promise<{ target: PrincipalRow; memberIds: string[] }> {
+	const target = await requireSomeoneElse(s, me, withPrincipalId);
+	if (target.kind === "agent") {
+		if (target.ownerId !== me.id) {
+			throw new AppError(
+				400,
+				ERROR_CODES.AGENT_NOT_REACHABLE,
+				"找别人的分身，请在与他本人的私聊里点名或切到“问分身”",
+			);
+		}
+		return { target, memberIds: [me.id, target.id] };
+	}
+	const [myTwin, theirTwin] = await Promise.all([
+		requireTwinOf(s, me.id),
+		requireTwinOf(s, target.id),
+	]);
+	return { target, memberIds: [me.id, target.id, myTwin.id, theirTwin.id] };
+}
+
+/**
+ * 与某主体的私聊；已有时返回已有的（created=false）。
+ * 两个真人的私聊在同一事务里加入双方的分身。
  */
 export async function openDm(
 	s: Scoped,
 	me: PrincipalRow,
 	withPrincipalId: string,
 ): Promise<{ conversation: Conversation; created: boolean }> {
-	const target = await requireReachable(s, me, withPrincipalId);
-	const observerId =
-		target.kind === "agent" && target.ownerId !== me.id ? target.ownerId : null;
+	const { target, memberIds } = await dmMembersWith(s, me, withPrincipalId);
 	return s.transaction(async (tx) => {
 		// 同一对主体的建私聊串行化，防止并发请求各建一个。
 		const pair = [me.id, target.id].sort().join(":");
 		await tx.executor.execute(
 			sql`select pg_advisory_xact_lock(hashtext(${`dm:${tx.tenantId}:${pair}`}))`,
 		);
-		const other = alias(conversationMembers, "other_member");
-		const [existing] = await tx.executor
-			.select({ conversation: conversations })
-			.from(conversationMembers)
-			.innerJoin(
-				other,
-				eq(other.conversationId, conversationMembers.conversationId),
-			)
-			.innerJoin(
-				conversations,
-				eq(conversations.id, conversationMembers.conversationId),
-			)
-			.where(
-				and(
-					tx.where(
-						conversationMembers,
-						eq(conversationMembers.principalId, me.id),
-						eq(conversationMembers.role, "member"),
-					),
-					tx.where(
-						other,
-						eq(other.principalId, target.id),
-						eq(other.role, "member"),
-					),
-					tx.where(conversations, eq(conversations.kind, "dm")),
-				),
-			)
-			.limit(1);
+		const existing = await findDm(tx, memberIds);
 		if (existing) {
-			return {
-				conversation: toConversation(existing.conversation),
-				created: false,
-			};
+			return { conversation: toConversation(existing), created: false };
 		}
 		const conversation = await tx.insert(conversations, {
 			kind: "dm",
 			title: null,
 			createdBy: me.id,
 		});
-		for (const principalId of [me.id, target.id]) {
+		for (const principalId of memberIds) {
 			await tx.insert(conversationMembers, {
 				conversationId: conversation.id,
 				principalId,
 				role: "member",
 			});
 		}
-		if (observerId) {
-			await tx.insert(conversationMembers, {
-				conversationId: conversation.id,
-				principalId: observerId,
-				role: "observer",
-			});
-		}
 		return { conversation: toConversation(conversation), created: true };
 	});
+}
+
+/** 成员恰好是 `memberIds`（前两位是私聊的双方）的私聊。 */
+async function findDm(
+	tx: Scoped,
+	memberIds: string[],
+): Promise<ConversationRow | undefined> {
+	const [a, b] = memberIds;
+	if (!a || !b) return undefined;
+	const other = alias(conversationMembers, "other_member");
+	const candidates = await tx.executor
+		.select({ conversation: conversations })
+		.from(conversationMembers)
+		.innerJoin(
+			other,
+			eq(other.conversationId, conversationMembers.conversationId),
+		)
+		.innerJoin(
+			conversations,
+			eq(conversations.id, conversationMembers.conversationId),
+		)
+		.where(
+			and(
+				tx.where(
+					conversationMembers,
+					eq(conversationMembers.principalId, a),
+					eq(conversationMembers.role, "member"),
+				),
+				tx.where(other, eq(other.principalId, b), eq(other.role, "member")),
+				tx.where(conversations, eq(conversations.kind, "dm")),
+			),
+		);
+	if (candidates.length === 0) return undefined;
+	const rows = await tx.select(
+		conversationMembers,
+		inArray(
+			conversationMembers.conversationId,
+			candidates.map((c) => c.conversation.id),
+		),
+	);
+	const wanted = [...memberIds].sort().join(",");
+	return candidates.find(
+		({ conversation }) =>
+			rows
+				.filter((r) => r.conversationId === conversation.id)
+				.map((r) => r.principalId)
+				.sort()
+				.join(",") === wanted,
+	)?.conversation;
+}
+
+/** 会话成员连同判定"谁该回应"所需的身份信息。 */
+export async function triggerConversationOf(
+	s: Scoped,
+	conversation: ConversationRow,
+): Promise<TriggerConversation> {
+	const rows = await s.executor
+		.select({
+			principal: principals,
+			role: conversationMembers.role,
+			agentRole: agents.role,
+		})
+		.from(conversationMembers)
+		.innerJoin(principals, eq(principals.id, conversationMembers.principalId))
+		.leftJoin(agents, eq(agents.principalId, principals.id))
+		.where(
+			and(
+				s.where(
+					conversationMembers,
+					eq(conversationMembers.conversationId, conversation.id),
+				),
+				s.where(principals),
+			),
+		);
+	return {
+		kind: conversation.kind,
+		members: rows.map((r) => ({
+			id: r.principal.id,
+			kind: r.principal.kind,
+			ownerId: r.principal.ownerId,
+			agentRole: r.agentRole,
+			status: r.principal.kind === "human" ? r.principal.status : null,
+			role: r.role,
+		})),
+	};
 }
 
 /**
@@ -176,7 +260,7 @@ export async function createGroup(
 	const invited: PrincipalRow[] = [];
 	for (const id of new Set(memberIds)) {
 		if (id === me.id) continue;
-		invited.push(await requireReachable(s, me, id));
+		invited.push(await requireGroupReachable(s, me, id));
 	}
 	return transactWithEvents(s, async (tx, append) => {
 		const created = await tx.insert(conversations, {
@@ -219,7 +303,7 @@ export async function addMember(
 ): Promise<void> {
 	const { conversation } = await requireConversation(s, conversationId, me.id);
 	if (conversation.kind !== "group") throw badRequest("只有群聊可以加成员");
-	const target = await requireReachable(s, me, principalId);
+	const target = await requireGroupReachable(s, me, principalId);
 	const already = await s.first(
 		conversationMembers,
 		eq(conversationMembers.conversationId, conversation.id),
@@ -260,6 +344,12 @@ export async function postAs(
 		actor.id,
 	);
 	const mentions = [...new Set(req.mentions ?? [])];
+	if (
+		req.askTwin &&
+		!isHumanPairDm(await triggerConversationOf(s, conversation))
+	) {
+		throw badRequest("“问分身”只能在两个人的私聊里使用");
+	}
 	if (mentions.length > 0) {
 		const rows = await s.select(
 			conversationMembers,
@@ -276,7 +366,11 @@ export async function postAs(
 			actorId: actor.id,
 			onBehalfOfId: opts.onBehalfOfId ?? null,
 			type: "message.posted",
-			payload: { text: req.text, mentions },
+			payload: {
+				text: req.text,
+				mentions,
+				...(req.askTwin ? { askTwin: true } : {}),
+			},
 			at: opts.at,
 		}),
 	);
@@ -338,7 +432,10 @@ export async function markRead(
 		);
 }
 
-/** 我参与的全部会话（含 observer），按最近活动倒序。 */
+/**
+ * 我参与的会话，按最近活动倒序。协商会话不在列表里：它以卡片出现在两位本人的私聊中，
+ * 其事件经 `listEvents` 读取。
+ */
 export async function listConversations(
 	s: Scoped,
 	me: PrincipalRow,
@@ -348,12 +445,16 @@ export async function listConversations(
 		eq(conversationMembers.principalId, me.id),
 	);
 	if (mine.length === 0) return [];
-	const ids = mine.map((m) => m.conversationId);
-
 	const convRows = await s.select(
 		conversations,
-		inArray(conversations.id, ids),
+		inArray(
+			conversations.id,
+			mine.map((m) => m.conversationId),
+		),
+		ne(conversations.kind, "negotiation"),
 	);
+	if (convRows.length === 0) return [];
+	const ids = convRows.map((c) => c.id);
 	const memberRows = await s.executor
 		.select({
 			conversationId: conversationMembers.conversationId,

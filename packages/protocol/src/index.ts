@@ -3,5 +3,6 @@
  */
 export * from "./entities";
 export * from "./events";
+export * from "./naming";
 export * from "./rest";
 export * from "./ws";

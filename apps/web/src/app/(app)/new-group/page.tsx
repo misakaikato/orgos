@@ -1,6 +1,10 @@
 "use client";
 
-import { GROUP_TITLE_MAX_LENGTH, type Principal } from "@orgos/protocol";
+import {
+	AGENT_ROLE_LABEL,
+	GROUP_TITLE_MAX_LENGTH,
+	type Principal,
+} from "@orgos/protocol";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { IconCheck } from "@/components/icons";
@@ -58,7 +62,7 @@ function OptionRow({
 	);
 }
 
-/** 新建群聊：群名 + 从同事、同事的幕僚长、我的代理里勾选成员。 */
+/** 新建群聊：群名 + 从同事、同事的分身、我的代理里勾选成员。 */
 export default function NewGroupPage() {
 	const router = useRouter();
 	const me = useStore((s) => s.me);
@@ -77,7 +81,7 @@ export default function NewGroupPage() {
 			title: "我的代理组",
 			options: me.agents.map((a) => ({
 				principal: a.principal,
-				note: a.role === "front" ? "幕僚长" : "专员",
+				note: AGENT_ROLE_LABEL[a.role],
 			})),
 		},
 		{
@@ -85,7 +89,7 @@ export default function NewGroupPage() {
 			options: colleagues.map((p) => ({ principal: p.principal, note: "人" })),
 		},
 		{
-			title: "同事的幕僚长",
+			title: `同事的${AGENT_ROLE_LABEL.front}`,
 			options: colleagues.map((p) => ({
 				principal: p.front,
 				note: `代${p.principal.displayName}`,

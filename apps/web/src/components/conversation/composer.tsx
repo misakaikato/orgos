@@ -9,11 +9,16 @@ import {
 	useState,
 } from "react";
 import { IconClip, IconPlus, IconSend } from "@/components/icons";
-import { Avatar } from "@/components/ui/avatar";
+import { Mascot } from "@/components/mascot";
+import { Avatar, PersonAvatar } from "@/components/ui/avatar";
 import { Tag } from "@/components/ui/badge";
 import { MenuItem, Popover } from "@/components/ui/popover";
 import { cx } from "@/lib/cx";
-import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
+import {
+	onBehalfLabel,
+	type PrincipalMap,
+	unavailableHint,
+} from "@/lib/principals";
 import { extractMentions } from "@/lib/thread";
 
 /** 15px × 1.6 行高 × 8 行。 */
@@ -51,9 +56,50 @@ function grouped(list: readonly Principal[]): {
 	].filter((g) => g.items.length > 0);
 }
 
+/** 真人私聊里的对方与其分身：输入框据此显示"问分身"开关与忙碌提示。 */
+export type TwinTarget = { peer: Principal; peerTwin: Principal };
+
+/**
+ * "问分身"开关胶囊（DESIGN.md §4 与真人的私聊）：关闭时对方头像 + "发给X"，
+ * 打开时对方分身的团子 + "问X的分身"。
+ */
+function AskTwinToggle({
+	target,
+	on,
+	onToggle,
+}: {
+	target: TwinTarget;
+	on: boolean;
+	onToggle: () => void;
+}) {
+	const name = target.peer.displayName;
+	return (
+		<button
+			type="button"
+			aria-pressed={on}
+			title={on ? `这条消息请${name}的分身回答` : `这条消息直接发给${name}`}
+			onClick={onToggle}
+			className={cx(
+				"inline-flex h-8 max-w-[45%] shrink-0 items-center gap-1.5 rounded-pill pr-3 pl-1 text-13 transition-colors duration-150",
+				on
+					? "bg-accent-soft font-medium text-accent"
+					: "bg-surface-2 text-ink hover:bg-line",
+			)}
+		>
+			{on ? (
+				<Mascot id={target.peerTwin.id} size={24} />
+			) : (
+				<PersonAvatar principal={target.peer} size={24} />
+			)}
+			<span className="truncate">{on ? `问${name}的分身` : `发给${name}`}</span>
+		</button>
+	);
+}
+
 /**
  * 浮起的胶囊输入框（DESIGN.md §4）：左"+"、右发送；Enter 发送、Shift+Enter 换行
  * （输入法组字中的 Enter 不发送）；多行自适应最高 8 行；`@` 弹出成员补全（人与代理分组）。
+ * 真人私聊里多一个"问分身"开关（发送后复位），对方忙碌 / 离开时上方有一行提示。
  */
 export function Composer({
 	members,
@@ -61,12 +107,14 @@ export function Composer({
 	map,
 	onSend,
 	placeholder,
+	twinTarget,
 }: {
 	members: readonly Principal[];
 	meId: string;
 	map: PrincipalMap;
-	onSend: (text: string, mentions: string[]) => Promise<void>;
+	onSend: (text: string, mentions: string[], askTwin: boolean) => Promise<void>;
 	placeholder: string;
+	twinTarget?: TwinTarget | null;
 }) {
 	const area = useRef<HTMLTextAreaElement>(null);
 	const [text, setText] = useState("");
@@ -76,6 +124,8 @@ export function Composer({
 	const [highlight, setHighlight] = useState(0);
 	const [sending, setSending] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [askTwin, setAskTwin] = useState(false);
+	const hint = twinTarget ? unavailableHint(twinTarget.peer) : null;
 
 	const groups = mention
 		? grouped(
@@ -130,9 +180,14 @@ export function Composer({
 		setSending(true);
 		setError(null);
 		try {
-			await onSend(text, extractMentions(text, members, meId));
+			await onSend(
+				text,
+				extractMentions(text, members, meId),
+				Boolean(twinTarget) && askTwin,
+			);
 			setText("");
 			setMention(null);
+			setAskTwin(false);
 		} catch (e) {
 			setError(e instanceof Error ? e.message : "发送失败");
 		} finally {
@@ -224,6 +279,10 @@ export function Composer({
 				<p role="alert" className="mb-2 px-2 text-12 text-danger">
 					发送失败：{error}
 				</p>
+			) : hint ? (
+				<p role="status" className="mb-2 px-2 text-12 text-muted">
+					{hint}
+				</p>
 			) : null}
 			<div
 				className={cx(
@@ -253,11 +312,25 @@ export function Composer({
 						附件即将开放
 					</MenuItem>
 				</Popover>
+				{twinTarget ? (
+					<AskTwinToggle
+						target={twinTarget}
+						on={askTwin}
+						onToggle={() => {
+							setAskTwin((v) => !v);
+							area.current?.focus();
+						}}
+					/>
+				) : null}
 				<textarea
 					ref={area}
 					rows={1}
 					value={text}
-					placeholder={placeholder}
+					placeholder={
+						twinTarget && askTwin
+							? `问${twinTarget.peer.displayName}的分身`
+							: placeholder
+					}
 					aria-label="消息"
 					onChange={(e) => {
 						setText(e.target.value);

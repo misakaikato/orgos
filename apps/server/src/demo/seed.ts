@@ -5,10 +5,12 @@
  * 先删除两个演示租户（业务表经外键级联）与演示用户（session / account 级联），再全部重建。
  * 业务数据一律经服务函数写入，与线上路径一致；不影响其他租户。
  */
-import type {
-	DemoCounts,
-	DemoPerson,
-	DevSessionResponse,
+import {
+	type DemoCounts,
+	type DemoPerson,
+	type DevSessionResponse,
+	defaultAssistantHandle,
+	twinHandle,
 } from "@orgos/protocol";
 import { APIError } from "better-auth/api";
 import { count, eq } from "drizzle-orm";
@@ -42,6 +44,7 @@ import { toPrincipal } from "@/lib/serialize";
 import { updateAgentProfile } from "@/services/agents";
 import { createNote } from "@/services/notes";
 import { onboard } from "@/services/onboarding";
+import { setStatus } from "@/services/presence";
 
 /** 演示账号的统一密码：仅限本地开发库使用。 */
 export const DEMO_PASSWORD = "orgos-demo-pass";
@@ -50,7 +53,7 @@ export const DEMO_PASSWORD = "orgos-demo-pass";
 export type DemoCast = {
 	s: Scoped;
 	human: (handle: string) => PrincipalRow;
-	chief: (handle: string) => PrincipalRow;
+	twin: (handle: string) => PrincipalRow;
 	ops: (handle: string) => PrincipalRow;
 };
 
@@ -112,8 +115,8 @@ function castOf(s: Scoped, rows: PrincipalRow[]): DemoCast {
 	return {
 		s,
 		human: (h) => get(h),
-		chief: (h) => get(`${h}-chief`),
-		ops: (h) => get(`${h}-ops`),
+		twin: (h) => get(twinHandle(h)),
+		ops: (h) => get(defaultAssistantHandle(h)),
 	};
 }
 
@@ -142,11 +145,11 @@ async function buildTenant(
 		);
 		tenantId ??= res.tenant.id;
 		inviteCode ??= res.tenant.inviteCode;
-		const [chief, ops] = res.agents;
-		if (!chief || !ops) throw new Error("入驻未返回两个代理");
+		const [twin, ops] = res.agents;
+		if (!twin || !ops) throw new Error("入驻未返回两个代理");
 		const s = scoped(res.tenant.id);
-		await updateAgentProfile(s, chief.principal.id, {
-			description: person.chiefDescription,
+		await updateAgentProfile(s, twin.principal.id, {
+			description: person.twinDescription,
 			delegationPolicy: person.delegationPolicy,
 		});
 		await updateAgentProfile(s, ops.principal.id, {
@@ -164,7 +167,13 @@ async function buildTenant(
 	}
 	if (!tenantId) throw new Error(`${spec.orgName} 没有成员`);
 	const s = scoped(tenantId);
-	return castOf(s, await s.select(principals));
+	const cast = castOf(s, await s.select(principals));
+	for (const person of spec.people) {
+		if (person.status && person.status !== "available") {
+			await setStatus(s, cast.human(person.handle), person.status);
+		}
+	}
+	return cast;
 }
 
 /** 星河科技的数据量（幂等性检查与重置结果展示用）。 */

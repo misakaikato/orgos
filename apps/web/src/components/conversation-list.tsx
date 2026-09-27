@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { IconPlus, IconSearch } from "@/components/icons";
 import { Avatar, GroupAvatar } from "@/components/ui/avatar";
-import { Badge, Tag } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { type EmptyAction, EmptyState } from "@/components/ui/states";
 import { appHref } from "@/lib/auth-mode";
 import { cx } from "@/lib/cx";
@@ -15,7 +15,7 @@ import { formatListTime } from "@/lib/format";
 import { useOpenDm, usePrincipalMap } from "@/lib/hooks";
 import {
 	conversationAvatar,
-	conversationFacet,
+	conversationFilter,
 	conversationTitle,
 	type ListFilter,
 	type PrincipalMap,
@@ -32,33 +32,41 @@ type Row = {
 	item: ConversationSummary;
 	title: string;
 	preview: string;
-	facet: ReturnType<typeof conversationFacet>;
+	filter: Exclude<ListFilter, "all">;
 	pending: number;
 };
 
 function ConversationRow({
 	row,
+	map,
 	meId,
 	active,
 }: {
 	row: Row;
+	map: PrincipalMap;
 	meId: string;
 	active: boolean;
 }) {
-	const { item, title, preview, facet, pending } = row;
-	const avatar = conversationAvatar(item, meId);
+	const { item, title, preview, pending } = row;
+	const peer = conversationAvatar(item, meId);
+	const avatar = peer ? (map.get(peer.id) ?? peer) : null;
 	const time = item.lastEvent?.createdAt ?? item.conversation.createdAt;
 	return (
 		<Link
 			href={appHref(`/c/${item.conversation.id}`)}
 			aria-current={active ? "page" : undefined}
 			className={cx(
-				"mx-2 flex h-row items-center gap-3 rounded-row px-2 transition-colors duration-150",
+				"group mx-2 flex h-row items-center gap-3 rounded-row px-2 transition-colors duration-150",
 				active ? "bg-accent-soft" : "hover:bg-surface-2",
 			)}
 		>
 			{avatar ? (
-				<Avatar principal={avatar} size={40} />
+				<Avatar
+					principal={avatar}
+					size={40}
+					showStatus
+					ring={active ? "accent-soft" : "list-row"}
+				/>
 			) : (
 				<GroupAvatar id={item.conversation.id} title={title} size={40} />
 			)}
@@ -67,11 +75,6 @@ function ConversationRow({
 					<span className="truncate text-14 font-semibold text-ink">
 						{title}
 					</span>
-					{facet.tag ? (
-						<Tag tone={facet.tag === "协商" ? "pending" : "neutral"}>
-							{facet.tag}
-						</Tag>
-					) : null}
 					<span className="ml-auto shrink-0 text-12 text-muted">
 						{formatListTime(time)}
 					</span>
@@ -100,7 +103,7 @@ function toRows(
 		preview: item.lastEvent
 			? previewOf(item.lastEvent, map, meId, item.conversation.kind !== "dm")
 			: "还没有消息",
-		facet: conversationFacet(item, meId),
+		filter: conversationFilter(item, meId),
 		pending: pendingBy.get(item.conversation.id) ?? 0,
 	}));
 }
@@ -129,17 +132,17 @@ export function ConversationList() {
 	const needle = query.trim().toLowerCase();
 	const rows = toRows(conversations, map, meId, pendingBy).filter(
 		(r) =>
-			(filter === "all" || r.facet.filter === filter) &&
+			(filter === "all" || r.filter === filter) &&
 			(!needle ||
 				r.title.toLowerCase().includes(needle) ||
 				r.preview.toLowerCase().includes(needle)),
 	);
 	const activeId = pathname.startsWith("/c/") ? pathname.slice(3) : null;
-	const chief = me.agents.find((a) => a.role === "front");
-	const talkToChief: EmptyAction | undefined = chief
+	const twin = me.agents.find((a) => a.role === "front");
+	const talkToTwin: EmptyAction | undefined = twin
 		? {
-				label: `和${chief.principal.displayName}聊聊`,
-				onClick: () => void open(chief.principal.id),
+				label: `和${twin.principal.displayName}聊聊`,
+				onClick: () => void open(twin.principal.id),
 			}
 		: undefined;
 
@@ -147,7 +150,7 @@ export function ConversationList() {
 	if (rows.length === 0) {
 		if (needle) empty = { text: `没有找到"${query.trim()}"相关的会话。` };
 		else if (filter === "agents")
-			empty = { text: "还没有和代理的会话。", action: talkToChief };
+			empty = { text: "还没有和代理的会话。", action: talkToTwin };
 		else if (filter === "colleagues")
 			empty = {
 				text: "还没有和同事聊过。",
@@ -156,7 +159,7 @@ export function ConversationList() {
 		else
 			empty = {
 				text: "这里会出现你和同事、代理的所有会话。",
-				action: talkToChief,
+				action: talkToTwin,
 			};
 	}
 
@@ -226,6 +229,7 @@ export function ConversationList() {
 						<ConversationRow
 							key={row.item.conversation.id}
 							row={row}
+							map={map}
 							meId={meId}
 							active={row.item.conversation.id === activeId}
 						/>

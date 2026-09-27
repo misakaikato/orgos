@@ -20,6 +20,8 @@ import {
 	type PostMessageRequest,
 	PostMessageResponseSchema,
 	ResetDemoResponseSchema,
+	type UpdateStatusRequest,
+	UpdateStatusResponseSchema,
 	type WORK_ITEM_STATUSES,
 	WorkItemListResponseSchema,
 } from "@orgos/protocol";
@@ -106,6 +108,12 @@ export const api = {
 	me: () => run(() => http.get("/api/me").json(MeResponseSchema)),
 	directory: () =>
 		run(() => http.get("/api/directory").json(DirectoryResponseSchema)),
+	updateStatus: (req: UpdateStatusRequest) =>
+		run(() =>
+			http
+				.patch("/api/me/status", { json: req })
+				.json(UpdateStatusResponseSchema),
+		),
 
 	conversations: () =>
 		run(() =>

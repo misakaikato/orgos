@@ -1,7 +1,9 @@
 /**
- * 演示租户的人物表：姓名、岗位、两个代理的职责说明、幕僚长的对外政策与本人共享的资料。
+ * 演示租户的人物表：姓名、岗位、两个代理的职责说明、分身的对外政策与本人共享的资料。
  * 模拟台的人物列表、seed:demo、/api/dev/sessions 都以此为准。
  */
+
+import type { PrincipalStatus } from "@orgos/protocol";
 
 export type DemoNote = { title: string; body: string };
 
@@ -9,9 +11,11 @@ export type DemoPersonSpec = {
 	handle: string;
 	displayName: string;
 	title: string;
-	chiefDescription: string;
+	twinDescription: string;
 	opsDescription: string;
 	delegationPolicy: string;
+	/** 演示开始时的在线状态（缺省为在线）。 */
+	status?: PrincipalStatus;
 	sharedNotes: DemoNote[];
 };
 
@@ -31,10 +35,11 @@ export const DEMO_TENANTS: DemoTenantSpec[] = [
 				handle: "linxiao",
 				displayName: "林晓",
 				title: "产品负责人",
-				chiefDescription:
-					"林晓的对外窗口。熟悉 Q4 路线图、已定排期与预算口径，替林晓回答同事关于产品方向和进度的问题；遇到新的交付承诺或预算调整，整理清楚来龙去脉后转给林晓本人。",
+				status: "busy",
+				twinDescription:
+					"林晓的分身。林晓忙碌或被点名时，在私聊里替她回答同事关于产品方向、已定排期和预算口径的问题；遇到新的交付承诺或预算调整，整理清楚来龙去脉后转给林晓本人。",
 				opsDescription:
-					"林晓的执行助理。整理评审纪要、周报和路线图文档，跟踪评审结论里的待办是否按期完成；绑定设备后可在林晓的电脑上归档文档。",
+					"林晓的执行助手。整理评审纪要、周报和路线图文档，跟踪评审结论里的待办是否按期完成；绑定设备后可在林晓的电脑上归档文档。",
 				delegationPolicy:
 					"可以回答产品路线和已定排期；承诺新的交付日期、调整预算必须问我；不谈人事。",
 				sharedNotes: [
@@ -74,10 +79,10 @@ export const DEMO_TENANTS: DemoTenantSpec[] = [
 				handle: "zhouye",
 				displayName: "周野",
 				title: "后端工程师",
-				chiefDescription:
-					"周野的对外窗口。能直接回答技术方案、接口字段和订单服务迁移的进度，回答时引用迁移进度文档里的数字；涉及排期承诺时转给周野本人。",
+				twinDescription:
+					"周野的分身。周野忙碌或被点名时替他回答技术方案、接口字段和订单服务迁移的进度，回答时引用迁移进度文档里的数字；涉及排期承诺时转给周野本人。",
 				opsDescription:
-					"周野的执行助理。查日志、跑对账脚本、整理接口文档；绑定设备后可在周野的开发机上执行命令，写文件和执行命令前先征得周野同意。",
+					"周野的执行助手。查日志、跑对账脚本、整理接口文档；绑定设备后可在周野的开发机上执行命令，写文件和执行命令前先征得周野同意。",
 				delegationPolicy: "技术方案和接口进度可以直接答；排期承诺问我。",
 				sharedNotes: [
 					{
@@ -96,10 +101,10 @@ export const DEMO_TENANTS: DemoTenantSpec[] = [
 				handle: "chenan",
 				displayName: "陈安",
 				title: "设计师",
-				chiefDescription:
-					"陈安的对外窗口。回答设计规范、组件用法和素材放在哪里，替陈安约设计评审；新需求的排期转给陈安本人。",
+				twinDescription:
+					"陈安的分身。替陈安回答设计规范、组件用法和素材放在哪里，替她和别人的分身约设计评审；新需求的排期转给陈安本人。",
 				opsDescription:
-					"陈安的执行助理。按规范导出切图、整理 Figma 标注、归档设计素材；绑定设备后可在陈安的电脑上整理素材目录。",
+					"陈安的执行助手。按规范导出切图、整理 Figma 标注、归档设计素材；绑定设备后可在陈安的电脑上整理素材目录。",
 				delegationPolicy: "设计规范和素材位置可以直接答；新需求排期问我。",
 				sharedNotes: [
 					{
@@ -119,10 +124,10 @@ export const DEMO_TENANTS: DemoTenantSpec[] = [
 				handle: "xunuo",
 				displayName: "许诺",
 				title: "销售",
-				chiefDescription:
-					"许诺的对外窗口。回答报价区间和客户进展，替许诺向产品和研发确认交付信息；折扣超过 9 折的要求转给许诺本人。",
+				twinDescription:
+					"许诺的分身。替许诺回答报价区间和客户进展，替她向产品和研发确认交付信息；折扣超过 9 折的要求转给许诺本人。",
 				opsDescription:
-					"许诺的执行助理。整理客户拜访记录、准备报价单和合同附件；绑定设备后可在许诺的电脑上生成报价文件。",
+					"许诺的执行助手。整理客户拜访记录、准备报价单和合同附件；绑定设备后可在许诺的电脑上生成报价文件。",
 				delegationPolicy: "报价区间和客户进展可以答；折扣超过 9 折问我。",
 				sharedNotes: [
 					{
@@ -147,9 +152,9 @@ export const DEMO_TENANTS: DemoTenantSpec[] = [
 				handle: "waibu",
 				displayName: "魏博",
 				title: "采购经理",
-				chiefDescription:
-					"魏博的对外窗口。对接供应商的询价和交期问题，超出采购预算的事转给魏博本人。",
-				opsDescription: "魏博的执行助理。整理采购单、供应商资质和比价表。",
+				twinDescription:
+					"魏博的分身。替魏博回答供应商的询价和交期问题，超出采购预算的事转给魏博本人。",
+				opsDescription: "魏博的执行助手。整理采购单、供应商资质和比价表。",
 				delegationPolicy: "可以介绍采购流程和到货时间；价格与合同条款问我。",
 				sharedNotes: [
 					{

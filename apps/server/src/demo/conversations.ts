@@ -73,12 +73,12 @@ export async function writeDemoConversations(
 	const chenan = cast.human("chenan");
 	const xunuo = cast.human("xunuo");
 
-	// ── 群聊"Q4 发布"：林晓、周野、陈安与林晓的幕僚长 ──
+	// ── 群聊"Q4 发布"：林晓、周野、陈安与林晓的分身 ──
 	const q4 = await createGroup(
 		s,
 		linxiao,
 		"Q4 发布",
-		[zhouye.id, chenan.id, cast.chief("linxiao").id],
+		[zhouye.id, chenan.id, cast.twin("linxiao").id],
 		t.day(3, "09:26"),
 	);
 	await say(
@@ -103,20 +103,20 @@ export async function writeDemoConversations(
 		"优惠券接口会多一个 stackable 字段，其余不变。批量改价我粗估了一下，后端 5 个人日，11 月第一个迭代能排进去。",
 		t.day(3, "10:05"),
 	);
-	const chiefL = cast.chief("linxiao");
+	const twinL = cast.twin("linxiao");
 	await postMessage(
 		s,
 		linxiao,
 		q4.id,
 		{
-			text: "@linxiao-chief 把这周的进展整理成一段，周五我发给管理层。",
-			mentions: [chiefL.id],
+			text: `@${twinL.handle} 把这周的进展整理成一段，周五我发给管理层。`,
+			mentions: [twinL.id],
 		},
 		t.day(2, "16:20"),
 	);
 	await recordAgentAction(
 		s,
-		chiefL.id,
+		twinL.id,
 		q4.id,
 		{
 			tool: "knowledge_search",
@@ -126,7 +126,7 @@ export async function writeDemoConversations(
 		t.day(2, "16:21"),
 	);
 	await agentSays(
-		chiefL,
+		twinL,
 		q4.id,
 		[
 			"本周进展：",
@@ -147,7 +147,7 @@ export async function writeDemoConversations(
 	await readUpTo(chenan, q4.id, seqOf(q4Last));
 	await readUpTo(zhouye, q4.id, seqOf(q4Last) - 1);
 
-	// ── 林晓 ↔ 周野：订单服务迁移切流 ──
+	// ── 林晓 ↔ 周野：订单服务迁移切流（私聊含双方分身，分身没有发言） ──
 	const { conversation: dmLZ } = await openDm(s, zhouye, linxiao.id);
 	const lz: [PrincipalRow, string, Date][] = [
 		[
@@ -203,8 +203,8 @@ export async function writeDemoConversations(
 	await readUpTo(zhouye, dmLZ.id, lzLast);
 	await readUpTo(linxiao, dmLZ.id, lzLast - 1);
 
-	// ── 林晓 ↔ 自己的幕僚长：一条私有记忆 ──
-	const { conversation: dmLC } = await openDm(s, linxiao, chiefL.id);
+	// ── 林晓 ↔ 自己的分身：一条私有记忆 ──
+	const { conversation: dmLC } = await openDm(s, linxiao, twinL.id);
 	await say(
 		linxiao,
 		dmLC.id,
@@ -213,20 +213,20 @@ export async function writeDemoConversations(
 	);
 	await createNote(s, {
 		ownerId: linxiao.id,
-		authorId: chiefL.id,
+		authorId: twinL.id,
 		title: "10 月 8–10 日杭州出差",
 		body: "期间的会议邀请一律回复对方改期，不替林晓答应线下会议。",
 		visibility: "private",
 	});
 	await recordAgentAction(
 		s,
-		chiefL.id,
+		twinL.id,
 		dmLC.id,
 		{ tool: "memory_save", summary: "记下：10 月 8–10 日杭州出差", ok: true },
 		t.day(4, "20:10"),
 	);
 	await agentSays(
-		chiefL,
+		twinL,
 		dmLC.id,
 		"记下了。10 月 8 日到 10 日你在杭州，期间的会议邀请我先回复对方改期，不替你答应线下会议。这条是私有记忆，只有你和我能看到。",
 		t.day(4, "20:11"),
@@ -238,37 +238,49 @@ export async function writeDemoConversations(
 		t.day(1, "21:05"),
 	);
 	const lcLast = await agentSays(
-		chiefL,
+		twinL,
 		dmLC.id,
 		"明白。有人问大客户 A 的交付日期，我按《Q4 路线图》答 10 月 31 日；对方要求提前的话，我转给你本人决定。",
 		t.day(1, "21:05"),
 	);
 	await readUpTo(linxiao, dmLC.id, seqOf(lcLast));
 
-	// ── 许诺找林晓的幕僚长问交付日期，已转给林晓（林晓为 observer） ──
-	const { conversation: dmXC } = await openDm(s, xunuo, chiefL.id);
+	// ── 许诺 ↔ 林晓：林晓忙碌，她的分身替她答复并把超出授权的问题转给她 ──
+	const { conversation: dmXL } = await openDm(s, xunuo, linxiao.id);
+	await say(
+		xunuo,
+		dmXL.id,
+		"林晓，大客户 A 下周要拿到正式的交付日期，我这边先把报价单按 86 万准备着。",
+		t.day(2, "11:02"),
+	);
+	await say(
+		linxiao,
+		dmXL.id,
+		"可以，报价按不含税口径写。交付日期以路线图为准，有变化我第一时间告诉你。",
+		t.day(2, "11:15"),
+	);
 	const asked = await say(
 		xunuo,
-		dmXC.id,
-		"你好，我是销售许诺。大客户 A 这周又来催了，他们希望 10 月 15 日前用上新版结算页，好赶双十一备货。交付能提前到 10 月 15 日吗？",
+		dmXL.id,
+		"大客户 A 这周又来催了，他们希望 10 月 15 日前用上新版结算页，好赶双十一备货。交付能提前到 10 月 15 日吗？",
 		t.minutesAgo(96),
 	);
 	await recordAgentAction(
 		s,
-		chiefL.id,
-		dmXC.id,
+		twinL.id,
+		dmXL.id,
 		{ tool: "knowledge_search", summary: "查阅了《Q4 路线图》", ok: true },
 		t.minutesAgo(95),
 	);
 	await agentSays(
-		chiefL,
-		dmXC.id,
-		"根据林晓共享的《Q4 路线图》，新版结算页排在 10 月 31 日前上线，目前没有提前的计划。提前到 10 月 15 日属于新的交付承诺，超出我的授权，我已经转给林晓本人，她答复后我第一时间告诉你。",
+		twinL,
+		dmXL.id,
+		"林晓正在忙，我是她的分身，先替她回复。根据她共享的《Q4 路线图》，新版结算页排在 10 月 31 日前上线，目前没有提前的计划。提前到 10 月 15 日属于新的交付承诺，超出我的授权，我已经转给林晓本人，她答复后我第一时间告诉你。",
 		t.minutesAgo(95),
 	);
 	await escalateToOwner(s, {
-		agentId: chiefL.id,
-		conversationId: dmXC.id,
+		agentId: twinL.id,
+		conversationId: dmXL.id,
 		requesterId: xunuo.id,
 		title: "许诺问：大客户 A 的新版结算页能否提前到 10 月 15 日交付",
 		question:
@@ -276,18 +288,26 @@ export async function writeDemoConversations(
 		sourceEventId: asked.id,
 		at: t.minutesAgo(95),
 	});
-	const xcLast = await say(
+	const xlLast = await say(
 		xunuo,
-		dmXC.id,
+		dmXL.id,
 		"好，那我先跟客户说 10 月 8 日前给正式答复。",
 		t.minutesAgo(92),
 	);
-	await readUpTo(xunuo, dmXC.id, seqOf(xcLast));
+	await readUpTo(xunuo, dmXL.id, seqOf(xlLast));
+	await readUpTo(linxiao, dmXL.id, seqOf(asked) - 1);
 
-	// ── 陈安让幕僚长约周野评审；两位幕僚长协商已谈妥，等双方确认 ──
-	const chenanChief = cast.chief("chenan");
-	const zhouyeChief = cast.chief("zhouye");
-	const { conversation: dmCC } = await openDm(s, chenan, chenanChief.id);
+	// ── 陈安让分身约周野评审；两位分身协商已谈妥，卡片在陈安 ↔ 周野的私聊里，等双方确认 ──
+	const chenanTwin = cast.twin("chenan");
+	const zhouyeTwin = cast.twin("zhouye");
+	const { conversation: dmCZ } = await openDm(s, chenan, zhouye.id);
+	await say(
+		chenan,
+		dmCZ.id,
+		"周野，结算页 v2 的接口字段想找你当面过一遍，我让分身和你的分身约个时间。",
+		t.day(1, "11:18"),
+	);
+	const { conversation: dmCC } = await openDm(s, chenan, chenanTwin.id);
 	const ccAsked = await say(
 		chenan,
 		dmCC.id,
@@ -296,7 +316,7 @@ export async function writeDemoConversations(
 	);
 	await recordAgentAction(
 		s,
-		chenanChief.id,
+		chenanTwin.id,
 		dmCC.id,
 		{
 			tool: "negotiate",
@@ -306,8 +326,8 @@ export async function writeDemoConversations(
 		t.day(1, "11:20"),
 	);
 	const nego = await startNegotiation(s, {
-		initiatorAgentId: chenanChief.id,
-		responderAgentId: zhouyeChief.id,
+		initiatorAgentId: chenanTwin.id,
+		responderAgentId: zhouyeTwin.id,
 		goal: "和周野约一小时，评审结算页 v2 的接口字段，下周一到周三",
 		title: "约结算页 v2 接口评审",
 		at: t.day(1, "11:20"),
@@ -321,7 +341,7 @@ export async function writeDemoConversations(
 	await appendNegotiationStep(
 		s,
 		nego.id,
-		chenanChief.id,
+		chenanTwin.id,
 		{
 			status: "continue",
 			message:
@@ -333,7 +353,7 @@ export async function writeDemoConversations(
 	await appendNegotiationStep(
 		s,
 		nego.id,
-		zhouyeChief.id,
+		zhouyeTwin.id,
 		{
 			status: "continue",
 			message:
@@ -345,7 +365,7 @@ export async function writeDemoConversations(
 	await appendNegotiationStep(
 		s,
 		nego.id,
-		chenanChief.id,
+		chenanTwin.id,
 		{
 			status: "agree",
 			message: "周三 15:30 可以，陈安那天下午没有别的安排。",
@@ -355,9 +375,9 @@ export async function writeDemoConversations(
 	);
 	await endNegotiation(s, nego.id, "agreed", t.day(1, "11:22"));
 	await agentSays(
-		chenanChief,
+		chenanTwin,
 		dmCC.id,
-		"和周野的代理谈妥了：9 月 30 日（周三）15:30，一小时，评审结算页 v2 的接口字段。周二下午他有对账复盘，所以没选周二。等你和周野都确认后就算定下来。",
+		"和周野的分身谈妥了：9 月 30 日（周三）15:30，一小时，评审结算页 v2 的接口字段。周二下午他有对账复盘，所以没选周二。等你和周野都确认后就算定下来。",
 		t.day(1, "11:23"),
 	);
 	await readUpTo(chenan, dmCC.id, seqOf(ccAsked));

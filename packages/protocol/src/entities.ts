@@ -18,6 +18,9 @@ export const WORK_ITEM_KINDS = [
 export const WORK_ITEM_STATUSES = ["open", "done", "cancelled"] as const;
 export const NOTE_VISIBILITIES = ["private", "shared"] as const;
 export const RUNNER_STATUSES = ["online", "offline"] as const;
+/** 人的在线状态；忙碌与离开时，别人在私聊里发给他的消息由他的分身先回复。 */
+export const PRINCIPAL_STATUSES = ["available", "busy", "away"] as const;
+export type PrincipalStatus = (typeof PRINCIPAL_STATUSES)[number];
 
 export const DEFAULT_AGENT_MODEL = "deepseek-v4-flash";
 
@@ -43,6 +46,8 @@ export const PrincipalSchema = z.object({
 	handle: z.string(),
 	displayName: z.string(),
 	createdAt: z.iso.datetime(),
+	/** 仅人有：在线状态。 */
+	status: z.enum(PRINCIPAL_STATUSES).optional(),
 });
 export type Principal = z.infer<typeof PrincipalSchema>;
 

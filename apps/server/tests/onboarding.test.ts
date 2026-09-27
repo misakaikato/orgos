@@ -101,20 +101,22 @@ describe("onboarding 成功", () => {
 			displayName: "Alice",
 			ownerId: null,
 		});
-		const [chief, ops] = body.agents;
-		expect(chief?.role).toBe("front");
-		expect(chief?.principal).toMatchObject({
+		const [twin, ops] = body.agents;
+		expect(twin?.role).toBe("front");
+		expect(twin?.principal).toMatchObject({
 			kind: "agent",
-			handle: `${handle}-chief`,
-			displayName: "Alice的幕僚长",
+			handle: `${handle}-twin`,
+			displayName: "Alice的分身",
 			ownerId: body.principal.id,
 			userId: null,
 		});
 		expect(ops?.role).toBe("specialist");
 		expect(ops?.principal.handle).toBe(`${handle}-ops`);
-		expect(ops?.principal.displayName).toBe("Alice的执行助理");
-		expect(chief?.model).toBe("deepseek-v4-flash");
-		expect(chief?.description.length).toBeGreaterThan(0);
+		expect(ops?.principal.displayName).toBe("Alice的执行助手");
+		expect(twin?.model).toBe("deepseek-v4-flash");
+		expect(twin?.description.length).toBeGreaterThan(0);
+		expect(body.principal.status).toBe("available");
+		expect(twin?.principal.status).toBeUndefined();
 	});
 
 	it("GET /api/me 返回本人、租户与代理组", async () => {
@@ -142,7 +144,7 @@ describe("onboarding 成功", () => {
 		expect(me.tenant.id).toBe(body.tenant.id);
 	});
 
-	it("GET /api/directory 列出本租户所有人及其幕僚长", async () => {
+	it("GET /api/directory 列出本租户所有人及其分身", async () => {
 		const res = await joiner.request("GET", "/api/directory");
 		expect(res.status).toBe(200);
 		const { people } = DirectoryResponseSchema.parse(await res.json());
@@ -150,7 +152,7 @@ describe("onboarding 成功", () => {
 		for (const p of people) {
 			expect(p.principal.kind).toBe("human");
 			expect(p.front.ownerId).toBe(p.principal.id);
-			expect(p.front.handle).toBe(`${p.principal.handle}-chief`);
+			expect(p.front.handle).toBe(`${p.principal.handle}-twin`);
 		}
 	});
 
@@ -225,7 +227,7 @@ describe("onboarding 409", () => {
 			mode: "join",
 			inviteCode: created.tenant.inviteCode,
 			displayName: "K2",
-			handle: `${handle}-chief`,
+			handle: `${handle}-twin`,
 		});
 		await expectError(dup, 409, "HANDLE_TAKEN");
 	});

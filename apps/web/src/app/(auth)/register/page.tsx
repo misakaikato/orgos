@@ -1,5 +1,6 @@
 "use client";
 
+import { AGENT_ROLE_LABEL, DEFAULT_ASSISTANT_NAME } from "@orgos/protocol";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
@@ -51,7 +52,7 @@ export default function RegisterPage() {
 	return (
 		<AuthCard
 			title="注册"
-			subtitle="注册后会自动为你配好两个代理：幕僚长与执行助理。"
+			subtitle={`注册后会自动为你配好两个代理：${AGENT_ROLE_LABEL.front}与${DEFAULT_ASSISTANT_NAME}。`}
 			onSubmit={submit}
 			error={error}
 			footer={

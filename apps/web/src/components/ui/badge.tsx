@@ -31,7 +31,7 @@ export function Badge({
 	);
 }
 
-/** 行内小标签：会话行里的"代理在对外""协商"、气泡上方的"代林晓"。 */
+/** 行内小标签：气泡上方的"代林晓"、协商步骤与确认状态。 */
 export function Tag({
 	children,
 	tone = "neutral",

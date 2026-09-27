@@ -1,5 +1,6 @@
 "use client";
 
+import { defaultAssistantName, twinName } from "@orgos/protocol";
 import { useState } from "react";
 import { WorkingIndicator } from "@/components/conversation/working-indicator";
 import { Mascot, type MascotState, mascotInkClass } from "@/components/mascot";
@@ -117,10 +118,13 @@ export default function MascotsPage() {
 							思考时三点跳动；执行工具时换成一句灰字
 						</p>
 						<WorkingIndicator
-							agent={{ id: IDS[2] ?? "", displayName: "林晓的幕僚长" }}
+							agent={{ id: IDS[2] ?? "", displayName: twinName("林晓") }}
 						/>
 						<WorkingIndicator
-							agent={{ id: IDS[9] ?? "", displayName: "林晓的执行助理" }}
+							agent={{
+								id: IDS[9] ?? "",
+								displayName: defaultAssistantName("林晓"),
+							}}
 							label="正在执行命令…"
 						/>
 					</section>

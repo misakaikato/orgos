@@ -14,10 +14,10 @@ import { useMediaQuery, usePrincipalMap } from "@/lib/hooks";
 import {
 	agentRoleLine,
 	conversationAvatar,
-	conversationFacet,
 	conversationTitle,
 	frontAgentIds,
-	othersOf,
+	humanPair,
+	STATUS_LABEL,
 } from "@/lib/principals";
 import {
 	ensureEvents,
@@ -43,14 +43,6 @@ export function ConversationView({
 	const events = useStore((s) => s.events[conversationId]);
 	const status = useStore((s) => s.eventsStatus[conversationId]);
 	const directory = useStore((s) => s.directory);
-	const confirmPending = useStore(
-		(s) =>
-			s.workItems?.some(
-				(w) =>
-					w.kind === "confirmation" &&
-					w.payload.negotiationConversationId === conversationId,
-			) ?? false,
-	);
 	const map = usePrincipalMap();
 	const wide = useMediaQuery(WIDE);
 	const [panelWide, setPanelWide] = useState(false);
@@ -124,25 +116,28 @@ export function ConversationView({
 		);
 	}
 
-	const avatar = conversationAvatar(item, meId);
+	const peer = conversationAvatar(item, meId);
+	const avatar = peer ? (map.get(peer.id) ?? peer) : null;
 	const title = conversationTitle(item, meId);
-	const facet = conversationFacet(item, meId);
 	const kind = item.conversation.kind;
-	const myAgentHere = othersOf(item, meId).find(
-		(p) => p.kind === "agent" && p.ownerId === meId,
-	);
+	const pair = humanPair(item, meId);
+	const twinTarget =
+		pair?.peerTwin && avatar ? { peer: avatar, peerTwin: pair.peerTwin } : null;
 	const subtitle =
-		facet.tag === "代理在对外" && myAgentHere
-			? `${myAgentHere.displayName}在代你回复`
-			: kind === "negotiation"
-				? `代理协商 · ${item.members.length} 位成员`
-				: kind === "group"
-					? `${item.members.length} 位成员`
-					: avatar?.kind === "agent"
-						? agentRoleLine(avatar, map, meId, frontAgentIds(me, directory))
-						: avatar
-							? `@${avatar.handle}`
-							: "";
+		kind === "group"
+			? `${item.members.length} 位成员`
+			: avatar?.kind === "agent"
+				? agentRoleLine(avatar, map, meId, frontAgentIds(me, directory))
+				: avatar
+					? [
+							`@${avatar.handle}`,
+							avatar.status && avatar.status !== "available"
+								? STATUS_LABEL[avatar.status]
+								: null,
+						]
+							.filter(Boolean)
+							.join(" · ")
+					: "";
 	const showPanel = wide ? panelWide : panelDrawer;
 	const togglePanel = () =>
 		wide ? setPanelWide((v) => !v) : setPanelDrawer((v) => !v);
@@ -152,7 +147,7 @@ export function ConversationView({
 			? "群里还没有人说话，打个招呼吧。"
 			: avatar?.kind === "agent"
 				? `和${avatar.displayName}说点什么吧，它会替你查资料、记事、分派活。`
-				: `和${avatar?.displayName ?? "对方"}打个招呼吧。`;
+				: `和${avatar?.displayName ?? "对方"}打个招呼吧。想让对方的分身先回答，就切到“问分身”。`;
 
 	return (
 		<div className="flex min-h-0 flex-1">
@@ -166,7 +161,7 @@ export function ConversationView({
 						<IconBack />
 					</Link>
 					{avatar ? (
-						<Avatar principal={avatar} size={28} />
+						<Avatar principal={avatar} size={28} showStatus />
 					) : (
 						<GroupAvatar id={item.conversation.id} title={title} size={28} />
 					)}
@@ -200,7 +195,6 @@ export function ConversationView({
 						unreadAfter={unreadAfter}
 						handles={handles}
 						isGroup={kind !== "dm"}
-						confirmPending={confirmPending}
 						onBottomChange={onBottomChange}
 						empty={
 							<EmptyState
@@ -218,8 +212,9 @@ export function ConversationView({
 					meId={meId}
 					map={map}
 					placeholder={`发给 ${title}`}
-					onSend={(text, mentions) =>
-						sendMessage(conversationId, text, mentions)
+					twinTarget={twinTarget}
+					onSend={(text, mentions, askTwin) =>
+						sendMessage(conversationId, text, mentions, askTwin)
 					}
 				/>
 			</section>

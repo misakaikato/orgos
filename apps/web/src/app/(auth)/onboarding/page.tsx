@@ -1,6 +1,11 @@
 "use client";
 
-import { HANDLE_RE, type OnboardingRequest } from "@orgos/protocol";
+import {
+	defaultAssistantHandle,
+	HANDLE_RE,
+	type OnboardingRequest,
+	twinHandle,
+} from "@orgos/protocol";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 import { AuthCard } from "@/components/auth-card";
@@ -126,7 +131,7 @@ export default function OnboardingPage() {
 				spellCheck={false}
 				hint={
 					handle && !handleInvalid
-						? `你的代理：@${handle}-chief、@${handle}-ops`
+						? `你的代理：@${twinHandle(handle)}、@${defaultAssistantHandle(handle)}`
 						: "小写字母开头，用于 @ 提及"
 				}
 				error={

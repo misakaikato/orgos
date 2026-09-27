@@ -2,16 +2,22 @@ import type { ConversationSummary, Principal } from "@orgos/protocol";
 import { describe, expect, it } from "vitest";
 import {
 	avatarText,
-	conversationFacet,
+	conversationFilter,
 	conversationTitle,
 	dmPeer,
+	humanPair,
 	mascotTraits,
+	unavailableHint,
 } from "@/lib/principals";
 
 const TENANT = "44444444-4444-4444-8444-444444444444";
 const AT = "2026-09-26T09:00:00.000Z";
 
-function human(id: string, displayName: string): Principal {
+function human(
+	id: string,
+	displayName: string,
+	status: Principal["status"] = "available",
+): Principal {
 	return {
 		id,
 		tenantId: TENANT,
@@ -21,6 +27,7 @@ function human(id: string, displayName: string): Principal {
 		handle: displayName.toLowerCase(),
 		displayName,
 		createdAt: AT,
+		status,
 	};
 }
 
@@ -31,7 +38,7 @@ function agent(id: string, ownerId: string, displayName: string): Principal {
 		kind: "agent",
 		userId: null,
 		ownerId,
-		handle: `${id}-chief`,
+		handle: `${id}-twin`,
 		displayName,
 		createdAt: AT,
 	};
@@ -39,7 +46,8 @@ function agent(id: string, ownerId: string, displayName: string): Principal {
 
 const ME = "11111111-1111-4111-8111-111111111111";
 const XU = "22222222-2222-4222-8222-222222222222";
-const CHIEF = "33333333-3333-4333-8333-333333333333";
+const MY_TWIN = "33333333-3333-4333-8333-333333333333";
+const XU_TWIN = "66666666-6666-4666-8666-666666666666";
 
 function dm(members: Principal[]): ConversationSummary {
 	return {
@@ -57,36 +65,52 @@ function dm(members: Principal[]): ConversationSummary {
 	};
 }
 
-describe("dmPeer / conversationTitle", () => {
+describe("dmPeer / conversationTitle / humanPair", () => {
 	const me = human(ME, "林晓");
 	const xu = human(XU, "许诺");
-	const chief = agent(CHIEF, ME, "林晓的幕僚长");
+	const myTwin = agent(MY_TWIN, ME, "林晓的分身");
+	const xuTwin = agent(XU_TWIN, XU, "许诺的分身");
 
-	it("别人找我幕僚长（我是 observer）：对方是来找我的人，与成员顺序无关", () => {
+	it("真人私聊：标题与对方都是对方本人，分身不占标题，与成员顺序无关", () => {
 		for (const members of [
-			[chief, xu, me],
-			[xu, chief, me],
+			[myTwin, xuTwin, xu, me],
+			[me, xu, myTwin, xuTwin],
+			[xuTwin, me, myTwin, xu],
 		]) {
 			expect(dmPeer(dm(members), ME)?.id).toBe(XU);
 			expect(conversationTitle(dm(members), ME)).toBe("许诺");
+			expect(conversationTitle(dm(members), XU)).toBe("林晓");
+			expect(humanPair(dm(members), ME)).toEqual({
+				peer: xu,
+				peerTwin: xuTwin,
+				myTwin,
+			});
 		}
 	});
 
-	it("我和自己的幕僚长私聊：对方是幕僚长", () => {
-		expect(dmPeer(dm([me, chief]), ME)?.id).toBe(CHIEF);
+	it("我和自己的分身私聊：对方是分身，不是真人私聊", () => {
+		expect(dmPeer(dm([me, myTwin]), ME)?.id).toBe(MY_TWIN);
+		expect(conversationTitle(dm([me, myTwin]), ME)).toBe("林晓的分身");
+		expect(humanPair(dm([me, myTwin]), ME)).toBeNull();
 	});
 
-	it("来找幕僚长的人看到的对方是幕僚长，而不是 observer 本人", () => {
-		for (const members of [
-			[xu, chief, me],
-			[xu, me, chief],
-		]) {
-			expect(conversationTitle(dm(members), XU)).toBe("林晓的幕僚长");
-		}
+	it("群聊不是真人私聊", () => {
+		const item = dm([me, xu, myTwin, xuTwin]);
+		item.conversation.kind = "group";
+		expect(humanPair(item, ME)).toBeNull();
+		expect(dmPeer(item, ME)).toBeNull();
 	});
+});
 
-	it("两个人的私聊：对方就是那个人", () => {
-		expect(dmPeer(dm([me, xu]), ME)?.id).toBe(XU);
+describe("unavailableHint", () => {
+	it("对方忙碌或离开时提示分身会先回复；在线时没有提示", () => {
+		expect(unavailableHint(human(XU, "周野", "busy"))).toBe(
+			"周野正在忙，分身会先回复你",
+		);
+		expect(unavailableHint(human(XU, "周野", "away"))).toBe(
+			"周野暂时离开，分身会先回复你",
+		);
+		expect(unavailableHint(human(XU, "周野"))).toBeNull();
 	});
 });
 
@@ -118,35 +142,25 @@ describe("mascotTraits", () => {
 	});
 });
 
-describe("conversationFacet", () => {
+describe("conversationFilter", () => {
 	const me = human(ME, "林晓");
 	const xu = human(XU, "许诺");
-	const chief = agent(CHIEF, ME, "林晓的幕僚长");
+	const myTwin = agent(MY_TWIN, ME, "林晓的分身");
+	const xuTwin = agent(XU_TWIN, XU, "许诺的分身");
 
-	it("同事找我的幕僚长：归入代理，标代理在对外", () => {
-		expect(conversationFacet(dm([xu, chief, me]), ME)).toEqual({
-			filter: "agents",
-			tag: "代理在对外",
-		});
+	it("真人私聊（含双方分身）归同事；和自己的分身归代理", () => {
+		expect(conversationFilter(dm([me, xu, myTwin, xuTwin]), ME)).toBe(
+			"colleagues",
+		);
+		expect(conversationFilter(dm([me, myTwin]), ME)).toBe("agents");
 	});
 
-	it("我和自己的幕僚长：代理；我和同事：同事", () => {
-		expect(conversationFacet(dm([me, chief]), ME)).toEqual({
-			filter: "agents",
-			tag: null,
-		});
-		expect(conversationFacet(dm([me, xu]), ME)).toEqual({
-			filter: "colleagues",
-			tag: null,
-		});
-	});
-
-	it("协商会话：代理，标协商", () => {
-		const item = dm([chief, agent(XU, XU, "许诺的幕僚长")]);
-		item.conversation.kind = "negotiation";
-		expect(conversationFacet(item, ME)).toEqual({
-			filter: "agents",
-			tag: "协商",
-		});
+	it("群聊：只有代理归代理，有同事归同事", () => {
+		const onlyAgents = dm([me, myTwin, xuTwin]);
+		onlyAgents.conversation.kind = "group";
+		expect(conversationFilter(onlyAgents, ME)).toBe("agents");
+		const mixed = dm([me, xu, myTwin]);
+		mixed.conversation.kind = "group";
+		expect(conversationFilter(mixed, ME)).toBe("colleagues");
 	});
 });

@@ -1,10 +1,12 @@
 /**
  * 主体相关的显示逻辑：名字、"替谁说话"、头像与团子外形、会话标题、列表筛选。
  */
-import type {
-	ConversationSummary,
-	MeResponse,
-	Principal,
+import {
+	AGENT_ROLE_LABEL,
+	type ConversationSummary,
+	type MeResponse,
+	type Principal,
+	type PrincipalStatus,
 } from "@orgos/protocol";
 import type { Person } from "@/lib/store";
 
@@ -53,7 +55,7 @@ export function onBehalfLabel(
 	return owner.id === meId ? "你" : owner.displayName;
 }
 
-/** 各人的对外代表（幕僚长）id：我的取自 me.agents，同事的取自通讯录。 */
+/** 各人的分身 id：我的取自 me.agents，同事的取自通讯录。 */
 export function frontAgentIds(
 	me: MeResponse | null,
 	directory: readonly Person[],
@@ -64,7 +66,7 @@ export function frontAgentIds(
 	return ids;
 }
 
-/** 代理的一句身份说明：`林晓的代理 · 对外代表林晓` / `你的代理 · 组内专员`。 */
+/** 代理的一句身份说明：`林晓的分身 · 对外代表林晓` / `你的助手 · 只替你办事`。 */
 export function agentRoleLine(
 	p: Principal,
 	map: PrincipalMap,
@@ -74,8 +76,23 @@ export function agentRoleLine(
 	const owner = onBehalfLabel(p, map, meId);
 	if (!owner) return "代理";
 	return fronts.has(p.id)
-		? `${owner}的代理 · 对外代表${owner}`
-		: `${owner}的代理 · 组内专员`;
+		? `${owner}的${AGENT_ROLE_LABEL.front} · 对外代表${owner}`
+		: `${owner}的${AGENT_ROLE_LABEL.specialist} · 只替${owner}办事`;
+}
+
+export const STATUS_LABEL: Record<PrincipalStatus, string> = {
+	available: "在线",
+	busy: "忙碌",
+	away: "离开",
+};
+
+/** 真人私聊输入框上方的提示；对方在线时为 null。 */
+export function unavailableHint(
+	p: Pick<Principal, "displayName" | "status">,
+): string | null {
+	if (p.status === "busy") return `${p.displayName}正在忙，分身会先回复你`;
+	if (p.status === "away") return `${p.displayName}暂时离开，分身会先回复你`;
+	return null;
 }
 
 /** 人的头像底色：按 handle 哈希取 6 个预设之一（返回 1–6）。 */
@@ -146,7 +163,7 @@ export function othersOf(item: ConversationSummary, meId: string): Principal[] {
 	return item.members.filter((m) => m.id !== meId);
 }
 
-/** 会话标题：群聊用群名；私聊用对方名字。 */
+/** 会话标题：群聊用群名；私聊用对方名字（真人私聊里是对方本人，分身不占标题）。 */
 export function conversationTitle(
 	item: ConversationSummary,
 	meId: string,
@@ -156,70 +173,61 @@ export function conversationTitle(
 	return dmPeer(item, meId)?.displayName ?? "私聊";
 }
 
-/**
- * 私聊的对方；群聊为 null。找别人幕僚长的私聊里，对方本人是 observer：
- * 提问的人看到的对方是那位幕僚长；本人看到的对方是来提问的人，而不是自己的幕僚长。
- */
+/** 私聊的对方：真人私聊里是对方本人；和自己代理的私聊里是那个代理。群聊为 null。 */
 export function dmPeer(
 	item: ConversationSummary,
 	meId: string,
 ): Principal | null {
 	if (item.conversation.kind !== "dm") return null;
 	const others = othersOf(item, meId);
-	return (
-		others.find((p) => p.kind === "agent" && p.ownerId !== meId) ??
-		others.find((p) => p.kind === "human") ??
-		others[0] ??
-		null
-	);
+	return others.find((p) => p.kind === "human") ?? others[0] ?? null;
+}
+
+/**
+ * 两个真人的私聊（含双方分身）：返回对方本人与双方分身；其他会话为 null。
+ * 私聊里的代理都是双方的分身，按主人区分。
+ */
+export function humanPair(
+	item: ConversationSummary,
+	meId: string,
+): {
+	peer: Principal;
+	peerTwin: Principal | null;
+	myTwin: Principal | null;
+} | null {
+	if (item.conversation.kind !== "dm") return null;
+	const humans = item.members.filter((p) => p.kind === "human");
+	const peer = humans.find((p) => p.id !== meId);
+	if (humans.length !== 2 || !peer || !humans.some((p) => p.id === meId))
+		return null;
+	const twinOf = (ownerId: string) =>
+		item.members.find((p) => p.kind === "agent" && p.ownerId === ownerId) ??
+		null;
+	return { peer, peerTwin: twinOf(peer.id), myTwin: twinOf(meId) };
 }
 
 export type ListFilter = "all" | "agents" | "colleagues";
 
-export type ConversationFacet = {
-	/** 归入哪个筛选胶囊（"全部"之外）。 */
-	filter: Exclude<ListFilter, "all">;
-	/** 行内小标签。 */
-	tag: "代理在对外" | "协商" | null;
-};
-
 /**
- * 会话列表的筛选与行内标签（DESIGN.md §5）：
- * - 协商会话 → 代理，标"协商"；
- * - 同事找我的代理（我在其中旁听）→ 代理，标"代理在对外"；
- * - 对方或成员里有代理 → 代理；其余 → 同事。
+ * 会话列表的筛选归属（DESIGN.md §5）：和自己代理的私聊、只有代理的群 → 代理；
+ * 真人私聊（分身只是陪同）与有同事的群 → 同事。
  */
-export function conversationFacet(
+export function conversationFilter(
 	item: ConversationSummary,
 	meId: string,
-): ConversationFacet {
-	if (item.conversation.kind === "negotiation")
-		return { filter: "agents", tag: "协商" };
-	const others = othersOf(item, meId);
-	const myAgentOutside =
-		item.conversation.kind === "dm" &&
-		others.some((p) => p.kind === "agent" && p.ownerId === meId) &&
-		others.some((p) => p.kind === "human");
-	if (myAgentOutside) return { filter: "agents", tag: "代理在对外" };
+): Exclude<ListFilter, "all"> {
 	const peer = dmPeer(item, meId);
-	if (peer)
-		return {
-			filter: peer.kind === "agent" ? "agents" : "colleagues",
-			tag: null,
-		};
-	const onlyAgents =
-		others.length > 0 && others.every((p) => p.kind === "agent");
-	return { filter: onlyAgents ? "agents" : "colleagues", tag: null };
+	if (peer) return peer.kind === "agent" ? "agents" : "colleagues";
+	const others = othersOf(item, meId);
+	return others.length > 0 && others.every((p) => p.kind === "agent")
+		? "agents"
+		: "colleagues";
 }
 
-/** 列表行与会话头的头像主体：私聊是对方；协商是对方的代理；群聊为 null（用群头像）。 */
+/** 列表行与会话头的头像主体：私聊是对方；群聊为 null（用群头像）。 */
 export function conversationAvatar(
 	item: ConversationSummary,
 	meId: string,
 ): Principal | null {
-	if (item.conversation.kind === "negotiation") {
-		const agents = item.members.filter((p) => p.kind === "agent");
-		return agents.find((p) => p.ownerId !== meId) ?? agents[0] ?? null;
-	}
 	return dmPeer(item, meId);
 }

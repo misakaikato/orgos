@@ -6,7 +6,7 @@ const TENANT = "44444444-4444-4444-8444-444444444444";
 const CONV = "11111111-1111-4111-8111-111111111111";
 const ME = "22222222-2222-4222-8222-222222222222";
 const BOB = "33333333-3333-4333-8333-333333333333";
-const CHIEF = "55555555-5555-4555-8555-555555555555";
+const TWIN = "55555555-5555-4555-8555-555555555555";
 
 function principal(
 	id: string,
@@ -28,7 +28,7 @@ function principal(
 const map = new Map([
 	[ME, principal(ME, "human", "me")],
 	[BOB, principal(BOB, "human", "bob")],
-	[CHIEF, principal(CHIEF, "agent", "me-chief")],
+	[TWIN, principal(TWIN, "agent", "me-twin")],
 ]);
 
 let seq = 0;
@@ -72,7 +72,7 @@ describe("buildThreadRows", () => {
 			msg(ME, "2026-09-26T09:02:00.000Z"),
 			msg(ME, "2026-09-26T09:06:00.000Z"),
 			msg(BOB, "2026-09-26T09:07:00.000Z"),
-			msg(CHIEF, "2026-09-26T09:08:00.000Z"),
+			msg(TWIN, "2026-09-26T09:08:00.000Z"),
 		];
 		const rows = buildThreadRows(events, map, ME, null);
 		expect(rows.map((r) => r.kind)).toEqual([
@@ -127,10 +127,10 @@ describe("buildThreadRows", () => {
 		seq = 0;
 		const events = [
 			msg(ME, "2026-09-26T09:00:00.000Z"),
-			action(CHIEF, "2026-09-26T09:00:10.000Z", "查阅了路线图"),
-			action(CHIEF, "2026-09-26T09:00:20.000Z", "记下了出差"),
-			msg(CHIEF, "2026-09-26T09:00:30.000Z"),
-			action(CHIEF, "2026-09-26T09:01:00.000Z", "分派给执行助理"),
+			action(TWIN, "2026-09-26T09:00:10.000Z", "查阅了路线图"),
+			action(TWIN, "2026-09-26T09:00:20.000Z", "记下了出差"),
+			msg(TWIN, "2026-09-26T09:00:30.000Z"),
+			action(TWIN, "2026-09-26T09:01:00.000Z", "分派给执行助手"),
 		];
 		const rows = buildThreadRows(events, map, ME, null);
 		expect(rows.map((r) => r.kind)).toEqual([
@@ -162,7 +162,7 @@ describe("buildThreadRows", () => {
 				...base,
 				id: 1,
 				seq: 1,
-				actorId: CHIEF,
+				actorId: TWIN,
 				type: "escalation.created",
 				payload: { workItemId: WORK, question: "能提前吗" },
 				createdAt: "2026-09-26T09:00:00.000Z",
@@ -184,6 +184,44 @@ describe("buildThreadRows", () => {
 			card?.kind === "escalation" ? card.resolved?.payload.text : null,
 		).toBe("可以");
 	});
+
+	it("协商：私聊里的 negotiation.started 成为协商卡片行；协商会话自己的事件不进消息列", () => {
+		seq = 0;
+		const NEGO = "77777777-7777-4777-8777-777777777777";
+		const base = {
+			tenantId: TENANT,
+			conversationId: CONV,
+			onBehalfOfId: ME,
+			actorId: TWIN,
+		};
+		const events: Event[] = [
+			msg(BOB, "2026-09-26T09:00:00.000Z"),
+			{
+				...base,
+				id: 10,
+				seq: 2,
+				type: "negotiation.started",
+				payload: { negotiationConversationId: NEGO, goal: "约周四" },
+				createdAt: "2026-09-26T09:01:00.000Z",
+			},
+			{
+				...base,
+				id: 11,
+				seq: 3,
+				type: "negotiation.step",
+				payload: { step: 1, status: "continue", message: "周四？" },
+				createdAt: "2026-09-26T09:01:30.000Z",
+			},
+		];
+		const rows = buildThreadRows(events, map, ME, null);
+		expect(rows.map((r) => r.kind)).toEqual(["stamp", "bubble", "negotiation"]);
+		const card = rows[2];
+		expect(
+			card?.kind === "negotiation"
+				? card.event.payload.negotiationConversationId
+				: null,
+		).toBe(NEGO);
+	});
 });
 
 describe("提及", () => {
@@ -200,11 +238,11 @@ describe("提及", () => {
 		const members = [
 			{ id: ME, handle: "me" },
 			{ id: BOB, handle: "bob" },
-			{ id: CHIEF, handle: "me-chief" },
+			{ id: TWIN, handle: "me-twin" },
 		];
 		expect(
-			extractMentions("@me-chief 和 @bob、@bob，还有 @me", members, ME),
-		).toEqual([CHIEF, BOB]);
+			extractMentions("@me-twin 和 @bob、@bob，还有 @me", members, ME),
+		).toEqual([TWIN, BOB]);
 		expect(extractMentions("@bobby", members, ME)).toEqual([]);
 	});
 });

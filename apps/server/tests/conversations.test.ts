@@ -67,7 +67,7 @@ function agentOf(m: TeamMember, role: "front" | "specialist") {
 	if (!agent) throw new Error(`${m.me.principal.handle} 缺少 ${role} 代理`);
 	return agent.principal;
 }
-const chiefOf = (m: TeamMember) => agentOf(m, "front");
+const twinOf = (m: TeamMember) => agentOf(m, "front");
 const opsOf = (m: TeamMember) => agentOf(m, "specialist");
 
 beforeAll(async () => {
@@ -129,43 +129,43 @@ describe("私聊", () => {
 		expect(new Set(ids).size).toBe(1);
 	});
 
-	it("可以和自己的任何代理、他人的幕僚长建私聊", async () => {
-		await dm(alice.client, chiefOf(alice).id);
-		await dm(alice.client, opsOf(alice).id);
-		await dm(alice.client, chiefOf(bob).id);
-	});
-
-	it("找他人的幕僚长：对方本人以 observer 加入，能看能插话；和自己的代理聊没有 observer", async () => {
-		const conv = await dm(carol.client, chiefOf(bob).id);
+	it("两个真人的私聊：同事务加入双方分身；和自己的代理私聊只有两人", async () => {
+		const conv = await dm(carol.client, bob.me.principal.id);
 		const listed = (await listOf(bob.client)).find(
 			(x) => x.conversation.id === conv.id,
 		);
 		expect(listed?.members.map((m) => m.id).sort()).toEqual(
-			[carol.me.principal.id, chiefOf(bob).id, bob.me.principal.id].sort(),
+			[
+				carol.me.principal.id,
+				bob.me.principal.id,
+				twinOf(carol).id,
+				twinOf(bob).id,
+			].sort(),
 		);
-		await say(carol.client, conv.id, "预算是含税口径吗？");
-		const cut = await say(bob.client, conv.id, "不含税，以共享资料为准。");
-		expect(cut.actorId).toBe(bob.me.principal.id);
-		expect((await eventsOf(carol.client, conv.id)).length).toBe(2);
-		// 再找一次返回同一个会话，不重复加 observer。
-		expect((await dm(carol.client, chiefOf(bob).id, 200)).id).toBe(conv.id);
 
-		const own = await dm(carol.client, chiefOf(carol).id);
+		const own = await dm(carol.client, twinOf(carol).id);
+		expect(own.id).not.toBe(conv.id);
 		const ownListed = (await listOf(carol.client)).find(
 			(x) => x.conversation.id === own.id,
 		);
-		expect(ownListed?.members).toHaveLength(2);
+		expect(ownListed?.members.map((m) => m.id).sort()).toEqual(
+			[carol.me.principal.id, twinOf(carol).id].sort(),
+		);
+		expect((await dm(carol.client, twinOf(carol).id, 200)).id).toBe(own.id);
+		await dm(carol.client, opsOf(carol).id);
 	});
 
-	it("他人的专员 → 400 AGENT_NOT_REACHABLE", async () => {
-		await expectError(
-			await alice.client.request("POST", "/api/conversations", {
-				kind: "dm",
-				withPrincipalId: opsOf(bob).id,
-			}),
-			400,
-			"AGENT_NOT_REACHABLE",
-		);
+	it("单独找他人的任何代理（分身或助手）→ 400 AGENT_NOT_REACHABLE", async () => {
+		for (const id of [twinOf(bob).id, opsOf(bob).id]) {
+			await expectError(
+				await alice.client.request("POST", "/api/conversations", {
+					kind: "dm",
+					withPrincipalId: id,
+				}),
+				400,
+				"AGENT_NOT_REACHABLE",
+			);
+		}
 	});
 
 	it("和自己建私聊 → 400", async () => {
@@ -180,7 +180,7 @@ describe("私聊", () => {
 	});
 
 	it("其他租户的人或代理 → 404", async () => {
-		for (const id of [dave.me.principal.id, chiefOf(dave).id]) {
+		for (const id of [dave.me.principal.id, twinOf(dave).id]) {
 			await expectError(
 				await alice.client.request("POST", "/api/conversations", {
 					kind: "dm",
@@ -193,7 +193,7 @@ describe("私聊", () => {
 		await expectError(
 			await dave.client.request("POST", "/api/conversations", {
 				kind: "dm",
-				withPrincipalId: chiefOf(alice).id,
+				withPrincipalId: twinOf(alice).id,
 			}),
 			404,
 			"NOT_FOUND",
@@ -283,7 +283,7 @@ describe("消息与事件", () => {
 				`/api/conversations/${convId}/messages`,
 				{
 					text: "hi",
-					mentions: [chiefOf(ann).id],
+					mentions: [opsOf(ann).id],
 				},
 			),
 			400,
@@ -316,7 +316,12 @@ describe("消息与事件", () => {
 		);
 		expect(item).toBeDefined();
 		expect(item?.members.map((m) => m.id).sort()).toEqual(
-			[ann.me.principal.id, ben.me.principal.id].sort(),
+			[
+				ann.me.principal.id,
+				ben.me.principal.id,
+				twinOf(ann).id,
+				twinOf(ben).id,
+			].sort(),
 		);
 		expect(item?.lastEvent?.seq).toBe(item?.conversation.lastSeq);
 		// ben 未读 = ann 发的消息数（前 1 条 + 8000 字 1 条 + 并发中 10 条）。
@@ -357,7 +362,7 @@ describe("消息与事件", () => {
 	});
 
 	it("列表按最近活动倒序", async () => {
-		const other = await dm(ann.client, chiefOf(ann).id);
+		const other = await dm(ann.client, twinOf(ann).id);
 		await say(ann.client, other.id, "最新的一条");
 		const [first] = await listOf(ann.client);
 		expect(first?.conversation.id).toBe(other.id);
@@ -452,7 +457,7 @@ describe("群聊", () => {
 			title: "  Q4 发布  ",
 			memberIds: [
 				b.me.principal.id,
-				chiefOf(owner).id,
+				twinOf(owner).id,
 				owner.me.principal.id,
 				b.me.principal.id,
 			],
@@ -473,19 +478,19 @@ describe("群聊", () => {
 		]);
 		expect(events.map((e) => e.payload)).toEqual([
 			{ principalId: b.me.principal.id },
-			{ principalId: chiefOf(owner).id },
+			{ principalId: twinOf(owner).id },
 		]);
 		const item = (await listOf(b.client)).find(
 			(x) => x.conversation.id === groupId,
 		);
 		expect(item?.members.map((m) => m.id).sort()).toEqual(
-			[owner.me.principal.id, b.me.principal.id, chiefOf(owner).id].sort(),
+			[owner.me.principal.id, b.me.principal.id, twinOf(owner).id].sort(),
 		);
 		// member.joined 不计入未读。
 		expect(item?.unread).toBe(0);
 	});
 
-	it("建群时拉他人专员 → 400 AGENT_NOT_REACHABLE；拉外租户 → 404", async () => {
+	it("建群时拉他人助手 → 400 AGENT_NOT_REACHABLE；拉外租户 → 404", async () => {
 		await expectError(
 			await owner.client.request("POST", "/api/conversations", {
 				kind: "group",
@@ -506,13 +511,13 @@ describe("群聊", () => {
 		);
 	});
 
-	it("加成员：成员可加人；他人专员 400；已在群里 409；外租户 404", async () => {
+	it("加成员：成员可加人；他人分身可加、他人助手 400；已在群里 409；外租户 404", async () => {
 		const add = (who: TeamMember, principalId: string) =>
 			who.client.request("POST", `/api/conversations/${groupId}/members`, {
 				principalId,
 			});
 		expect((await add(b, c.me.principal.id)).status).toBe(201);
-		expect((await add(c, chiefOf(b).id)).status).toBe(201);
+		expect((await add(c, twinOf(b).id)).status).toBe(201);
 		await expectError(
 			await add(owner, opsOf(c).id),
 			400,
@@ -533,7 +538,7 @@ describe("群聊", () => {
 		expect(events.at(-1)).toMatchObject({
 			type: "member.joined",
 			actorId: c.me.principal.id,
-			payload: { principalId: chiefOf(b).id },
+			payload: { principalId: twinOf(b).id },
 		});
 	});
 

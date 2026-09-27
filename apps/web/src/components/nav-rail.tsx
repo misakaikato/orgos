@@ -13,6 +13,7 @@ import {
 	IconTodo,
 } from "@/components/icons";
 import { Mascot } from "@/components/mascot";
+import { StatusPicker } from "@/components/status-picker";
 import { ThemeSegmented } from "@/components/theme";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -91,7 +92,7 @@ export function useSignOut(): (() => Promise<void>) | null {
 	};
 }
 
-/** 本人头像菜单：身份、主题、退出。 */
+/** 本人头像菜单：身份、在线状态、主题、退出。 */
 function AccountMenu() {
 	const me = useStore((s) => s.me);
 	const signOut = useSignOut();
@@ -110,18 +111,27 @@ function AccountMenu() {
 					onClick={() => setOpen((v) => !v)}
 					className="rounded-pill transition-opacity duration-150 hover:opacity-85"
 				>
-					<PersonAvatar principal={me.principal} size={36} />
+					<PersonAvatar
+						principal={me.principal}
+						size={36}
+						showStatus
+						ring="sidebar"
+					/>
 				</button>
 			}
 		>
 			<div className="flex items-center gap-3 px-3 pt-2 pb-3">
-				<PersonAvatar principal={me.principal} size={40} />
+				<PersonAvatar principal={me.principal} size={40} showStatus />
 				<span className="flex min-w-0 flex-col">
 					<span className="truncate text-14 font-semibold text-ink">
 						{me.principal.displayName}
 					</span>
 					<span className="truncate text-12 text-muted">{me.tenant.name}</span>
 				</span>
+			</div>
+			<div className="border-t border-line px-3 py-3">
+				<p className="mb-2 text-12 text-muted">状态</p>
+				<StatusPicker />
 			</div>
 			<div className="border-t border-line px-3 py-3">
 				<p className="mb-2 text-12 text-muted">主题</p>

@@ -6,6 +6,7 @@ import {
 	AgentSchema,
 	ConversationSchema,
 	HandleSchema,
+	PRINCIPAL_STATUSES,
 	PrincipalSchema,
 	TenantSchema,
 	UserSchema,
@@ -70,6 +71,16 @@ export const MeResponseSchema = z.object({
 	agents: z.array(AgentSchema),
 });
 export type MeResponse = z.infer<typeof MeResponseSchema>;
+
+export const UpdateStatusRequestSchema = z.object({
+	status: z.enum(PRINCIPAL_STATUSES),
+});
+export type UpdateStatusRequest = z.infer<typeof UpdateStatusRequestSchema>;
+
+export const UpdateStatusResponseSchema = z.object({
+	principal: PrincipalSchema,
+});
+export type UpdateStatusResponse = z.infer<typeof UpdateStatusResponseSchema>;
 
 export const DirectoryResponseSchema = z.object({
 	people: z.array(
@@ -145,6 +156,8 @@ export const PostMessageRequestSchema = z.object({
 		.max(MESSAGE_MAX_LENGTH)
 		.refine((t) => t.trim().length > 0, "消息不能为空"),
 	mentions: z.array(z.uuid()).max(50).optional(),
+	/** 仅在两个真人的私聊中有效：这条消息请对方的分身回答。 */
+	askTwin: z.boolean().optional(),
 });
 export type PostMessageRequest = z.infer<typeof PostMessageRequestSchema>;
 

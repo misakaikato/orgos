@@ -1,8 +1,8 @@
 import type { Agent, Principal } from "@orgos/protocol";
 import { AGENT_ROLES } from "@orgos/protocol";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { agents, principals } from "@/db/schema";
-import type { Scoped } from "@/db/scope";
+import type { PrincipalRow, Scoped } from "@/db/scope";
 import { notFound } from "@/lib/errors";
 import { toAgent, toPrincipal } from "@/lib/serialize";
 
@@ -34,7 +34,7 @@ export async function createAgent(
 	return toAgent(principal, agent);
 }
 
-/** 某人的代理组：幕僚长在前，其余按创建时间。 */
+/** 某人的代理组：分身在前，其余按创建时间。 */
 export async function listAgentsOf(
 	s: Scoped,
 	ownerId: string,
@@ -65,7 +65,31 @@ export async function listAgentsOf(
 		);
 }
 
-/** 本租户所有人及其幕僚长，按 handle 排序。 */
+/** 某人的分身（每人恰好一个）；缺失即数据损坏。 */
+export async function requireTwinOf(
+	s: Scoped,
+	ownerId: string,
+): Promise<PrincipalRow> {
+	const [row] = await s.executor
+		.select({ principal: principals })
+		.from(principals)
+		.innerJoin(agents, eq(agents.principalId, principals.id))
+		.where(
+			and(
+				s.where(
+					principals,
+					eq(principals.ownerId, ownerId),
+					eq(principals.kind, "agent"),
+				),
+				s.where(agents, eq(agents.role, "front")),
+			),
+		)
+		.limit(1);
+	if (!row) throw new Error(`主体 ${ownerId} 没有分身`);
+	return row.principal;
+}
+
+/** 本租户所有人及其分身，按 handle 排序。 */
 export async function listDirectory(
 	s: Scoped,
 ): Promise<{ principal: Principal; front: Principal }[]> {

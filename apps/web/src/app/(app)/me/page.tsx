@@ -10,6 +10,7 @@ import {
 } from "@/components/icons";
 import { useSignOut } from "@/components/nav-rail";
 import { PageHeader } from "@/components/page-header";
+import { StatusPicker } from "@/components/status-picker";
 import { ThemeSegmented } from "@/components/theme";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { appHref } from "@/lib/auth-mode";
@@ -36,7 +37,7 @@ function Row({
 	);
 }
 
-/** 我的（手机底部标签）：身份、代理组与设备入口、主题、退出。 */
+/** 我的（手机底部标签）：身份、在线状态、代理组与设备入口、主题、退出。 */
 export default function MePage() {
 	const me = useStore((s) => s.me);
 	const signOut = useSignOut();
@@ -47,7 +48,7 @@ export default function MePage() {
 			<div className="min-h-0 flex-1 overflow-y-auto bg-sidebar">
 				<div className="mx-auto flex w-full max-w-thread flex-col gap-4 px-4 py-6 md:px-6">
 					<section className="flex items-center gap-4 rounded-card bg-bg p-4">
-						<PersonAvatar principal={me.principal} size={72} />
+						<PersonAvatar principal={me.principal} size={72} showStatus />
 						<div className="min-w-0">
 							<p className="truncate text-20 font-semibold text-ink">
 								{me.principal.displayName}
@@ -56,6 +57,10 @@ export default function MePage() {
 								{me.tenant.name} · @{me.principal.handle}
 							</p>
 						</div>
+					</section>
+					<section className="rounded-card bg-bg p-4">
+						<p className="mb-2 text-14 font-semibold text-ink">状态</p>
+						<StatusPicker />
 					</section>
 					<section className="divide-y divide-line overflow-hidden rounded-card bg-bg">
 						<Row href="/agents" icon={<IconAgents />}>

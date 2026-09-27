@@ -9,6 +9,7 @@ import type {
 	DirectoryResponse,
 	Event,
 	MeResponse,
+	PrincipalStatus,
 	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
@@ -237,6 +238,13 @@ const WORK_ITEM_EVENTS: ReadonlySet<Event["type"]> = new Set([
 	"confirmation.resolved",
 ]);
 
+/** 只发生在协商会话里的事件：协商会话不在会话列表中，由私聊里的协商卡片读取。 */
+const NEGOTIATION_EVENTS: ReadonlySet<Event["type"]> = new Set([
+	"negotiation.step",
+	"negotiation.ended",
+	"confirmation.resolved",
+]);
+
 /** WS 推来的事件：并入已加载的事件列表与会话摘要；未知会话或成员变化时重拉列表。 */
 export function applyEvent(event: Event): void {
 	const cid = event.conversationId;
@@ -244,6 +252,7 @@ export function applyEvent(event: Event): void {
 	if (!cid || !meId) return;
 	mergeInto(cid, [event]);
 	if (WORK_ITEM_EVENTS.has(event.type)) void loadWorkItems();
+	if (NEGOTIATION_EVENTS.has(event.type)) return;
 	const read = state.activeId === cid;
 	const next = applyEventToSummaries(state.conversations, event, meId, read);
 	if (next === null || event.type === "member.joined") {
@@ -253,9 +262,18 @@ export function applyEvent(event: Event): void {
 	if (next !== state.conversations) set({ conversations: next });
 }
 
-/** 断线重连后：重拉会话列表，并按已知最大 seq 补齐每个已加载的会话。 */
+/** 断线重连后：重拉通讯录（在线状态）与会话列表，并按已知最大 seq 补齐每个已加载的会话。 */
 export async function resync(): Promise<void> {
-	await refreshConversations();
+	const [directory] = await Promise.all([
+		api.directory(),
+		refreshConversations(),
+	]);
+	set({ directory: directory.people });
+	const mine = directory.people.find(
+		(p) => p.principal.id === state.me?.principal.id,
+	);
+	if (mine?.principal.status)
+		applyPresence(mine.principal.id, mine.principal.status);
 	void loadWorkItems();
 	const loaded = Object.entries(state.events);
 	await Promise.all(
@@ -272,9 +290,37 @@ export async function sendMessage(
 	conversationId: string,
 	text: string,
 	mentions: string[],
+	askTwin = false,
 ): Promise<void> {
-	const { event } = await api.postMessage(conversationId, { text, mentions });
+	const { event } = await api.postMessage(conversationId, {
+		text,
+		mentions,
+		...(askTwin ? { askTwin } : {}),
+	});
 	applyEvent(event);
+}
+
+/** 某人的在线状态变了：通讯录与本人是人的状态的来源（主体查找表以它们为准）。 */
+export function applyPresence(
+	principalId: string,
+	status: PrincipalStatus,
+): void {
+	set((s) => ({
+		directory: s.directory.map((p) =>
+			p.principal.id === principalId
+				? { ...p, principal: { ...p.principal, status } }
+				: p,
+		),
+		me:
+			s.me && s.me.principal.id === principalId
+				? { ...s.me, principal: { ...s.me.principal, status } }
+				: s.me,
+	}));
+}
+
+export async function setMyStatus(status: PrincipalStatus): Promise<void> {
+	const { principal } = await api.updateStatus({ status });
+	if (principal.status) applyPresence(principal.id, principal.status);
 }
 
 export function setActiveConversation(conversationId: string | null): void {

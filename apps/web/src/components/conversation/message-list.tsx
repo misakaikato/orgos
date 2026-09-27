@@ -9,7 +9,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { EscalationCard, OutcomeCard } from "@/components/conversation/cards";
+import { EscalationCard } from "@/components/conversation/cards";
 import {
 	ActionsRow,
 	Bubble,
@@ -17,6 +17,7 @@ import {
 	SystemLine,
 	UnreadDivider,
 } from "@/components/conversation/message-item";
+import { NegotiationCard } from "@/components/conversation/negotiation";
 import { IconArrowDown } from "@/components/icons";
 import type { PrincipalMap } from "@/lib/principals";
 import { buildThreadRows, type ThreadRow } from "@/lib/thread";
@@ -37,8 +38,6 @@ type RowContext = {
 	meId: string;
 	handles: ReadonlySet<string>;
 	isGroup: boolean;
-	/** 我还有确认待办的协商会话 id。 */
-	confirmPending: boolean;
 };
 
 function Row({ row, ctx }: { row: ThreadRow; ctx: RowContext }) {
@@ -78,14 +77,8 @@ function Row({ row, ctx }: { row: ThreadRow; ctx: RowContext }) {
 					meId={meId}
 				/>
 			);
-		case "outcome":
-			return (
-				<OutcomeCard
-					event={row.event}
-					confirmPending={ctx.confirmPending}
-					map={map}
-				/>
-			);
+		case "negotiation":
+			return <NegotiationCard event={row.event} map={map} meId={meId} />;
 		case "system":
 			return <SystemLine event={row.event} map={map} meId={meId} />;
 	}
@@ -102,7 +95,6 @@ export function MessageList({
 	unreadAfter,
 	handles,
 	isGroup,
-	confirmPending,
 	onBottomChange,
 	empty,
 	footer,
@@ -113,7 +105,6 @@ export function MessageList({
 	unreadAfter: number | null;
 	handles: ReadonlySet<string>;
 	isGroup: boolean;
-	confirmPending: boolean;
 	onBottomChange: (atBottom: boolean) => void;
 	/** 没有任何事件时显示。 */
 	empty: ReactNode;
@@ -130,7 +121,7 @@ export function MessageList({
 		() => buildThreadRows(events, map, meId, unreadAfter),
 		[events, map, meId, unreadAfter],
 	);
-	const ctx: RowContext = { map, meId, handles, isGroup, confirmPending };
+	const ctx: RowContext = { map, meId, handles, isGroup };
 
 	// 首次定位 + 新消息跟随（布局完成后、绘制前执行，避免跳动）。
 	useLayoutEffect(() => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { AGENT_ROLE_DUTY, AGENT_ROLE_LABEL } from "@orgos/protocol";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { SoonButton } from "@/components/ui/button";
@@ -29,9 +30,7 @@ export default function AgentsPage() {
 									{a.principal.displayName}
 								</p>
 								<p className="text-12 text-muted">
-									{a.role === "front"
-										? "幕僚长 · 对外代表你"
-										: "专员 · 只替你办事"}
+									{`${AGENT_ROLE_LABEL[a.role]} · ${AGENT_ROLE_DUTY[a.role]}`}
 								</p>
 							</div>
 						))}

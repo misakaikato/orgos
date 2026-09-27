@@ -152,14 +152,20 @@ describe("resetDemo（seed:demo）", () => {
 		]);
 		expect(await openItems("xunuo")).toEqual([]);
 
-		// 林晓以 observer 身份看得到许诺找她幕僚长的会话，里面有"已转给本人"。
+		// 林晓默认忙碌；许诺 ↔ 林晓的私聊含双方分身，林晓的分身替她答复并已上报。
 		const token = await tokenOf("linxiao");
+		const me = MeResponseSchema.parse(
+			await (await asToken(token, "/api/me")).json(),
+		);
+		expect(me.principal.status).toBe("busy");
 		const list = ConversationListResponseSchema.parse(
 			await (await asToken(token, "/api/conversations")).json(),
 		).items;
+		expect(list.some((x) => x.conversation.kind === "negotiation")).toBe(false);
 		const c3 = list.find((x) => x.conversation.id === lin[0]?.conversationId);
+		expect(c3?.conversation.kind).toBe("dm");
 		expect(c3?.members.map((m) => m.handle).sort()).toEqual(
-			["linxiao", "linxiao-chief", "xunuo"].sort(),
+			["linxiao", "linxiao-twin", "xunuo", "xunuo-twin"].sort(),
 		);
 		const evs = EventsResponseSchema.parse(
 			await (
@@ -169,22 +175,46 @@ describe("resetDemo（seed:demo）", () => {
 		expect(evs.map((e) => e.type)).toContain("escalation.created");
 		const members = c3?.members ?? [];
 		const idOf = (h: string) => members.find((m) => m.handle === h)?.id;
-		const agentMsg = evs.find(
+		const agentMessages = evs.filter(
 			(e) => e.type === "message.posted" && e.onBehalfOfId !== null,
 		);
-		expect(agentMsg?.actorId).toBe(idOf("linxiao-chief"));
-		expect(agentMsg?.onBehalfOfId).toBe(idOf("linxiao"));
+		expect(agentMessages.map((e) => e.actorId)).toEqual([idOf("linxiao-twin")]);
+		expect(agentMessages[0]?.onBehalfOfId).toBe(idOf("linxiao"));
 
-		// 陈安（observer）看得到已结束、结果为 agreed 的协商。
+		// 陈安 ↔ 周野的私聊里有协商卡片；协商会话不在列表里，但本人可读其事件。
 		const chenan = await tokenOf("chenan");
-		const nego = ConversationListResponseSchema.parse(
+		const chenanList = ConversationListResponseSchema.parse(
 			await (await asToken(chenan, "/api/conversations")).json(),
-		).items.find((x) => x.conversation.kind === "negotiation");
+		).items;
+		expect(chenanList.some((x) => x.conversation.kind === "negotiation")).toBe(
+			false,
+		);
+		const confirmation = (await openItems("chenan"))[0];
+		const dmCZ = chenanList.find(
+			(x) => x.conversation.id === confirmation?.conversationId,
+		);
+		expect(dmCZ?.members.map((m) => m.handle).sort()).toEqual(
+			["chenan", "chenan-twin", "zhouye", "zhouye-twin"].sort(),
+		);
+		const dmEvents = EventsResponseSchema.parse(
+			await (
+				await asToken(
+					chenan,
+					`/api/conversations/${dmCZ?.conversation.id}/events`,
+				)
+			).json(),
+		).items;
+		const started = dmEvents.find((e) => e.type === "negotiation.started");
+		expect(started?.type).toBe("negotiation.started");
+		if (started?.type !== "negotiation.started") return;
+		expect(confirmation?.payload).toMatchObject({
+			negotiationConversationId: started.payload.negotiationConversationId,
+		});
 		const negoEvents = EventsResponseSchema.parse(
 			await (
 				await asToken(
 					chenan,
-					`/api/conversations/${nego?.conversation.id}/events`,
+					`/api/conversations/${started.payload.negotiationConversationId}/events`,
 				)
 			).json(),
 		).items;

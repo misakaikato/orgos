@@ -1,6 +1,7 @@
 /**
- * 代理之间的协商会话（kind=negotiation）：两个幕僚长是成员，双方本人是 observer。
- * 状态存 `conversations.negotiation`，每一步与结束各落一条事件（经 `@/services/events`）。
+ * 代理之间的协商会话（kind=negotiation）：两个分身是成员，双方本人是 observer。
+ * 它不出现在会话列表里：发起时在两位本人的私聊里落 `negotiation.started`，界面为协商卡片，
+ * 卡片经本会话的事件展示每一步。状态存 `conversations.negotiation`，每一步与结束各落一条事件。
  */
 import {
 	NEGOTIATION_MAX_STEPS,
@@ -11,10 +12,11 @@ import {
 	type WorkItem,
 } from "@orgos/protocol";
 import { eq } from "drizzle-orm";
-import { conversationMembers, conversations } from "@/db/schema";
-import type { Scoped } from "@/db/scope";
+import { conversationMembers, conversations, principals } from "@/db/schema";
+import type { PrincipalRow, Scoped } from "@/db/scope";
 import { badRequest, notFound } from "@/lib/errors";
 import { requireAgentPrincipal } from "@/services/agent-events";
+import { openDm } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
 import { createWorkItem } from "@/services/work-items";
 
@@ -44,7 +46,31 @@ async function saveState(
 		.where(tx.where(conversations, eq(conversations.id, conversationId)));
 }
 
-/** 建协商会话：发起方与应答方的代理为成员，双方本人为 observer。 */
+async function requireHuman(s: Scoped, id: string): Promise<PrincipalRow> {
+	const row = await s.first(
+		principals,
+		eq(principals.id, id),
+		eq(principals.kind, "human"),
+	);
+	if (!row) throw notFound("找不到此人");
+	return row;
+}
+
+/** 两位本人的私聊（没有则新建，含双方分身）。 */
+async function ownersDm(
+	s: Scoped,
+	initiatorOwnerId: string,
+	responderOwnerId: string,
+): Promise<string> {
+	const owner = await requireHuman(s, initiatorOwnerId);
+	const { conversation } = await openDm(s, owner, responderOwnerId);
+	return conversation.id;
+}
+
+/**
+ * 建协商会话：发起方与应答方的代理为成员，双方本人为 observer；
+ * 同一事务里在两位本人的私聊落 `negotiation.started`（actor 为发起方代理）。
+ */
 export async function startNegotiation(
 	s: Scoped,
 	input: {
@@ -68,7 +94,8 @@ export async function startNegotiation(
 		maxSteps: NEGOTIATION_MAX_STEPS,
 		state: "running",
 	};
-	return s.transaction(async (tx) => {
+	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
+	return transactWithEvents(s, async (tx, append) => {
 		const row = await tx.insert(conversations, {
 			kind: "negotiation",
 			title: input.title,
@@ -85,6 +112,14 @@ export async function startNegotiation(
 		for (const m of members) {
 			await tx.insert(conversationMembers, { conversationId: row.id, ...m });
 		}
+		await append({
+			conversationId: dmId,
+			actorId: initiator.id,
+			onBehalfOfId: initiator.ownerId,
+			type: "negotiation.started",
+			payload: { negotiationConversationId: row.id, goal: input.goal },
+			at: input.at,
+		});
 		return row;
 	});
 }
@@ -134,7 +169,7 @@ export async function appendNegotiationStep(
 
 /**
  * 结束协商：落 `negotiation.ended`（actor 为发起方代理）。结果为 agreed 时给双方本人
- * 各建一条 confirmation 待办，提问人为对方的代理。
+ * 各建一条 confirmation 待办，提问人为对方的代理，关联两人的私聊（协商卡片所在处）。
  */
 export async function endNegotiation(
 	s: Scoped,
@@ -147,6 +182,7 @@ export async function endNegotiation(
 	const initiator = await requireAgentPrincipal(s, state.initiatorAgentId);
 	const responder = await requireAgentPrincipal(s, state.responderAgentId);
 	const proposal = state.lastProposal;
+	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
 	return transactWithEvents(s, async (tx, append) => {
 		await append({
 			conversationId,
@@ -174,7 +210,7 @@ export async function endNegotiation(
 					body: `${other.displayName}与${self.displayName}已谈妥，等你确认。`,
 					ownerId: self.ownerId,
 					requesterId: other.id,
-					conversationId,
+					conversationId: dmId,
 				}),
 			);
 		}

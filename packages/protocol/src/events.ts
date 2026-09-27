@@ -10,6 +10,8 @@ export const MessagePostedPayloadSchema = z.object({
 	text: z.string(),
 	/** 被 @ 的主体 id。 */
 	mentions: z.array(z.uuid()),
+	/** 两个真人的私聊里，发送者切到"问分身"：指向对方的分身。 */
+	askTwin: z.boolean().optional(),
 });
 
 export const AgentActionPayloadSchema = z.object({
@@ -34,6 +36,12 @@ export const NegotiationStepPayloadSchema = z.object({
 	status: z.enum(NEGOTIATION_STATUSES),
 	message: z.string(),
 	proposal: z.unknown().optional(),
+});
+
+/** 落在两位本人的私聊里，界面为协商卡片。 */
+export const NegotiationStartedPayloadSchema = z.object({
+	negotiationConversationId: z.uuid(),
+	goal: z.string(),
 });
 
 export const NegotiationEndedPayloadSchema = z.object({
@@ -88,6 +96,11 @@ export const EventSchema = z.discriminatedUnion("type", [
 	}),
 	z.object({
 		...eventBase,
+		type: z.literal("negotiation.started"),
+		payload: NegotiationStartedPayloadSchema,
+	}),
+	z.object({
+		...eventBase,
 		type: z.literal("negotiation.ended"),
 		payload: NegotiationEndedPayloadSchema,
 	}),
@@ -121,6 +134,7 @@ export const EVENT_PAYLOAD_SCHEMAS: { [T in EventType]: z.ZodType } = {
 	"escalation.created": EscalationCreatedPayloadSchema,
 	"escalation.resolved": EscalationResolvedPayloadSchema,
 	"negotiation.step": NegotiationStepPayloadSchema,
+	"negotiation.started": NegotiationStartedPayloadSchema,
 	"negotiation.ended": NegotiationEndedPayloadSchema,
 	"confirmation.resolved": ConfirmationResolvedPayloadSchema,
 	"member.joined": MemberJoinedPayloadSchema,

@@ -35,6 +35,7 @@ export function toPrincipal(row: PrincipalRow): Principal {
 		handle: row.handle,
 		displayName: row.displayName,
 		createdAt: row.createdAt.toISOString(),
+		...(row.kind === "human" ? { status: row.status } : {}),
 	};
 }
 

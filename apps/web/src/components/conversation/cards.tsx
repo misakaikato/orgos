@@ -1,21 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import {
-	fallbackPrincipal,
-	ProposalBlock,
-} from "@/components/conversation/message-item";
+import { fallbackPrincipal } from "@/components/conversation/message-item";
 import { Avatar } from "@/components/ui/avatar";
 import { SoonButton } from "@/components/ui/button";
 import { cx } from "@/lib/cx";
-import { OUTCOME_LABEL } from "@/lib/describe";
 import { formatClock } from "@/lib/format";
 import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
-import type {
-	EscalationEvent,
-	EscalationResolvedEvent,
-	OutcomeEvent,
-} from "@/lib/thread";
+import type { EscalationEvent, EscalationResolvedEvent } from "@/lib/thread";
 
 /**
  * 飞书式消息卡片（DESIGN.md §4）：宽 360、圆角 12、1px 描边、白底；
@@ -74,7 +66,7 @@ export function MessageCard({
 }
 
 /** 卡片在消息列里的位置：与代理气泡同列居左，左侧是发出它的代理的团子。 */
-function CardRow({
+export function CardRow({
 	actorId,
 	map,
 	children,
@@ -143,56 +135,6 @@ export function EscalationCard({
 						? `${agent?.displayName ?? "代理"}转来的问题，已处理`
 						: `${agent?.displayName ?? "代理"}转来，等${mine ? "你" : ownerName}拍板后回复对方`}
 				</p>
-			</MessageCard>
-		</CardRow>
-	);
-}
-
-/** 协商结果卡片：谈妥后等双方本人确认；未谈成则只是结果。 */
-export function OutcomeCard({
-	event,
-	confirmPending,
-	map,
-}: {
-	event: OutcomeEvent;
-	/** 我有这场协商的确认待办尚未处理。 */
-	confirmPending: boolean;
-	map: PrincipalMap;
-}) {
-	const agreed = event.payload.outcome === "agreed";
-	const title = confirmPending
-		? "请确认协商结果"
-		: agreed
-			? "协商已谈妥"
-			: "协商未谈成";
-	return (
-		<CardRow actorId={event.actorId} map={map}>
-			<MessageCard
-				pending={confirmPending}
-				title={title}
-				meta={formatClock(event.createdAt)}
-				actions={
-					confirmPending ? (
-						<>
-							<SoonButton variant="primary">确认</SoonButton>
-							<SoonButton variant="danger">驳回</SoonButton>
-						</>
-					) : null
-				}
-			>
-				<p className="flex items-center gap-2">
-					<span
-						aria-hidden="true"
-						className={cx(
-							"size-2 shrink-0 rounded-pill",
-							agreed ? "bg-good" : "bg-danger",
-						)}
-					/>
-					{OUTCOME_LABEL[event.payload.outcome]}
-				</p>
-				{event.payload.proposal !== undefined ? (
-					<ProposalBlock proposal={event.payload.proposal} />
-				) : null}
 			</MessageCard>
 		</CardRow>
 	);
