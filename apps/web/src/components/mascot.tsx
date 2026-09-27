@@ -64,6 +64,7 @@ export function Mascot({
 			aria-hidden={label ? undefined : true}
 			draggable={false}
 			decoding="async"
+			style={{ width: size, height: size }}
 			className={cx(
 				"shrink-0 origin-bottom select-none",
 				MOTION[state],
