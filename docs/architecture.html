@@ -126,7 +126,7 @@
 
 <div class="wrap">
 	<header class="prose">
-		<p class="eyebrow">orgos · 阶段一设计梳理 · 最近更新 2026 年 9 月 27 日</p>
+		<p class="eyebrow">orgos · 阶段一 MVP 完成 · 最近更新 2026 年 9 月 27 日</p>
 		<h1>orgos 架构</h1>
 		<p class="lede">人与各自的代理组在同一个即时通讯里协作：分身对外代表本人，助手替本人干活，设备 Runner 把员工电脑变成虚拟总线上的节点。下面先总览，再逐层展开：系统分层、服务端模块地图、分身怎么处理一条消息以及它在代码里走过的路径、会话内话题、设备 Runner 与外部 agent、企业模型网关、记忆层、数据模型、连接与协议，最后是关键决定与进度。</p>
 		<div class="legend" aria-label="图例">
@@ -144,7 +144,7 @@
 				<svg viewBox="0 0 1160 820" width="1160" role="img" aria-label="服务端分为接入层、代理层、业务层、平台层四层，上层调用下层，业务层的新事件经事件通知唤起代理层；服务端下方是 PostgreSQL 与员工电脑上的 Runner，Runner 主动连回能力总线并以 ACP 驱动外部 agent；企业模型网关连接模型厂商。">
 <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah"/></marker><marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah a"/></marker><marker id="arM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="ah m"/></marker></defs>
 <rect class="box " x="150" y="18" width="560" height="62" rx="10"/>
-<text class="t" x="164" y="40">Web 应用</text>
+<text class="t" x="164" y="40">Web 应用 · 桌面客户端</text>
 <text class="s" x="164" y="60">聊天与话题 · 待办 · 代理组 · 设备 · 通讯录 · 模型页 · 组织树与部门页</text>
 <rect class="box " x="725" y="18" width="160" height="62" rx="10"/>
 <text class="t" x="739" y="40">模拟台</text>
@@ -236,7 +236,7 @@
 <line class="ln " x1="210" y1="620" x2="210" y2="658" marker-end="url(#ar)" marker-start="url(#ar)"/>
 <text class="lbl " x="220" y="644">读写（按租户）</text>
 <rect class="box" x="400" y="650" width="485" height="120" rx="12"/>
-<text class="t" x="416" y="674">设备 Runner（员工电脑）</text>
+<text class="t" x="416" y="674">设备 Runner（员工电脑，桌面客户端看护或命令行）</text>
 <rect class="box " x="414" y="688" width="140" height="66" rx="8"/>
 <text class="t" x="428" y="710">连接桥</text>
 <text class="s" x="428" y="730">主动连出 · 重连</text>
@@ -1090,6 +1090,8 @@
 					<tr><td class="k">驱动本机 agent</td><td>ACP（Zed 的 Agent Client Protocol，40 多个 agent 支持）。MCP 管工具、A2A 管跨公司、AG-UI 属前端层，都不替代它；注意与 IBM 的同名协议（已并入 A2A）区分</td><td>本页</td></tr>
 					<tr><td class="k">设备联网</td><td>保持 Runner 主动连出的 WebSocket，不组 VPN；暴露本机服务时做经这条连接的端口转发；设备间大流量阶段二再考虑 iroh 或 tsnet</td><td>本页</td></tr>
 					<tr><td class="k">代理操作软件</td><td>全部 REST 接口自动开放给代理：接口是真相，目录只补用途与风险级别，漏登记测试即失败；为本人时权限同本人、不确认；为他人时只开放公开查询与三个低风险动作（拉含提问人的群、在其所在会话开话题、往其所在群加人），其余上报；鉴权、调试、签发凭据、模型 key 不开放；事件记为"分身代本人"</td><td>规格"应用接口工具"一节</td></tr>
+					<tr><td class="k">客户端形态</td><td>Electron 独立 app：聊天窗口加载同一个 Web 应用；菜单栏看护编译成单文件的 Runner，只经它的命令行驱动，不另写 Runner 逻辑；配对信息只在 runner.json</td><td>规格"桌面客户端"一节</td></tr>
+					<tr><td class="k">上报的可靠性</td><td>不靠提示词：为他人办事时回复声称"已转交"而本轮没调用上报工具，运行循环拦下并纠正一次</td><td>规格"上报的运行时校验"</td></tr>
 					<tr><td class="k">记忆</td><td>自动提炼三层；可见范围由来源决定；14 类中 6 类默认禁止对外（私人事务、薪酬、健康、家庭、人事评价、凭据与安全）；第三人私聊只转述事实、隐去来源；回答附依据；代答记录可更正；不接本地 agent 的记忆文件；先不用向量</td><td>规格"记忆层"一节</td></tr>
 				</tbody>
 			</table>
@@ -1100,11 +1102,11 @@
 		<h2 id="f5">进度</h2>
 		<div class="road">
 			<div class="col"><h3><i class="dot done"></i>已完成并验收</h3><ul>
-				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li><li>组织结构与部门分身（问部门、章程外上报、部门协商真机通过）</li><li>应用接口工具（本人指挥分身拉群、他人借分身拉群、越权请求上报真机通过）</li></ul></div>
+				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li><li>组织结构与部门分身（问部门、章程外上报、部门协商真机通过）</li><li>应用接口工具（本人指挥分身拉群、他人借分身拉群、越权请求上报真机通过）</li><li>桌面客户端（打包实测：通知与角标、配对、Runner 被杀自动恢复、连不上服务器页）</li><li>端到端总验收（e2e 14 场景 51 子项；真实模型冒烟连续 5 次通过）</li><li>上报的运行时校验</li><li>架构收束：走向正式产品</li></ul></div>
 			<div class="col"><h3><i class="dot review"></i>施工中</h3><ul>
-				<li>桌面客户端：聊天窗口 + 菜单栏看护 Runner（Electron）</li></ul></div>
+				<li>暂无</li></ul></div>
 			<div class="col"><h3><i class="dot plan"></i>下一步（按顺序）</h3><ul>
-				<li>端到端总验收</li><li>架构收束：走向正式产品的沿用、重做与技术债清单</li></ul></div>
+				<li>阶段一已完成；下一步按"走向正式产品"一节规划</li></ul></div>
 			<div class="col"><h3><i class="dot later"></i>阶段二</h3><ul>
 				<li>邮件</li><li>工作台与小应用</li><li>跨公司 A2A 网关</li><li>向量检索、按项目的画像</li><li>端口转发、设备间直连</li><li>更多 ACP agent：Kimi CLI、Qwen Code、Gemini CLI、Copilot</li></ul></div>
 		</div>

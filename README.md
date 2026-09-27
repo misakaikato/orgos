@@ -164,7 +164,17 @@ bun run smoke:llm   # 真实模型冒烟（需要网络）
 
 ## 桌面客户端
 
-见 `apps/desktop`。
+orgos 的独立 app（Electron，目前只验证 macOS Apple Silicon）：主窗口是聊天，菜单栏常驻图标看护本机 Runner。
+
+```bash
+bun run desktop:build   # 产物在 apps/desktop/dist/release/（.app 与 .dmg，未签名）
+bun run desktop:dev     # 对着已在运行的服务端开发
+```
+
+- 第一次打开填服务器地址（默认 `http://localhost:8930`）。未签名：首次打开需在"系统设置 → 隐私与安全性"里放行。
+- 关窗口只隐藏；从菜单栏"退出 orgos"才会退出。菜单栏图标：实心为已连接，缺口圆为重连中，空心为已停止，斜线为未配对。
+- 菜单栏 → Runner 控制：在 Web 的"设备"页生成配对码后填入，选工作目录，启动。Runner 意外退出会自动重启，日志在控制窗口里打开。
+- 配对信息与命令行版 Runner 共用 `~/.orgos/runner.json`；没有桌面的机器继续用命令行版（`bun run --cwd apps/runner start`）。
 
 ## 目录结构
 
