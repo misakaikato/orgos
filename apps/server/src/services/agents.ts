@@ -1,10 +1,21 @@
-import type { Agent, CreateAgentRequest, Principal } from "@orgos/protocol";
-import { AGENT_ROLES, ERROR_CODES } from "@orgos/protocol";
+import path from "node:path";
+import {
+	AGENT_ACP_CAPABILITY,
+	AGENT_ROLES,
+	type Agent,
+	type AgentEngine,
+	type CreateExternalAgentRequest,
+	type CreateSpecialistRequest,
+	ERROR_CODES,
+	findAdapter,
+	type Principal,
+} from "@orgos/protocol";
 import { and, eq, inArray } from "drizzle-orm";
 import { agents, principals } from "@/db/schema";
-import type { PrincipalRow, Scoped } from "@/db/scope";
+import type { PrincipalRow, RunnerRow, Scoped } from "@/db/scope";
 import {
 	AppError,
+	badRequest,
 	notFound,
 	PG_UNIQUE_VIOLATION,
 	pgErrorOf,
@@ -23,6 +34,8 @@ export async function createAgent(
 		handle: string;
 		displayName: string;
 		description: string;
+		/** 外部助手：适配器、设备与工作目录。 */
+		external?: { adapter: string; runnerId: string; workspace: string };
 	},
 ): Promise<Agent> {
 	const principal = await s.insert(principals, {
@@ -32,10 +45,13 @@ export async function createAgent(
 		handle: input.handle,
 		displayName: input.displayName,
 	});
+	const engine: AgentEngine = input.external ? "acp" : "builtin";
 	const agent = await s.insert(agents, {
 		principalId: principal.id,
 		role: input.role,
 		description: input.description,
+		engine,
+		...(input.external ?? {}),
 	});
 	return toAgent(principal, agent);
 }
@@ -207,28 +223,92 @@ export async function requireOwnAgent(
 	return agent;
 }
 
-/** 新建一个助手（分身随入驻创建，每人恰好一个）。handle 冲突 → 409。 */
-export async function createSpecialist(
+async function insertOwnAgent(
 	s: Scoped,
-	me: PrincipalRow,
-	req: CreateAgentRequest,
+	input: Parameters<typeof createAgent>[1],
 ): Promise<Agent> {
 	try {
-		return await s.transaction((tx) =>
-			createAgent(tx, {
-				ownerId: me.id,
-				role: "specialist",
-				handle: req.handle,
-				displayName: req.displayName,
-				description: req.description,
-			}),
-		);
+		return await s.transaction((tx) => createAgent(tx, input));
 	} catch (e) {
 		if (pgErrorOf(e)?.code === PG_UNIQUE_VIOLATION) {
 			throw new AppError(409, ERROR_CODES.HANDLE_TAKEN, "handle 已被占用");
 		}
 		throw e;
 	}
+}
+
+/** 新建一个助手（分身随入驻创建，每人恰好一个）。handle 冲突 → 409。 */
+export async function createSpecialist(
+	s: Scoped,
+	me: PrincipalRow,
+	req: CreateSpecialistRequest,
+): Promise<Agent> {
+	return insertOwnAgent(s, {
+		ownerId: me.id,
+		role: "specialist",
+		handle: req.handle,
+		displayName: req.displayName,
+		description: req.description,
+	});
+}
+
+/**
+ * 设备上的工作目录：绝对路径或相对设备工作目录，解析后必须仍在设备工作目录之内
+ * （设备在启动任务时再用真实路径校验一次）。
+ */
+export function resolveAgentWorkspace(
+	runnerWorkspace: string,
+	requested: string,
+): string | null {
+	const target = path.resolve(runnerWorkspace, requested);
+	const rel = path.relative(runnerWorkspace, target);
+	return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))
+		? target
+		: null;
+}
+
+function adapterUnavailable(message: string): AppError {
+	return new AppError(400, ERROR_CODES.ADAPTER_UNAVAILABLE, message);
+}
+
+/**
+ * 接入一位外部助手（role=specialist、engine=acp）：设备须是本人未吊销的（调用方已校验），
+ * 适配器须在该设备 hello 上报的可用列表里（测试适配器另须开发模式），工作目录须在设备工作目录内。
+ * handle 冲突 → 409。
+ */
+export async function createExternalAgent(
+	s: Scoped,
+	me: PrincipalRow,
+	runner: RunnerRow,
+	req: CreateExternalAgentRequest,
+	opts: {
+		devMode: boolean;
+		capabilities: readonly {
+			name: string;
+			adapters?: { id: string; available: boolean }[];
+		}[];
+	},
+): Promise<Agent> {
+	const def = findAdapter(req.adapter);
+	if (!def || (def.devOnly && !opts.devMode))
+		throw adapterUnavailable(`没有叫 ${req.adapter} 的适配器`);
+	const acp = opts.capabilities.find((c) => c.name === AGENT_ACP_CAPABILITY);
+	if (!acp?.adapters?.some((a) => a.id === def.id && a.available))
+		throw adapterUnavailable(`“${runner.name}”上没有可用的 ${def.label}`);
+	if (!runner.workspace)
+		throw badRequest("设备还没有连上过，不知道它的工作目录");
+	const workspace = resolveAgentWorkspace(runner.workspace, req.workspace);
+	if (!workspace) throw badRequest("工作目录必须在设备的工作目录之内");
+	return insertOwnAgent(s, {
+		ownerId: me.id,
+		role: "specialist",
+		handle: req.handle,
+		displayName: req.displayName,
+		description:
+			req.description ||
+			`用${def.label}在“${runner.name}”的 ${workspace} 里替你干活。`,
+		external: { adapter: def.id, runnerId: runner.id, workspace },
+	});
 }
 
 /**

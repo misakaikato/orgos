@@ -2,10 +2,13 @@
  * 会话事件：每种 type 一个 Zod 载荷。`events` 表只追加，线上形态见 EventSchema。
  */
 import { z } from "zod";
+import { AcpPermissionOptionSchema, AcpToolCallSchema } from "./acp";
 import {
 	APPROVAL_OUTCOMES,
 	NEGOTIATION_OUTCOMES,
 	NEGOTIATION_STATUSES,
+	TASK_STATES,
+	TaskArtifactSchema,
 } from "./entities";
 
 export const MESSAGE_MAX_LENGTH = 8000;
@@ -72,11 +75,35 @@ export const ApprovalRequestedPayloadSchema = z.object({
 	runnerName: z.string(),
 	capability: z.string(),
 	args: z.unknown(),
+	/** 外部助手的权限请求：所属任务、工具调用与可选的选项。 */
+	taskId: z.uuid().optional(),
+	toolCall: AcpToolCallSchema.optional(),
+	options: z.array(AcpPermissionOptionSchema).optional(),
 });
 
 export const ApprovalResolvedPayloadSchema = z.object({
 	workItemId: z.uuid(),
 	outcome: z.enum(APPROVAL_OUTCOMES),
+	optionId: z.string().optional(),
+});
+
+/** 在交办所在的会话里建了一个任务（界面为随状态更新的任务卡片）。 */
+export const TaskCreatedPayloadSchema = z.object({
+	taskId: z.uuid(),
+	title: z.string(),
+});
+
+export const TaskUpdatedPayloadSchema = z.object({
+	taskId: z.uuid(),
+	state: z.enum(TASK_STATES),
+	summary: z.string().optional(),
+});
+
+export const TaskEndedPayloadSchema = z.object({
+	taskId: z.uuid(),
+	state: z.enum(TASK_STATES),
+	summary: z.string(),
+	artifacts: z.array(TaskArtifactSchema),
 });
 
 const eventBase = {
@@ -145,6 +172,21 @@ export const EventSchema = z.discriminatedUnion("type", [
 		type: z.literal("approval.resolved"),
 		payload: ApprovalResolvedPayloadSchema,
 	}),
+	z.object({
+		...eventBase,
+		type: z.literal("task.created"),
+		payload: TaskCreatedPayloadSchema,
+	}),
+	z.object({
+		...eventBase,
+		type: z.literal("task.updated"),
+		payload: TaskUpdatedPayloadSchema,
+	}),
+	z.object({
+		...eventBase,
+		type: z.literal("task.ended"),
+		payload: TaskEndedPayloadSchema,
+	}),
 ]);
 export type Event = z.infer<typeof EventSchema>;
 export type EventType = Event["type"];
@@ -171,4 +213,7 @@ export const EVENT_PAYLOAD_SCHEMAS: { [T in EventType]: z.ZodType } = {
 	"member.joined": MemberJoinedPayloadSchema,
 	"approval.requested": ApprovalRequestedPayloadSchema,
 	"approval.resolved": ApprovalResolvedPayloadSchema,
+	"task.created": TaskCreatedPayloadSchema,
+	"task.updated": TaskUpdatedPayloadSchema,
+	"task.ended": TaskEndedPayloadSchema,
 };

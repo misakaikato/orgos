@@ -267,7 +267,7 @@ describe("为本人：写与执行先审批", () => {
 	});
 
 	it("10 分钟无人处理 → 过期（此处以短超时验证），待办作废并落 approval.resolved", async () => {
-		const outcome = await requestApproval(scoped(alice.me.tenant.id), {
+		const { outcome } = await requestApproval(scoped(alice.me.tenant.id), {
 			agentId: ops,
 			conversationId: dm,
 			runnerId,

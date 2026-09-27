@@ -11,6 +11,7 @@ import {
 	CreateConversationResponseSchema,
 	type CreateNoteRequest,
 	CreatePairingCodeResponseSchema,
+	type CreateTaskRequest,
 	DemoPeopleResponseSchema,
 	DevInfoResponseSchema,
 	DevSessionResponseSchema,
@@ -29,6 +30,9 @@ import {
 	ResetDemoResponseSchema,
 	type ResolveWorkItemRequest,
 	RunnerListResponseSchema,
+	TaskListResponseSchema,
+	TaskLogResponseSchema,
+	TaskResponseSchema,
 	type UpdateAgentRequest,
 	type UpdateNoteRequest,
 	type UpdateStatusRequest,
@@ -204,6 +208,29 @@ export const api = {
 		),
 	/** 吊销设备：token 立即失效、在线连接断开、绑定它的代理解绑。 */
 	revokeRunner: (id: string) => noContent(http.delete(`/api/runners/${id}`)),
+
+	/** 某会话里的任务（最近的在前）。 */
+	tasks: (conversationId: string) =>
+		run(() =>
+			http
+				.get("/api/tasks", { searchParams: { conversationId } })
+				.json(TaskListResponseSchema),
+		),
+	task: (id: string) =>
+		run(() => http.get(`/api/tasks/${id}`).json(TaskResponseSchema)),
+	taskLog: (id: string, after = 0) =>
+		run(() =>
+			http
+				.get(`/api/tasks/${id}/log`, { searchParams: { after } })
+				.json(TaskLogResponseSchema),
+		),
+	completeTask: (id: string) =>
+		run(() => http.post(`/api/tasks/${id}/complete`).json(TaskResponseSchema)),
+	cancelTask: (id: string) =>
+		run(() => http.post(`/api/tasks/${id}/cancel`).json(TaskResponseSchema)),
+	/** "新任务"：在与外部助手的私聊里强制开一个新任务。 */
+	createTask: (req: CreateTaskRequest) =>
+		run(() => http.post("/api/tasks", { json: req }).json(TaskResponseSchema)),
 
 	resolveWorkItem: (id: string, req: ResolveWorkItemRequest) =>
 		run(() =>

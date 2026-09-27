@@ -252,8 +252,8 @@ describe("真实 Runner 子进程", () => {
 		expect(await exited(again)).toBe(1);
 	}, 30_000);
 
-	it("serve：连上后在线并声明四项能力；绑定执行助手", async () => {
-		runner = runCli(["serve", "--workspace", workspace]);
+	it("serve：连上后在线并声明四项设备能力与 agent.acp；绑定执行助手", async () => {
+		runner = runCli(["serve", "--workspace", workspace, "--adapters", "none"]);
 		runner.stderr?.on("data", (d: Buffer) => {
 			runnerLog += d.toString();
 		});
@@ -267,6 +267,7 @@ describe("真实 Runner 子进程", () => {
 			["fs.read", "read"],
 			["fs.write", "write"],
 			["shell.exec", "exec"],
+			["agent.acp", "exec"],
 		]);
 		expect(runnerLog).not.toContain(token);
 		const bound = await alice.client.request("PATCH", `/api/agents/${ops}`, {

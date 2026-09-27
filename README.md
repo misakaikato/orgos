@@ -33,3 +33,17 @@ bun run dev          # 服务端 + Next，ORGOS_DEV=1；没有 DEEPSEEK_API_KEY 
 打开 `http://localhost:8930/sim`：顶部勾选 1–4 位演示人物，每人一个窗格、各自以自己的身份登录；"重置演示数据"与 `seed:demo` 是同一个函数；右侧"剧本"列出 C1–C4 与 R 的操作步骤和可复制的话术。演示账号为 `<handle>@orgos.local`，密码是 `apps/server/src/demo/seed.ts` 里的 `DEMO_PASSWORD`，**仅限本地开发库使用**。未设置 `ORGOS_DEV=1` 时 `/sim` 与 `/api/dev/*` 返回 404。
 
 服务端的 `BETTER_AUTH_SECRET` 未设置时使用仅限本地的默认值，任何对外部署都必须显式设置。
+
+## 外部助手（Claude Code、Codex 等）
+
+设备 Runner 以 ACP 驱动本机的外部 agent，把它们接成本人的助手（一次交办 = 一个任务）。适配器表在 `packages/protocol/src/acp.ts` 的 `ACP_ADAPTERS`：
+
+| id | 启动 | 说明 |
+|---|---|---|
+| `claude-code` | `npx -y @zed-industries/claude-code-acp@0.16.2` | 读写与命令都经 Runner，限定工作目录、先审批；用本机 Claude Code 的登录 |
+| `codex` | `npx -y @zed-industries/codex-acp@0.16.0` | 用本机 Codex 的登录 |
+| `pi` | `npx -y pi-acp@0.0.34`（需本机 `pi`） | 第三方适配器；pi 在本机直接读写与执行，不经工作目录限制与审批 |
+| `hermes` | `hermes acp` | 只对它自判危险的命令发权限请求，其余在本机直接执行 |
+| `fake` | 仓库内 `apps/runner/test-fixtures/fake-acp-agent.ts` | 仅 `ORGOS_DEV=1`，测试用 |
+
+Runner 启动时在后台探测（可执行文件在 PATH 上、且能回应 ACP `initialize`），探测结果随能力上报；`serve --adapters claude-code,codex` 限定这台设备提供哪些（`none` 为不提供）。之后在"代理组 → 接入外部助手"选设备、适配器与工作目录（须在设备工作目录之内）。外部 agent 的子进程看不到 runner token 与服务器地址，orgos 不向它注入任何模型密钥。

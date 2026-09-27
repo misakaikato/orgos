@@ -4,6 +4,7 @@ import type { ConversationSummary } from "@orgos/protocol";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { ExternalTag } from "@/components/conversation/message-item";
 import { IconPlus, IconSearch } from "@/components/icons";
 import { Avatar, GroupAvatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -79,6 +80,7 @@ function ConversationRow({
 					<span className="truncate text-14 font-semibold text-ink">
 						{title}
 					</span>
+					{avatar?.kind === "agent" ? <ExternalTag id={avatar.id} /> : null}
 					<span className="ml-auto shrink-0 text-12 text-muted">
 						{formatListTime(time)}
 					</span>

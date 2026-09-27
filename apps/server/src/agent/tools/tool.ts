@@ -23,11 +23,26 @@ export type ToolScope = {
 	/** 引起本次运行的人类消息（上报待办的来源事件）；恢复运行与转交时为 null。 */
 	triggerEventId: number | null;
 	session: RunSession;
-	/** 同步运行一位同组代理一次，返回它的最终文本。 */
-	delegate(target: Agent, task: string): Promise<string>;
+	/** 本次可以交办的同事（见 delegate 工具的 `delegatableTeammates`）。 */
+	teammates: readonly Agent[];
+	/** 同步运行一位同组的内置代理一次，返回它的结局与最终文本。 */
+	delegate(
+		target: Agent,
+		task: string,
+	): Promise<{ outcome: DelegatedOutcome; text?: string }>;
 	/** 协商会话已建好：交给调度器驱动两个分身轮流回应（不等待）。 */
 	startNegotiation(negotiationConversationId: string): void;
 };
+
+/** 被交办的运行怎么结束的（同 loop 的 RunResult.outcome）。 */
+export type DelegatedOutcome =
+	| "posted"
+	| "returned"
+	| "passed"
+	| "ended"
+	| "stopped"
+	| "failed"
+	| "limit";
 
 export type ToolOutcome = {
 	/** 作为工具结果交还给模型的文本。 */

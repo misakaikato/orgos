@@ -2,17 +2,24 @@
  * orgos 设备 Runner 命令行（bun 运行）。
  *
  *   pair <配对码> --server <地址> --name <设备名>   凭配对码登记本机，写 ~/.orgos/runner.json
- *   serve --workspace <目录>                        连上服务端，在工作目录里执行代理的请求
+ *   serve --workspace <目录> [--adapters …]         连上服务端，在工作目录里执行代理的请求
  *
- * Runner 只执行服务端下发的四项能力，不调用任何模型、不持有任何模型密钥。
+ * Runner 执行服务端下发的四项设备能力，并以 ACP 驱动本机的外部助手（Claude Code、Codex 等）；
+ * 它自己不调用任何模型、不持有任何模型密钥，外部助手用的是本人在这台设备上的登录。
  */
 import { arch, hostname, platform } from "node:os";
 import {
+	type AcpUp,
+	AGENT_ACP_CAPABILITY,
+	type Capability,
 	deviceCapabilityList,
 	ErrorBodySchema,
 	PairRunnerResponseSchema,
 	RUNNER_PROTOCOL_VERSION,
+	RUNNER_WS_CLOSE,
 } from "@orgos/protocol";
+import { AdapterRegistry, candidateAdapters } from "@/acp/adapters";
+import { AcpManager } from "@/acp/session";
 import { loadConfig, saveConfig } from "@/config";
 import { log } from "@/log";
 import { openWorkspace, runCapability } from "@/workspace";
@@ -22,7 +29,7 @@ const RUNNER_VERSION = "0.1.0";
 
 const USAGE = `用法：
   bun run --cwd apps/runner start pair <配对码> --server <服务端地址> --name <设备名>
-  bun run --cwd apps/runner start serve --workspace <工作目录>
+  bun run --cwd apps/runner start serve --workspace <工作目录> [--adapters claude-code,codex|none]
 
 配对信息写在 $ORGOS_RUNNER_HOME/runner.json（默认 ~/.orgos/runner.json）。`;
 
@@ -74,10 +81,42 @@ async function pair(code: string, server: string, name: string): Promise<void> {
 	process.stdout.write(`已配对“${name}”，配对信息写入 ${file}\n`);
 }
 
-async function serve(workspaceArg: string): Promise<void> {
+/** 断线期间外部任务的上行最多暂存多少帧（重连后补发）。 */
+const OUTBOX_MAX = 1000;
+
+async function serve(workspaceArg: string, only?: string): Promise<void> {
 	const config = await loadConfig();
 	const workspace = await openWorkspace(workspaceArg);
-	log.info("serve", { runnerId: config.runnerId, workspace });
+	const adapters = new AdapterRegistry(candidateAdapters(only));
+	log.info("serve", {
+		runnerId: config.runnerId,
+		workspace,
+		adapters: adapters.statuses().map((a) => a.id),
+	});
+
+	const capabilities = (): Capability[] => [
+		...deviceCapabilityList(),
+		{
+			name: AGENT_ACP_CAPABILITY,
+			description: "以 ACP 驱动本机的外部助手（Claude Code、Codex 等）",
+			risk: "exec",
+			adapters: adapters.statuses(),
+		},
+	];
+
+	// 外部任务的上行：断线时暂存，重连并发过 hello 后按序补发（一轮结束等关键帧不能丢）。
+	const outbox: AcpUp[] = [];
+	const sendAcp = (frame: AcpUp) => {
+		if (bridge.isOpen()) bridge.send(frame);
+		else if (outbox.length < OUTBOX_MAX) outbox.push(frame);
+		else log.warn("acp.outbox_full", { t: frame.t });
+	};
+	const acp = new AcpManager({
+		runnerWorkspace: workspace,
+		adapters,
+		send: sendAcp,
+	});
+
 	const bridge = startWsBridge(config.server, config.token, {
 		hello: () => ({
 			t: "hello",
@@ -86,9 +125,17 @@ async function serve(workspaceArg: string): Promise<void> {
 			os: osLabel(),
 			hostname: hostname(),
 			workspace,
-			capabilities: deviceCapabilityList(),
+			capabilities: capabilities(),
+			acpTasks: acp.running(),
 		}),
+		onOpen: () => {
+			for (const frame of outbox.splice(0)) bridge.send(frame);
+		},
 		onDown: (msg) => {
+			if (msg.t !== "invoke") {
+				acp.handle(msg);
+				return;
+			}
 			// 每个 job 独立执行，互不等待；结果按 jobId 交回。
 			log.info("job.start", { jobId: msg.jobId, capability: msg.capability });
 			void runCapability(workspace, msg.capability, msg.args).then((r) => {
@@ -96,8 +143,17 @@ async function serve(workspaceArg: string): Promise<void> {
 				bridge.send({ t: "result", jobId: msg.jobId, ...r });
 			});
 		},
+		onServerClose: (code) => {
+			// 设备被吊销：本机的外部助手一并终止。
+			if (code === RUNNER_WS_CLOSE.REVOKED) acp.disposeAll();
+		},
+	});
+	void adapters.probeAll(workspace, () => {
+		if (bridge.isOpen())
+			bridge.send({ t: "capabilities", capabilities: capabilities() });
 	});
 	const stop = () => {
+		acp.disposeAll();
 		bridge.close();
 		process.exit(0);
 	};
@@ -119,7 +175,7 @@ async function main(argv: string[]): Promise<void> {
 	if (command === "serve") {
 		const workspace = flags.get("workspace");
 		if (!workspace) throw new Error(USAGE);
-		await serve(workspace);
+		await serve(workspace, flags.get("adapters"));
 		return;
 	}
 	throw new Error(USAGE);

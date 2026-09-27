@@ -37,13 +37,14 @@ import {
 	toolLabel,
 	toToolSpec,
 } from "@/agent/tools";
-import type { ToolScope } from "@/agent/tools/tool";
+import { delegatableTeammates } from "@/agent/tools/delegate";
+import type { DelegatedOutcome, ToolScope } from "@/agent/tools/tool";
 import type { ActingFor } from "@/agent/triggers";
 import { conversations, events, principals } from "@/db/schema";
 import type { Scoped } from "@/db/scope";
 import { toEvent } from "@/lib/serialize";
 import { postAgentMessage, recordAgentAction } from "@/services/agent-events";
-import { findAgent } from "@/services/agents";
+import { findAgent, listAgentsOf } from "@/services/agents";
 import { memberPrincipals } from "@/services/conversations";
 import {
 	type NegotiationReply,
@@ -71,14 +72,7 @@ export type RunInput = {
 };
 
 export type RunResult = {
-	outcome:
-		| "posted"
-		| "returned"
-		| "passed"
-		| "ended"
-		| "stopped"
-		| "failed"
-		| "limit";
+	outcome: DelegatedOutcome;
 	/** 转交运行或协商中的一步交回的文本。 */
 	text?: string;
 	/** 协商中以 negotiation_reply 结束时的回应。 */
@@ -140,14 +134,18 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
 		depth,
 		triggerEventId: visible ? (input.triggerEventId ?? null) : null,
 		session,
-		async delegate(target, task) {
-			const result = await runAgent({
+		teammates: delegatableTeammates(
+			await listAgentsOf(s, owner.id),
+			agent,
+			actingFor,
+		),
+		delegate(target, task) {
+			return runAgent({
 				...input,
 				agentId: target.principal.id,
 				trigger: { text: task, mentions: [] },
 				delegation: { from: agent, recorderId, depth: depth + 1 },
 			});
-			return result.text ?? "没有结果";
 		},
 		startNegotiation: input.startNegotiation,
 	};

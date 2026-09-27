@@ -3,6 +3,7 @@
 import { MESSAGE_MAX_LENGTH, type Principal } from "@orgos/protocol";
 import {
 	type KeyboardEvent,
+	type ReactNode,
 	useEffect,
 	useLayoutEffect,
 	useRef,
@@ -110,6 +111,7 @@ export function Composer({
 	twinTarget,
 	running = false,
 	onStop,
+	banner,
 }: {
 	members: readonly Principal[];
 	meId: string;
@@ -120,6 +122,8 @@ export function Composer({
 	/** 会话里有代理正在运行：输入为空时发送键换成"停止"。 */
 	running?: boolean;
 	onStop?: () => Promise<void>;
+	/** 输入框上方的一行（与外部助手私聊时的当前任务与"新任务"）。 */
+	banner?: ReactNode;
 }) {
 	const area = useRef<HTMLTextAreaElement>(null);
 	const [text, setText] = useState("");
@@ -304,6 +308,7 @@ export function Composer({
 					{hint}
 				</p>
 			) : null}
+			{banner ? <div className="mb-2 px-2">{banner}</div> : null}
 			<div
 				className={cx(
 					"flex items-end gap-2 bg-bg p-2 shadow-float transition-[border-radius] duration-150",

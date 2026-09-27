@@ -18,6 +18,7 @@ import {
 	UnreadDivider,
 } from "@/components/conversation/message-item";
 import { NegotiationCard } from "@/components/conversation/negotiation";
+import { TaskCard } from "@/components/conversation/task-card";
 import { IconArrowDown } from "@/components/icons";
 import type { PrincipalMap } from "@/lib/principals";
 import { buildThreadRows, type ThreadRow } from "@/lib/thread";
@@ -88,6 +89,8 @@ function Row({ row, ctx }: { row: ThreadRow; ctx: RowContext }) {
 			);
 		case "negotiation":
 			return <NegotiationCard event={row.event} map={map} meId={meId} />;
+		case "task":
+			return <TaskCard task={row.task} map={map} meId={meId} />;
 		case "system":
 			return <SystemLine event={row.event} map={map} meId={meId} />;
 	}

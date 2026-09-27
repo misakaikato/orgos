@@ -2,6 +2,7 @@
  * 设备能力在界面上的说法与参数展示（审批卡片、待办页、设备页共用）。
  */
 import {
+	AGENT_ACP_CAPABILITY,
 	type ApprovalOutcome,
 	DEVICE_CAPABILITIES,
 	type DeviceCapabilityName,
@@ -11,8 +12,9 @@ function known(name: string): name is DeviceCapabilityName {
 	return Object.hasOwn(DEVICE_CAPABILITIES, name);
 }
 
-/** “执行命令”“写入文件”……未知能力原样显示。 */
+/** “执行命令”“写入文件”“使用工具”……未知能力原样显示。 */
 export function capabilityLabel(name: string): string {
+	if (name === AGENT_ACP_CAPABILITY) return "使用工具";
 	return known(name) ? DEVICE_CAPABILITIES[name].label : name;
 }
 

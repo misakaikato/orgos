@@ -2,12 +2,15 @@
  * 待办（"待我处理"）：处理人必为人。写入只经本文件，写入前按 kind 校验载荷。
  */
 import {
+	type AcpPermissionOption,
+	type AcpToolCall,
 	APPROVAL_TIMEOUT_MS,
 	type ApprovalOutcome,
 	type ApprovalResolution,
 	type ConfirmationResolution,
 	type DecisionResolution,
 	ERROR_CODES,
+	isAllowOption,
 	RESOLVE_ACTIONS_BY_KIND,
 	type ResolveWorkItemRequest,
 	WORK_ITEM_PAYLOAD_SCHEMAS,
@@ -219,9 +222,13 @@ export async function resolveWorkItem(
 		item.kind === "approval" &&
 		(req.action === "approve" || req.action === "deny")
 	) {
-		const settled = await settleApproval(s, item, req.action, me.id);
+		const decision: ApprovalDecision = {
+			outcome: req.action,
+			optionId: chooseOption(item.payload.options, req.action, req.optionId),
+		};
+		const settled = await settleApproval(s, item, decision, me.id);
 		if (!settled) throw notOpen();
-		deliverApproval(item.id, req.action);
+		deliverApproval(item.id, decision);
 		return settled;
 	}
 	throw new AppError(
@@ -355,11 +362,44 @@ async function resolveConfirmation(
 
 // ─────────────────────────── 审批 ───────────────────────────
 
-/** 正在等本人决定的代理运行（进程内）：待办 id → 交付决定。 */
-const approvalWaiters = new Map<string, (outcome: ApprovalOutcome) => void>();
+/** 审批的结局；带选项的审批（外部助手的权限请求）另有所选选项，原样回给 agent。 */
+export type ApprovalDecision = { outcome: ApprovalOutcome; optionId?: string };
 
-function deliverApproval(workItemId: string, outcome: ApprovalOutcome): void {
-	approvalWaiters.get(workItemId)?.(outcome);
+/**
+ * 带选项的审批：给定 optionId 时须是同类选项（批准只能选 allow_*，拒绝只能选 reject_*），
+ * 否则 400；不给时取第一个同类选项。没有选项的审批不带 optionId。
+ */
+function chooseOption(
+	options: readonly AcpPermissionOption[] | undefined,
+	action: "approve" | "deny",
+	optionId: string | undefined,
+): string | undefined {
+	if (!options) {
+		if (optionId) throw badRequest("这条审批没有可选的选项");
+		return undefined;
+	}
+	const sameKind = options.filter(
+		(o) => isAllowOption(o) === (action === "approve"),
+	);
+	if (optionId === undefined) return sameKind[0]?.optionId;
+	if (!sameKind.some((o) => o.optionId === optionId))
+		throw badRequest("选项与动作不符");
+	return optionId;
+}
+
+/** 审批过期视为拒绝：带选项时代为选第一个拒绝类选项。 */
+function expiredDecision(
+	options: readonly AcpPermissionOption[] | undefined,
+): ApprovalDecision {
+	const reject = options?.find((o) => !isAllowOption(o))?.optionId;
+	return { outcome: "expired", ...(reject ? { optionId: reject } : {}) };
+}
+
+/** 正在等本人决定的代理运行（进程内）：待办 id → 交付决定。 */
+const approvalWaiters = new Map<string, (d: ApprovalDecision) => void>();
+
+function deliverApproval(workItemId: string, decision: ApprovalDecision): void {
+	approvalWaiters.get(workItemId)?.(decision);
 }
 
 type ApprovalItem = Extract<WorkItem, { kind: "approval" }>;
@@ -372,10 +412,14 @@ type ApprovalItem = Extract<WorkItem, { kind: "approval" }>;
 async function settleApproval(
 	s: Scoped,
 	item: ApprovalItem,
-	outcome: ApprovalOutcome,
+	decision: ApprovalDecision,
 	actorId: string,
 ): Promise<WorkItem | null> {
-	const resolution: ApprovalResolution = { outcome };
+	const { outcome, optionId } = decision;
+	const resolution: ApprovalResolution = {
+		outcome,
+		...(optionId ? { optionId } : {}),
+	};
 	const settled = await transactWithEvents(s, async (tx, append) => {
 		const closed = await closeIfOpen(
 			tx,
@@ -391,7 +435,11 @@ async function settleApproval(
 				actorId,
 				onBehalfOfId: byAgent ? item.ownerId : null,
 				type: "approval.resolved",
-				payload: { workItemId: item.id, outcome },
+				payload: {
+					workItemId: item.id,
+					outcome,
+					...(optionId ? { optionId } : {}),
+				},
 			});
 		}
 		return closed;
@@ -410,21 +458,28 @@ export type ApprovalRequest = {
 	title: string;
 	body: string;
 	sourceEventId?: number | null;
-	/** 等待中触发即取消（本人发了新消息或停止了运行）。 */
+	/** 外部助手的权限请求：所属任务、工具调用与 agent 给出的选项。 */
+	acp?: {
+		taskId: string;
+		toolCall: AcpToolCall;
+		options: AcpPermissionOption[];
+	};
+	/** 等待中触发即取消（本人发了新消息、停止了运行，或任务结束）。 */
 	signal: AbortSignal;
 	timeoutMs?: number;
 };
 
 /**
- * 代理请本人批准一次有风险的设备操作（审批的唯一入口）：一个事务内建 approval 待办
- * （处理人 = 代理的本人，提问人 = 代理）并在会话里落 `approval.requested`，提交后推给本人；
- * 然后等待本人的决定。10 分钟无人处理 → expired；等待中 signal 触发 → cancelled。
+ * 代理请本人批准一次有风险的操作（审批的唯一入口：设备工具与外部助手的权限请求都经这里）：
+ * 一个事务内建 approval 待办（处理人 = 代理的本人，提问人 = 代理）并在会话里落
+ * `approval.requested`，提交后推给本人；然后等待本人的决定。10 分钟无人处理 → expired
+ * （带选项时代为选拒绝）；等待中 signal 触发 → cancelled。
  * 不抛异常以外的失败：返回的一定是最终结局。
  */
 export async function requestApproval(
 	s: Scoped,
 	input: ApprovalRequest,
-): Promise<ApprovalOutcome> {
+): Promise<ApprovalDecision> {
 	const agent = await requireAgentPrincipal(s, input.agentId);
 	await requireConversation(s, input.conversationId, agent.id);
 	const item = (await transactWithEvents(s, async (tx, append) => {
@@ -434,6 +489,7 @@ export async function requestApproval(
 				runnerId: input.runnerId,
 				capability: input.capability,
 				args: input.args,
+				...(input.acp ?? {}),
 			},
 			title: input.title,
 			body: input.body,
@@ -453,6 +509,7 @@ export async function requestApproval(
 				runnerName: input.runnerName,
 				capability: input.capability,
 				args: input.args,
+				...(input.acp ?? {}),
 			},
 		});
 		return item;
@@ -460,31 +517,52 @@ export async function requestApproval(
 	notifyWorkItem(item);
 
 	const { signal } = input;
-	return new Promise<ApprovalOutcome>((resolve) => {
-		const finish = (outcome: ApprovalOutcome) => {
+	return new Promise<ApprovalDecision>((resolve) => {
+		const finish = (decision: ApprovalDecision) => {
 			clearTimeout(timer);
 			signal.removeEventListener("abort", onAbort);
 			approvalWaiters.delete(item.id);
-			resolve(outcome);
+			resolve(decision);
 		};
 		approvalWaiters.set(item.id, finish);
-		const settleBy = (outcome: "expired" | "cancelled") => {
-			settleApproval(s, item, outcome, agent.id).then(
+		const settleBy = (decision: ApprovalDecision) => {
+			settleApproval(s, item, decision, agent.id).then(
 				(settled) => {
-					if (settled) deliverApproval(item.id, outcome);
+					if (settled) deliverApproval(item.id, decision);
 				},
 				(e) => {
 					console.error("[approval] 了结审批失败", e);
-					deliverApproval(item.id, outcome);
+					deliverApproval(item.id, decision);
 				},
 			);
 		};
 		const timer = setTimeout(
-			() => settleBy("expired"),
+			() => settleBy(expiredDecision(input.acp?.options)),
 			input.timeoutMs ?? APPROVAL_TIMEOUT_MS,
 		);
-		const onAbort = () => settleBy("cancelled");
+		const onAbort = () => settleBy({ outcome: "cancelled" });
 		if (signal.aborted) onAbort();
 		else signal.addEventListener("abort", onAbort, { once: true });
 	});
+}
+
+/**
+ * 任务结束后仍 open 的审批（进程重启后已没有等待者）：一律取消，actor 为发起的代理。
+ */
+export async function cancelTaskApprovals(
+	s: Scoped,
+	taskId: string,
+): Promise<void> {
+	const rows = await s.select(
+		workItems,
+		eq(workItems.kind, "approval"),
+		eq(workItems.status, "open"),
+		sql`${workItems.payload}->>'taskId' = ${taskId}`,
+	);
+	for (const row of rows) {
+		const item = toWorkItem(row) as ApprovalItem;
+		const decision: ApprovalDecision = { outcome: "cancelled" };
+		if (await settleApproval(s, item, decision, item.requesterId))
+			deliverApproval(item.id, decision);
+	}
 }

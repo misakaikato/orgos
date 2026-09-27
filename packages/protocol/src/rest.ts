@@ -10,6 +10,9 @@ import {
 	NoteSchema,
 	PRINCIPAL_STATUSES,
 	PrincipalSchema,
+	TASK_STATES,
+	TaskLogSchema,
+	TaskSchema,
 	TenantSchema,
 	UserSchema,
 	WORK_ITEM_STATUSES,
@@ -43,6 +46,8 @@ export const ERROR_CODES = {
 	WORK_ITEM_ACTION_MISMATCH: "WORK_ITEM_ACTION_MISMATCH",
 	NOT_IMPLEMENTED: "NOT_IMPLEMENTED",
 	PAIRING_CODE_INVALID: "PAIRING_CODE_INVALID",
+	ADAPTER_UNAVAILABLE: "ADAPTER_UNAVAILABLE",
+	TASK_ENDED: "TASK_ENDED",
 	INTERNAL: "INTERNAL",
 } as const;
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -214,7 +219,11 @@ export const ResolveWorkItemRequestSchema = z.discriminatedUnion("action", [
 		action: z.literal("decline"),
 		text: z.string().trim().max(RESOLUTION_TEXT_MAX_LENGTH).optional(),
 	}),
-	z.object({ action: z.enum(["approve", "deny"]) }),
+	z.object({
+		action: z.enum(["approve", "deny"]),
+		/** 带选项的审批（外部助手的权限请求）：选哪个选项；不给时取第一个同类选项。 */
+		optionId: z.string().min(1).max(200).optional(),
+	}),
 	z.object({ action: z.enum(["confirm", "reject"]) }),
 ]);
 export type ResolveWorkItemRequest = z.infer<
@@ -246,13 +255,39 @@ export const AgentListResponseSchema = z.object({
 });
 export type AgentListResponse = z.infer<typeof AgentListResponseSchema>;
 
-/** 新建的代理一律是助手（分身每人恰好一个，随入驻创建）。 */
-export const CreateAgentRequestSchema = z.object({
+/** 新建一位助手（分身每人恰好一个，随入驻创建）。 */
+export const CreateSpecialistRequestSchema = z.object({
+	kind: z.literal("specialist").optional(),
 	displayName: DisplayNameSchema,
 	handle: HandleSchema,
 	description: z.string().trim().max(AGENT_DESCRIPTION_MAX_LENGTH),
 });
+
+export const WORKSPACE_PATH_MAX_LENGTH = 4096;
+
+/** 接入一位外部助手：在本人的一台设备上以某个适配器运行，限定在一个工作目录里。 */
+export const CreateExternalAgentRequestSchema = z.object({
+	kind: z.literal("external"),
+	displayName: DisplayNameSchema,
+	handle: HandleSchema,
+	adapter: z.string().trim().min(1).max(64),
+	runnerId: z.uuid(),
+	/** 绝对路径，或相对设备工作目录的路径；必须在设备工作目录之内。 */
+	workspace: z.string().trim().min(1).max(WORKSPACE_PATH_MAX_LENGTH),
+	description: z.string().trim().max(AGENT_DESCRIPTION_MAX_LENGTH).optional(),
+});
+
+export const CreateAgentRequestSchema = z.union([
+	CreateExternalAgentRequestSchema,
+	CreateSpecialistRequestSchema,
+]);
 export type CreateAgentRequest = z.infer<typeof CreateAgentRequestSchema>;
+export type CreateSpecialistRequest = z.infer<
+	typeof CreateSpecialistRequestSchema
+>;
+export type CreateExternalAgentRequest = z.infer<
+	typeof CreateExternalAgentRequestSchema
+>;
 
 export const UpdateAgentRequestSchema = z.object({
 	displayName: DisplayNameSchema.optional(),
@@ -270,6 +305,49 @@ export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
 
 export const AgentResponseSchema = z.object({ agent: AgentSchema });
 export type AgentResponse = z.infer<typeof AgentResponseSchema>;
+
+// ─────────────────────────── 任务 ───────────────────────────
+
+/** `GET /api/tasks` 的查询参数：不给会话时是与我有关的任务（为我办、由我交办、我的代理在办）。 */
+export const TasksQuerySchema = z.object({
+	conversationId: z.uuid().optional(),
+	state: z.enum(TASK_STATES).optional(),
+});
+export type TasksQuery = z.infer<typeof TasksQuerySchema>;
+
+export const TaskListResponseSchema = z.object({
+	items: z.array(TaskSchema),
+});
+export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
+
+export const TaskResponseSchema = z.object({
+	task: TaskSchema,
+	/** 执行者（交办所在会话里未必有它，卡片据此显示团子与名字）。 */
+	assignee: PrincipalSchema.optional(),
+});
+export type TaskResponse = z.infer<typeof TaskResponseSchema>;
+
+export const TaskLogQuerySchema = z.object({
+	after: z.coerce.number().int().min(0).default(0),
+});
+export type TaskLogQuery = z.infer<typeof TaskLogQuerySchema>;
+
+export const TASK_LOG_PAGE_MAX = 500;
+
+export const TaskLogResponseSchema = z.object({
+	items: z.array(TaskLogSchema),
+});
+export type TaskLogResponse = z.infer<typeof TaskLogResponseSchema>;
+
+/** "新任务"：在与外部助手的私聊里强制开一个新任务（当前未结束的任务随之完成）。 */
+export const CreateTaskRequestSchema = z.object({
+	conversationId: z.uuid(),
+	goal: z
+		.string()
+		.max(MESSAGE_MAX_LENGTH)
+		.refine((t) => t.trim().length > 0, "任务不能为空"),
+});
+export type CreateTaskRequest = z.infer<typeof CreateTaskRequestSchema>;
 
 // ─────────────────────────── 设备 ───────────────────────────
 

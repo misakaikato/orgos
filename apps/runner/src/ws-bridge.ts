@@ -43,6 +43,8 @@ export interface BridgeHandlers {
 	hello: () => Hello;
 	onDown: (msg: Exclude<RunnerDown, { t: "pong" }>) => void;
 	onOpen?: () => void;
+	/** 服务端关闭了连接（带关闭码，例如设备被吊销的 4003）。 */
+	onServerClose?: (code: number) => void;
 }
 
 export interface WsBridge {
@@ -251,8 +253,11 @@ export function startWsBridge(
 			}
 		};
 
-		socket.onclose = (ev) =>
+		socket.onclose = (ev) => {
+			if (myGen === gen && typeof ev?.code === "number")
+				h.onServerClose?.(ev.code);
 			fail(myGen, `close event ${ev?.code ?? ""} ${ev?.reason ?? ""}`.trim());
+		};
 		socket.onerror = () => fail(myGen, "error event");
 	};
 

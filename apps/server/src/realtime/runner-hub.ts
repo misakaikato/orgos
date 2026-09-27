@@ -6,9 +6,11 @@
  *
  * - 新连接顶掉同一设备的旧连接（旧连接以 4001 关闭）；只有当前连接的断开才算下线；
  * - job 并行，各自计时：60s 内没有结果即失败；设备不在线时立即失败；
- * - 断线不立即判 job 失败：Runner 重连后仍可在新连接上交回结果，否则到点超时。
+ * - 断线不立即判 job 失败：Runner 重连后仍可在新连接上交回结果，否则到点超时；
+ * - 外部任务的帧（acp_*）不在这里处理：下行经 `send`，上行由连接层交给外部任务服务。
  */
 import {
+	type AcpDown,
 	type DeviceCapabilityName,
 	RUNNER_JOB_TIMEOUT_MS,
 	RUNNER_WS_CLOSE,
@@ -56,6 +58,11 @@ export class RunnerHub {
 		if (this.conns.get(runnerId) !== sock) return false;
 		this.conns.delete(runnerId);
 		return true;
+	}
+
+	/** 这条连接是否是该设备的当前连接。 */
+	isCurrent(runnerId: string, sock: RunnerSocket): boolean {
+		return this.conns.get(runnerId) === sock;
 	}
 
 	isOnline(runnerId: string): boolean {
@@ -115,6 +122,12 @@ export class RunnerHub {
 			if (!sendSafe(sock, { t: "invoke", jobId, capability, args }))
 				settle({ ok: false, output: OFFLINE_TEXT });
 		});
+	}
+
+	/** 向设备下发一帧外部任务的指令；不在线或发送失败 → false。 */
+	send(runnerId: string, frame: AcpDown): boolean {
+		const sock = this.conns.get(runnerId);
+		return sock ? sendSafe(sock, frame) : false;
 	}
 
 	/** 进行中的 job 数（测试用）。 */

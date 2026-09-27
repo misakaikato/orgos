@@ -174,7 +174,8 @@ export async function requireOwnRunner(
 }
 
 /**
- * 吊销：token 立即失效，绑定它的代理一并解绑，在线连接以 4003 关闭。
+ * 吊销：token 立即失效，绑定它的助手一并解绑，在线连接以 4003 关闭。
+ * 外部助手保留绑定（它离不开这台设备），此后它的任务一律失败。
  */
 export async function revokeRunner(
 	s: Scoped,
@@ -186,7 +187,13 @@ export async function revokeRunner(
 		await tx.executor
 			.update(agents)
 			.set({ runnerId: null })
-			.where(tx.where(agents, eq(agents.runnerId, row.id)));
+			.where(
+				tx.where(
+					agents,
+					eq(agents.runnerId, row.id),
+					eq(agents.engine, "builtin"),
+				),
+			);
 		const [updated] = await tx.executor
 			.update(runners)
 			.set({ revokedAt: new Date(), status: "offline" })
@@ -219,6 +226,22 @@ export async function markRunnerOnline(
 		.returning();
 	if (row) notifyRunner(row);
 	return row !== undefined;
+}
+
+/** Runner 更新了它的能力（适配器探测完成）。 */
+export async function updateRunnerCapabilities(
+	runner: RunnerRow,
+	capabilities: Extract<RunnerUp, { t: "capabilities" }>["capabilities"],
+): Promise<void> {
+	const s = scoped(runner.tenantId);
+	const [row] = await s.executor
+		.update(runners)
+		.set({ capabilities, lastSeenAt: new Date() })
+		.where(
+			s.where(runners, eq(runners.id, runner.id), isNull(runners.revokedAt)),
+		)
+		.returning();
+	if (row) notifyRunner(row);
 }
 
 /** 设备的当前连接断开：置为离线并记下最后在线时间。 */

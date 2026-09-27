@@ -11,9 +11,11 @@ import type {
 	DirectoryResponse,
 	Event,
 	MeResponse,
+	Principal,
 	PrincipalStatus,
 	ResolveWorkItemRequest,
 	Runner,
+	Task,
 	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
@@ -40,6 +42,8 @@ export type SessionStatus =
 export type LoadStatus = "loading" | "ready" | "error";
 export type ConnectionState = "connecting" | "open" | "reconnecting";
 export type Person = DirectoryResponse["people"][number];
+/** 一个任务与它的执行者（执行者未必在交办所在的会话里）。 */
+export type TaskView = { task: Task; assignee?: Principal };
 
 export type State = {
 	session: SessionStatus;
@@ -62,6 +66,9 @@ export type State = {
 	/** 我的设备（null = 还没加载过）。 */
 	runners: Runner[] | null;
 	runnersStatus: LoadStatus | null;
+	/** 已加载的任务（卡片与输入框上方的任务条读取），按任务 id。 */
+	tasks: Record<string, TaskView>;
+	tasksStatus: Record<string, LoadStatus>;
 };
 
 const initialState: State = {
@@ -80,6 +87,8 @@ const initialState: State = {
 	activity: {},
 	runners: null,
 	runnersStatus: null,
+	tasks: {},
+	tasksStatus: {},
 };
 
 let state = initialState;
@@ -327,6 +336,7 @@ export async function resync(): Promise<void> {
 		applyPresence(mine.principal.id, mine.principal.status);
 	void loadWorkItems();
 	if (state.runners) void loadRunners();
+	for (const id of Object.keys(state.tasks)) void loadTask(id);
 	const loaded = Object.entries(state.events);
 	await Promise.all(
 		loaded.map(async ([cid, list]) => {
@@ -334,6 +344,74 @@ export async function resync(): Promise<void> {
 			mergeInto(cid, items);
 		}),
 	);
+}
+
+// ─────────────────────────── 任务 ───────────────────────────
+
+export async function loadTask(id: string): Promise<void> {
+	set((s) => ({
+		tasksStatus: {
+			...s.tasksStatus,
+			[id]: s.tasks[id] ? "ready" : "loading",
+		},
+	}));
+	try {
+		const view = await api.task(id);
+		set((s) => ({
+			tasks: { ...s.tasks, [id]: view },
+			tasksStatus: { ...s.tasksStatus, [id]: "ready" },
+		}));
+	} catch {
+		set((s) => ({
+			tasksStatus: { ...s.tasksStatus, [id]: s.tasks[id] ? "ready" : "error" },
+		}));
+	}
+}
+
+/** 卡片首次出现时加载任务；已加载或正在加载则跳过。 */
+export function ensureTask(id: string): void {
+	const status = state.tasksStatus[id];
+	if (status === "ready" || status === "loading") return;
+	void loadTask(id);
+}
+
+/** 任务有变化（WS 推送或操作的返回）：并入已知的任务，保留执行者。 */
+export function applyTask(task: Task, assignee?: Principal): void {
+	set((s) => {
+		const known = s.tasks[task.id];
+		if (known && known.task.updatedAt > task.updatedAt) return {};
+		return {
+			tasks: {
+				...s.tasks,
+				[task.id]: { task, assignee: assignee ?? known?.assignee },
+			},
+			tasksStatus: { ...s.tasksStatus, [task.id]: "ready" },
+		};
+	});
+}
+
+export async function completeTask(id: string): Promise<void> {
+	const { task, assignee } = await api.completeTask(id);
+	applyTask(task, assignee);
+}
+
+export async function cancelTask(id: string): Promise<void> {
+	const { task, assignee } = await api.cancelTask(id);
+	applyTask(task, assignee);
+}
+
+/** "新任务"：强制开一个新任务（这段话同时作为消息出现在会话里）。 */
+export async function startNewTask(
+	conversationId: string,
+	goal: string,
+): Promise<void> {
+	const { task, assignee } = await api.createTask({ conversationId, goal });
+	applyTask(task, assignee);
+	const items = await fetchEventsAfter(
+		conversationId,
+		maxSeq(state.events[conversationId] ?? []),
+	);
+	mergeInto(conversationId, items);
 }
 
 // ─────────────────────────── 设备 ───────────────────────────

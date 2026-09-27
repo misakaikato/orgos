@@ -9,6 +9,7 @@ import { Tag } from "@/components/ui/badge";
 import { cx } from "@/lib/cx";
 import { describeEvent } from "@/lib/describe";
 import { formatClock, formatStamp } from "@/lib/format";
+import { useExternalAgentIds } from "@/lib/hooks";
 import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
 import {
 	type ActionEvent,
@@ -120,7 +121,13 @@ export function ActionsFold({
 	);
 }
 
-/** 代理名字行：团子色名字 + 灰色"代谁"胶囊。 */
+/** 外部助手（经 ACP 接入）的小标识，跟在它的团子与名字旁。 */
+export function ExternalTag({ id }: { id: string }) {
+	const external = useExternalAgentIds();
+	return external.has(id) ? <Tag>外部</Tag> : null;
+}
+
+/** 代理名字行：团子色名字 + 灰色"代谁"胶囊（外部助手另有"外部"）。 */
 export function AgentName({
 	agent,
 	map,
@@ -142,6 +149,7 @@ export function AgentName({
 				{agent.displayName}
 			</span>
 			{owner ? <Tag>{`代${owner}`}</Tag> : null}
+			<ExternalTag id={agent.id} />
 		</span>
 	);
 }

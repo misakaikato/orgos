@@ -4,14 +4,20 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Composer } from "@/components/conversation/composer";
 import { Inspector } from "@/components/conversation/inspector";
+import { ExternalTag } from "@/components/conversation/message-item";
 import { MessageList } from "@/components/conversation/message-list";
+import { TaskBar } from "@/components/conversation/task-bar";
 import { AgentActivityRows } from "@/components/conversation/working-indicator";
 import { IconBack, IconPanel } from "@/components/icons";
 import { Avatar, GroupAvatar } from "@/components/ui/avatar";
 import { IconButton } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/ui/states";
 import { appHref } from "@/lib/auth-mode";
-import { useMediaQuery, usePrincipalMap } from "@/lib/hooks";
+import {
+	useExternalAgentIds,
+	useMediaQuery,
+	usePrincipalMap,
+} from "@/lib/hooks";
 import {
 	agentRoleLine,
 	conversationAvatar,
@@ -27,9 +33,11 @@ import {
 	refreshConversations,
 	sendMessage,
 	setActiveConversation,
+	startNewTask,
 	stopAgents,
 	useStore,
 } from "@/lib/store";
+import { currentTaskOf } from "@/lib/tasks";
 
 const WIDE = "(min-width: 1280px)";
 
@@ -51,6 +59,9 @@ export function ConversationView({
 	const [panelWide, setPanelWide] = useState(false);
 	const [panelDrawer, setPanelDrawer] = useState(false);
 	const [missing, setMissing] = useState(false);
+	const [newTask, setNewTask] = useState(false);
+	const tasks = useStore((s) => s.tasks);
+	const externalIds = useExternalAgentIds();
 	const atBottom = useRef(false);
 
 	// 打开会话时的已读位置：未读分隔线以此为准，之后不随已读上报移动。
@@ -102,6 +113,10 @@ export function ConversationView({
 		() => new Set(item?.members.map((m) => m.handle) ?? []),
 		[item],
 	);
+	const currentTask = useMemo(
+		() => currentTaskOf(events, tasks),
+		[events, tasks],
+	);
 
 	if (!me) return null;
 	const meId = me.principal.id;
@@ -141,6 +156,7 @@ export function ConversationView({
 							.filter(Boolean)
 							.join(" · ")
 					: "";
+	const external = avatar?.kind === "agent" && externalIds.has(avatar.id);
 	const showPanel = wide ? panelWide : panelDrawer;
 	const togglePanel = () =>
 		wide ? setPanelWide((v) => !v) : setPanelDrawer((v) => !v);
@@ -148,9 +164,11 @@ export function ConversationView({
 	const emptyText =
 		kind !== "dm"
 			? "群里还没有人说话，打个招呼吧。"
-			: avatar?.kind === "agent"
-				? `和${avatar.displayName}说点什么吧，它会替你查资料、记事、分派活。`
-				: `和${avatar?.displayName ?? "对方"}打个招呼吧。想让对方的分身先回答，就切到“问分身”。`;
+			: external
+				? `把一件事交给${avatar?.displayName ?? "它"}吧：它在你的设备上干活，写文件和执行命令前会先问你。`
+				: avatar?.kind === "agent"
+					? `和${avatar.displayName}说点什么吧，它会替你查资料、记事、分派活。`
+					: `和${avatar?.displayName ?? "对方"}打个招呼吧。想让对方的分身先回答，就切到“问分身”。`;
 
 	return (
 		<div className="flex min-h-0 flex-1">
@@ -169,7 +187,12 @@ export function ConversationView({
 						<GroupAvatar id={item.conversation.id} title={title} size={28} />
 					)}
 					<div className="flex min-w-0 flex-1 flex-col">
-						<h1 className="truncate text-16 font-semibold text-ink">{title}</h1>
+						<h1 className="flex min-w-0 items-center gap-2">
+							<span className="truncate text-16 font-semibold text-ink">
+								{title}
+							</span>
+							{avatar?.kind === "agent" ? <ExternalTag id={avatar.id} /> : null}
+						</h1>
 						<p className="truncate text-12 text-muted">{subtitle}</p>
 					</div>
 					<IconButton
@@ -217,13 +240,33 @@ export function ConversationView({
 					members={item.members}
 					meId={meId}
 					map={map}
-					placeholder={`发给 ${title}`}
+					placeholder={
+						external
+							? newTask || !currentTask
+								? `交给 ${title} 一个新任务`
+								: "追问当前任务"
+							: `发给 ${title}`
+					}
 					twinTarget={twinTarget}
 					running={Boolean(activity)}
 					onStop={() => stopAgents(conversationId)}
-					onSend={(text, mentions, askTwin) =>
-						sendMessage(conversationId, text, mentions, askTwin)
+					banner={
+						external ? (
+							<TaskBar
+								current={currentTask}
+								newTask={newTask}
+								onToggle={() => setNewTask((v) => !v)}
+							/>
+						) : null
 					}
+					onSend={async (text, mentions, askTwin) => {
+						if (external && newTask && currentTask) {
+							await startNewTask(conversationId, text);
+							setNewTask(false);
+							return;
+						}
+						await sendMessage(conversationId, text, mentions, askTwin);
+					}}
 				/>
 			</section>
 			{showPanel && wide ? (

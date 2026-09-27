@@ -78,6 +78,20 @@ function resumeLines(
 			];
 }
 
+/** delegate_to_teammate 可用时，列出本次可以交办的同事。 */
+function teammateLines(input: PromptInput): string[] {
+	if (!input.tools.some((t) => t.name === "delegate_to_teammate")) return [];
+	const { teammates } = input.scope;
+	if (teammates.length === 0) return ["（现在没有可以交办的同事。）"];
+	return [
+		"可以交办的同事：",
+		...teammates.map(
+			(a) =>
+				`- @${a.principal.handle}（${a.principal.displayName}${a.description.trim() ? `：${a.description.trim()}` : ""}）`,
+		),
+	];
+}
+
 export function buildSystemPrompt(input: PromptInput): string {
 	const { scope, tools } = input;
 	const { agent, owner } = scope;
@@ -96,6 +110,7 @@ export function buildSystemPrompt(input: PromptInput): string {
 		lines.push(
 			"可用工具：",
 			...tools.map((t) => `- ${t.name}：${t.description}`),
+			...teammateLines(input),
 			`需要${ownerName}的计划、日期、数字时先用工具查，查不到就说不知道，不要编造。`,
 		);
 	}

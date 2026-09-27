@@ -2,7 +2,7 @@
  * 浏览器 WS 帧（仅服务端 → 浏览器）。发送一律走 REST。
  */
 import { z } from "zod";
-import { PRINCIPAL_STATUSES, WorkItemSchema } from "./entities";
+import { PRINCIPAL_STATUSES, TaskSchema, WorkItemSchema } from "./entities";
 import { EventSchema } from "./events";
 import { RunnerSchema } from "./runner";
 
@@ -47,6 +47,8 @@ export const BrowserFrameSchema = z.discriminatedUnion("t", [
 	z.object({ t: z.literal("work_item"), workItem: WorkItemSchema }),
 	/** 我的设备新增、上下线或被吊销。 */
 	z.object({ t: z.literal("runner"), runner: RunnerSchema }),
+	/** 任务有变化（进度、产出、状态）：推给交办所在会话的成员，不落库。 */
+	z.object({ t: z.literal("task"), task: TaskSchema }),
 ]);
 export type BrowserFrame = z.infer<typeof BrowserFrameSchema>;
 

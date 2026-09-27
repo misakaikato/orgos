@@ -12,6 +12,7 @@ import {
 	applyEvent,
 	applyPresence,
 	applyRunner,
+	applyTask,
 	applyWorkItem,
 	markNotOnboarded,
 	markUnauthorized,
@@ -66,6 +67,7 @@ export function startRealtime(): () => void {
 			else if (data.t === "draft" || data.t === "status") applyAgentFrame(data);
 			else if (data.t === "work_item") applyWorkItem(data.workItem);
 			else if (data.t === "runner") applyRunner(data.runner);
+			else if (data.t === "task") applyTask(data.task);
 		};
 		ws.onclose = (ev) => {
 			if (silenceTimer) clearTimeout(silenceTimer);

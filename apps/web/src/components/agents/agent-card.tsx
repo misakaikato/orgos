@@ -5,6 +5,8 @@ import {
 	AGENT_ROLE_LABEL,
 	type Agent,
 	type AgentUsage,
+	findAdapter,
+	isExternalAgent,
 } from "@orgos/protocol";
 import { type FormEvent, useState } from "react";
 import { Mascot } from "@/components/mascot";
@@ -190,6 +192,25 @@ function DeviceBinding({
 	);
 }
 
+/** 外部助手的接入信息：哪个助手、在哪台设备的哪个目录。 */
+function ExternalBinding({ agent }: { agent: Agent }) {
+	const runners = useStore((s) => s.runners);
+	const runner = runners?.find((r) => r.id === agent.runnerId);
+	const def = agent.adapter ? findAdapter(agent.adapter) : undefined;
+	return (
+		<div className="mt-3 flex flex-col gap-1 rounded-row bg-surface-2 px-3 py-2">
+			<p className="text-12 font-medium text-muted">接入方式</p>
+			<p className="text-14 break-words text-ink">
+				{def?.label ?? agent.adapter}，在“
+				{runner?.name ?? (runners === null ? "…" : "已吊销的设备")}”
+				{runner ? `（${runner.status === "online" ? "在线" : "离线"}）` : ""}
+			</p>
+			<p className="text-13 break-all text-muted">{agent.workspace}</p>
+			{def?.note ? <p className="text-12 text-muted">{def.note}</p> : null}
+		</div>
+	);
+}
+
 /**
  * 代理组页的一张代理卡：团子、名字与角色、职责、（分身的）对外政策或（助手的）设备、用量；
  * 可编辑、开聊；助手可删除（分身不可删）。
@@ -211,6 +232,7 @@ export function AgentCard({
 	const [error, setError] = useState<string | null>(null);
 	const { open, pendingId } = useOpenDm();
 	const front = agent.role === "front";
+	const external = isExternalAgent(agent);
 	const id = agent.principal.id;
 
 	const remove = async () => {
@@ -234,6 +256,7 @@ export function AgentCard({
 						{agent.principal.displayName}
 					</h2>
 					<Tag>{AGENT_ROLE_LABEL[agent.role]}</Tag>
+					{external ? <Tag>外部</Tag> : null}
 				</div>
 				<p className="truncate text-12 text-muted">
 					@{agent.principal.handle} · {AGENT_ROLE_DUTY[agent.role]}
@@ -270,10 +293,16 @@ export function AgentCard({
 										"还没设置：分身只会回答你共享资料里明确写着的内容。"}
 								</p>
 							</div>
+						) : external ? (
+							<ExternalBinding agent={agent} />
 						) : (
 							<DeviceBinding agent={agent} onChanged={onChanged} />
 						)}
-						<p className="mt-3 text-12 text-muted">{usageLine(usage)}</p>
+						<p className="mt-3 text-12 text-muted">
+							{external
+								? "用的是你自己在那台设备上的登录，不计入 orgos 的模型用量"
+								: usageLine(usage)}
+						</p>
 						{error ? (
 							<p role="alert" className="mt-2 text-12 text-danger">
 								{error}
@@ -283,7 +312,9 @@ export function AgentCard({
 							{confirming ? (
 								<>
 									<span className="self-center text-13 text-ink">
-										删除后它不再回应，历史消息保留。
+										{external
+											? "删除后它不再接活，进行中的任务会停止，历史消息保留。"
+											: "删除后它不再回应，历史消息保留。"}
 									</span>
 									<Button variant="danger" disabled={busy} onClick={remove}>
 										{busy ? "删除中…" : "确认删除"}

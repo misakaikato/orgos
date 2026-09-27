@@ -5,9 +5,12 @@
  * 必须用 `where(table, ...)` 为涉及的每张业务表拼条件。路由与服务里不写不带租户条件的业务查询。
  *
  * 文件末尾的"身份解析"一节是仅有的例外：租户根表本身、登录后"我属于哪个租户"的查找，
- * 以及设备凭配对码或 token 认出自己属于哪个租户，天然发生在知道租户之前。
+ * 以及设备凭配对码或 token 认出自己属于哪个租户，天然发生在知道租户之前；
+ * 另有进程级的维护（启动时设备置离线、找出有未结束任务的租户），只返回租户 id，
+ * 具体处理仍经 `scoped(tenantId)`。
  */
-import { and, eq, gt, isNull, type SQL } from "drizzle-orm";
+import { TASK_ENDED_STATES } from "@orgos/protocol";
+import { and, eq, gt, isNull, notInArray, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { db, type Executor } from "@/db";
 import {
@@ -15,6 +18,7 @@ import {
 	pairingCodes,
 	principals,
 	runners,
+	tasks,
 	tenants,
 	user,
 } from "@/db/schema";
@@ -227,4 +231,15 @@ export async function markAllRunnersOffline(
 		.update(runners)
 		.set({ status: "offline" })
 		.where(eq(runners.status, "online"));
+}
+
+/** 有未结束任务的租户（进程启动时收尾中断的任务、定时自动完成闲置任务用）。 */
+export async function tenantsWithOpenTasks(
+	executor: Executor = db,
+): Promise<string[]> {
+	const rows = await executor
+		.selectDistinct({ tenantId: tasks.tenantId })
+		.from(tasks)
+		.where(notInArray(tasks.state, [...TASK_ENDED_STATES]));
+	return rows.map((r) => r.tenantId);
 }

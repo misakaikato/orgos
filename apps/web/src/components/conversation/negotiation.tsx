@@ -8,11 +8,11 @@ import {
 	fallbackPrincipal,
 	ProposalBlock,
 } from "@/components/conversation/message-item";
-import { IconClose } from "@/components/icons";
 import { Mascot } from "@/components/mascot";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Tag } from "@/components/ui/badge";
-import { Button, IconButton } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { SideDrawer } from "@/components/ui/drawer";
 import { ErrorState, LoadingRows } from "@/components/ui/states";
 import { ConfirmationActions } from "@/components/work-items/confirmation-actions";
 import { cx } from "@/lib/cx";
@@ -296,111 +296,81 @@ function NegotiationDrawer({
 	meId: string;
 	onClose: () => void;
 }) {
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
-		};
-		document.addEventListener("keydown", onKey);
-		return () => document.removeEventListener("keydown", onKey);
-	}, [onClose]);
 	return (
-		<div className="fixed inset-0 z-30 flex justify-end">
-			<button
-				type="button"
-				aria-label="关闭协商过程"
-				className="flex-1 bg-scrim"
-				onClick={onClose}
-			/>
-			<aside
-				aria-label="协商过程"
-				className="flex h-full w-inspector max-w-full animate-pop-in flex-col bg-bg shadow-float"
-			>
-				<header className="flex h-header shrink-0 items-center justify-between gap-2 border-b border-line px-4">
-					<h2 className="text-16 font-semibold text-ink">协商过程</h2>
-					<IconButton label="关闭" onClick={onClose}>
-						<IconClose size={18} />
-					</IconButton>
-				</header>
-				<div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-					<p className="text-12 text-muted">目标</p>
-					<p className="mt-1 text-14 font-semibold break-words text-ink">
-						{goal}
-					</p>
-					{status === "error" ? (
-						<ErrorState
-							text="协商过程读取失败。"
-							onRetry={() => void loadEvents(negotiationId)}
-						/>
-					) : status !== "ready" ? (
-						<LoadingRows rows={3} />
-					) : view.steps.length === 0 ? (
-						<p className="mt-6 text-13 text-muted">两位分身还没有开始交涉。</p>
-					) : (
-						<ol className="mt-4 flex flex-col gap-4 border-l-2 border-line pl-4">
-							{view.steps.map((s) => {
-								const agent =
-									map.get(s.actorId) ?? fallbackPrincipal(s.actorId, "agent");
-								return (
-									<li key={s.id} className="flex flex-col gap-1.5">
-										<div className="flex items-center gap-2">
-											<Mascot id={agent.id} size={24} />
-											<AgentName agent={agent} map={map} meId={meId} />
-											<time
-												dateTime={s.createdAt}
-												className="ml-auto shrink-0 text-12 text-muted"
-											>
-												{formatStamp(s.createdAt)}
-											</time>
-										</div>
-										<div>
-											<Tag
-												tone={
-													s.payload.status === "reject" ? "danger" : "neutral"
-												}
-											>
-												{`第 ${s.payload.step} 步 · ${STEP_LABEL[s.payload.status]}`}
-											</Tag>
-										</div>
-										<p className="text-14 whitespace-pre-wrap break-words text-ink">
-											{s.payload.message}
-										</p>
-										{s.payload.proposal !== undefined ? (
-											<ProposalBlock proposal={s.payload.proposal} />
-										) : null}
-									</li>
-								);
-							})}
-							{waitingOn ? (
-								<li className="flex items-center gap-2 text-13 text-muted">
-									<span
-										aria-hidden="true"
-										className="size-2 shrink-0 rounded-pill bg-pending"
-									/>
-									{`等${waitingOn === "你" ? "你" : `${waitingOn}本人`}拍板，答复后接着协商`}
-								</li>
-							) : null}
-							{view.outcome ? (
-								<li className="flex items-center gap-2 text-14 font-semibold text-ink">
-									<span
-										aria-hidden="true"
-										className={cx(
-											"size-2 shrink-0 rounded-pill",
-											view.outcome === "agreed" ? "bg-good" : "bg-danger",
-										)}
-									/>
-									{OUTCOME_LABEL[view.outcome]}
-								</li>
-							) : null}
-							{[...view.confirmations].map(([who, action]) => (
-								<li key={who} className="text-13 text-muted">
-									{nameOf(who, map, meId)}
-									{action === "confirm" ? "确认了结果" : "驳回了结果"}
-								</li>
-							))}
-						</ol>
-					)}
-				</div>
-			</aside>
-		</div>
+		<SideDrawer title="协商过程" onClose={onClose}>
+			<p className="text-12 text-muted">目标</p>
+			<p className="mt-1 text-14 font-semibold break-words text-ink">{goal}</p>
+			{status === "error" ? (
+				<ErrorState
+					text="协商过程读取失败。"
+					onRetry={() => void loadEvents(negotiationId)}
+				/>
+			) : status !== "ready" ? (
+				<LoadingRows rows={3} />
+			) : view.steps.length === 0 ? (
+				<p className="mt-6 text-13 text-muted">两位分身还没有开始交涉。</p>
+			) : (
+				<ol className="mt-4 flex flex-col gap-4 border-l-2 border-line pl-4">
+					{view.steps.map((s) => {
+						const agent =
+							map.get(s.actorId) ?? fallbackPrincipal(s.actorId, "agent");
+						return (
+							<li key={s.id} className="flex flex-col gap-1.5">
+								<div className="flex items-center gap-2">
+									<Mascot id={agent.id} size={24} />
+									<AgentName agent={agent} map={map} meId={meId} />
+									<time
+										dateTime={s.createdAt}
+										className="ml-auto shrink-0 text-12 text-muted"
+									>
+										{formatStamp(s.createdAt)}
+									</time>
+								</div>
+								<div>
+									<Tag
+										tone={s.payload.status === "reject" ? "danger" : "neutral"}
+									>
+										{`第 ${s.payload.step} 步 · ${STEP_LABEL[s.payload.status]}`}
+									</Tag>
+								</div>
+								<p className="text-14 whitespace-pre-wrap break-words text-ink">
+									{s.payload.message}
+								</p>
+								{s.payload.proposal !== undefined ? (
+									<ProposalBlock proposal={s.payload.proposal} />
+								) : null}
+							</li>
+						);
+					})}
+					{waitingOn ? (
+						<li className="flex items-center gap-2 text-13 text-muted">
+							<span
+								aria-hidden="true"
+								className="size-2 shrink-0 rounded-pill bg-pending"
+							/>
+							{`等${waitingOn === "你" ? "你" : `${waitingOn}本人`}拍板，答复后接着协商`}
+						</li>
+					) : null}
+					{view.outcome ? (
+						<li className="flex items-center gap-2 text-14 font-semibold text-ink">
+							<span
+								aria-hidden="true"
+								className={cx(
+									"size-2 shrink-0 rounded-pill",
+									view.outcome === "agreed" ? "bg-good" : "bg-danger",
+								)}
+							/>
+							{OUTCOME_LABEL[view.outcome]}
+						</li>
+					) : null}
+					{[...view.confirmations].map(([who, action]) => (
+						<li key={who} className="text-13 text-muted">
+							{nameOf(who, map, meId)}
+							{action === "confirm" ? "确认了结果" : "驳回了结果"}
+						</li>
+					))}
+				</ol>
+			)}
+		</SideDrawer>
 	);
 }

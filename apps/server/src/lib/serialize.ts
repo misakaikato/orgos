@@ -1,19 +1,25 @@
 /**
  * 数据库行 → 协议形态（@orgos/protocol 的实体 schema）。
  */
-import type {
-	Agent,
-	Conversation,
-	Event,
-	Principal,
-	Tenant,
-	WorkItem,
+import {
+	type Agent,
+	type Conversation,
+	type Event,
+	type Principal,
+	type Task,
+	TaskArtifactSchema,
+	type TaskLog,
+	type Tenant,
+	type WorkItem,
 } from "@orgos/protocol";
+import { z } from "zod";
 import type {
 	agents,
 	conversations,
 	events,
 	principals,
+	taskLogs,
+	tasks,
 	tenants,
 	workItems,
 } from "@/db/schema";
@@ -48,6 +54,9 @@ export function toAgent(principal: PrincipalRow, agent: AgentRow): Agent {
 		model: agent.model,
 		runnerId: agent.runnerId,
 		updatedAt: agent.updatedAt.toISOString(),
+		engine: agent.engine,
+		adapter: agent.adapter,
+		workspace: agent.workspace,
 	};
 }
 
@@ -110,4 +119,46 @@ export function toWorkItem(row: WorkItemRow): WorkItem {
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	} as WorkItem;
+}
+
+type TaskRow = typeof tasks.$inferSelect;
+type TaskLogRow = typeof taskLogs.$inferSelect;
+
+const ArtifactsSchema = z.array(TaskArtifactSchema).catch([]);
+
+export function toTask(row: TaskRow): Task {
+	return {
+		id: row.id,
+		tenantId: row.tenantId,
+		conversationId: row.conversationId,
+		requesterId: row.requesterId,
+		assigneeId: row.assigneeId,
+		onBehalfOfId: row.onBehalfOfId,
+		title: row.title,
+		goal: row.goal,
+		state: row.state,
+		engine: row.engine,
+		adapter: row.adapter,
+		runnerId: row.runnerId,
+		workspace: row.workspace,
+		externalSessionId: row.externalSessionId,
+		resultSummary: row.resultSummary,
+		artifacts: ArtifactsSchema.parse(row.artifacts),
+		costMicroUsd: row.costMicroUsd,
+		createdAt: row.createdAt.toISOString(),
+		updatedAt: row.updatedAt.toISOString(),
+		endedAt: row.endedAt?.toISOString() ?? null,
+	};
+}
+
+/** 日志行只经 `@/services/tasks` 写入，写入前已按 kind 校验载荷。 */
+export function toTaskLog(row: TaskLogRow): TaskLog {
+	return {
+		id: row.id,
+		taskId: row.taskId,
+		seq: row.seq,
+		kind: row.kind,
+		payload: row.payload,
+		createdAt: row.createdAt.toISOString(),
+	};
 }

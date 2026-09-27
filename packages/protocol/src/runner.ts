@@ -5,7 +5,13 @@
  * 以新增可选字段的方式加入，已有字段不变；服务端只对自己认识的能力下发 invoke。
  */
 import { z } from "zod";
-import { RUNNER_STATUSES } from "./entities";
+import {
+	ACP_PERMISSION_SOURCES,
+	AcpAdapterStatusSchema,
+	AcpPermissionOptionSchema,
+	AcpToolCallSchema,
+} from "./acp";
+import { RUNNER_STATUSES, TASK_LOG_KINDS } from "./entities";
 
 export const RUNNER_PROTOCOL_VERSION = 1;
 
@@ -63,6 +69,8 @@ export const CapabilitySchema = z.object({
 	name: z.string().min(1).max(64),
 	description: z.string().max(500),
 	risk: z.enum(CAPABILITY_RISKS),
+	/** `agent.acp`：本机各适配器的启动命令与探测结果。 */
+	adapters: z.array(AcpAdapterStatusSchema).max(32).optional(),
 });
 export type Capability = z.infer<typeof CapabilitySchema>;
 
@@ -115,8 +123,15 @@ export const RunnerUpSchema = z.discriminatedUnion("t", [
 		hostname: z.string().max(255),
 		workspace: z.string().max(4096),
 		capabilities: z.array(CapabilitySchema).max(64),
+		/** 本机仍在运行的外部任务：服务端据此让已结束的任务收尾。 */
+		acpTasks: z.array(z.uuid()).max(256).optional(),
 	}),
 	z.object({ t: z.literal("ping") }),
+	/** 能力有变化（例如适配器探测完成）：整份替换 hello 里声明的能力。 */
+	z.object({
+		t: z.literal("capabilities"),
+		capabilities: z.array(CapabilitySchema).max(64),
+	}),
 	z.object({
 		t: z.literal("result"),
 		jobId: z.string().min(1).max(64),
@@ -124,8 +139,36 @@ export const RunnerUpSchema = z.discriminatedUnion("t", [
 		output: z.string(),
 		exitCode: z.number().int().optional(),
 	}),
+	/** 外部任务的过程记录（服务端原样追加到 task_logs）。 */
+	z.object({
+		t: z.literal("acp_event"),
+		taskId: z.uuid(),
+		kind: z.enum(TASK_LOG_KINDS),
+		payload: z.unknown(),
+	}),
+	/** 外部 agent 请求权限（或要开终端执行命令）：等本人在审批卡片上选一个选项。 */
+	z.object({
+		t: z.literal("acp_permission"),
+		taskId: z.uuid(),
+		requestId: z.string().min(1).max(64),
+		toolCall: AcpToolCallSchema,
+		options: z.array(AcpPermissionOptionSchema).min(1).max(16),
+		source: z.enum(ACP_PERMISSION_SOURCES).optional(),
+	}),
+	/** 外部 agent 结束一轮（ACP stopReason；`error` 表示这一轮没能正常结束）。 */
+	z.object({
+		t: z.literal("acp_turn_end"),
+		taskId: z.uuid(),
+		stopReason: z.string().max(64),
+		sessionId: z.string().max(200).nullable(),
+	}),
 ]);
 export type RunnerUp = z.infer<typeof RunnerUpSchema>;
+/** Runner → 服务端：外部任务相关的三种帧。 */
+export type AcpUp = Extract<
+	RunnerUp,
+	{ t: "acp_event" | "acp_permission" | "acp_turn_end" }
+>;
 
 /** 服务端 → Runner。 */
 export const RunnerDownSchema = z.discriminatedUnion("t", [
@@ -141,8 +184,45 @@ export const RunnerDownSchema = z.discriminatedUnion("t", [
 		),
 		args: z.unknown(),
 	}),
+	/** 为一个任务起 ACP agent 进程、建会话并发出第一段话。 */
+	z.object({
+		t: z.literal("acp_start"),
+		taskId: z.uuid(),
+		adapter: z.string().min(1).max(64),
+		workspace: z.string().min(1).max(4096),
+		prompt: z.string().min(1),
+	}),
+	/** 同一任务的追问：继续同一 ACP 会话。 */
+	z.object({
+		t: z.literal("acp_prompt"),
+		taskId: z.uuid(),
+		prompt: z.string().min(1),
+	}),
+	/** 本人对权限请求的决定：所选选项原样回给 agent；null 表示取消。 */
+	z.object({
+		t: z.literal("acp_permission_reply"),
+		taskId: z.uuid(),
+		requestId: z.string().min(1).max(64),
+		optionId: z.string().max(200).nullable(),
+	}),
+	/** 打断当前一轮（ACP session/cancel），会话保留。 */
+	z.object({ t: z.literal("acp_interrupt"), taskId: z.uuid() }),
+	/** 任务结束或取消：终止 agent 进程。 */
+	z.object({ t: z.literal("acp_cancel"), taskId: z.uuid() }),
 ]);
 export type RunnerDown = z.infer<typeof RunnerDownSchema>;
+/** 服务端 → Runner：外部任务相关的帧。 */
+export type AcpDown = Extract<
+	RunnerDown,
+	{
+		t:
+			| "acp_start"
+			| "acp_prompt"
+			| "acp_permission_reply"
+			| "acp_interrupt"
+			| "acp_cancel";
+	}
+>;
 
 type Parsed<T> = { ok: true; data: T } | { ok: false; error: string };
 

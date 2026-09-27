@@ -62,8 +62,8 @@ export async function requireConversation(
 }
 
 /**
- * 我能否把 `targetId` 拉进群：同租户的任何人、我自己的任何代理、他人的分身。
- * 不存在或跨租户 → 404；是我自己 → 400；他人的助手 → 400 AGENT_NOT_REACHABLE。
+ * 我能否把 `targetId` 拉进群：同租户的任何人、我自己的内置代理、他人的分身。
+ * 不存在或跨租户 → 404；是我自己 → 400；他人的助手、任何外部助手 → 400 AGENT_NOT_REACHABLE。
  */
 async function requireGroupReachable(
 	s: Scoped,
@@ -71,15 +71,21 @@ async function requireGroupReachable(
 	targetId: string,
 ): Promise<PrincipalRow> {
 	const target = await requireSomeoneElse(s, me, targetId);
-	if (target.kind === "agent" && target.ownerId !== me.id) {
-		const agent = await s.first(agents, eq(agents.principalId, target.id));
-		if (agent?.role !== "front") {
-			throw new AppError(
-				400,
-				ERROR_CODES.AGENT_NOT_REACHABLE,
-				"别人的助手只替本人办事，只能拉入对方的分身",
-			);
-		}
+	if (target.kind !== "agent") return target;
+	const agent = await s.first(agents, eq(agents.principalId, target.id));
+	if (agent?.engine === "acp") {
+		throw new AppError(
+			400,
+			ERROR_CODES.AGENT_NOT_REACHABLE,
+			"外部助手只在与本人的私聊里接活，不能拉进群",
+		);
+	}
+	if (target.ownerId !== me.id && agent?.role !== "front") {
+		throw new AppError(
+			400,
+			ERROR_CODES.AGENT_NOT_REACHABLE,
+			"别人的助手只替本人办事，只能拉入对方的分身",
+		);
 	}
 	return target;
 }

@@ -32,7 +32,10 @@ const KIND_LABEL: Record<WorkItem["kind"], string> = {
 function ItemActions({ item }: { item: WorkItem }) {
 	if (item.kind === "confirmation")
 		return <ConfirmationActions workItemId={item.id} />;
-	if (item.kind === "approval") return <ApprovalActions workItemId={item.id} />;
+	if (item.kind === "approval")
+		return (
+			<ApprovalActions workItemId={item.id} options={item.payload.options} />
+		);
 	return null;
 }
 

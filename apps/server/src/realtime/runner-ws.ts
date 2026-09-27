@@ -3,6 +3,7 @@
  *
  * 鉴权在升级之前：token 无效或设备已吊销直接回 HTTP 401，不升级。
  * 连上后收到 hello 才算上线（登记到 hub、记下能力）；当前连接断开即下线。
+ * 外部任务的上行帧（acp_*）交给外部任务服务；hello 里上报的在跑任务据此对账。
  */
 import { parseRunnerUp, RUNNER_WS_CLOSE } from "@orgos/protocol";
 import type { WSContext, WSEvents } from "hono/ws";
@@ -12,10 +13,12 @@ import {
 	type RunnerSocket,
 	runnerHub,
 } from "@/realtime/runner-hub";
+import { externalTasks } from "@/services/external-tasks";
 import {
 	hashSecret,
 	markRunnerOffline,
 	markRunnerOnline,
+	updateRunnerCapabilities,
 } from "@/services/runners";
 
 /** 由 token 认出设备；无效或已吊销返回 null。 */
@@ -52,13 +55,29 @@ export function runnerWsEvents(
 			if (!parsed.ok) return;
 			const sock = hold(ws);
 			const frame = parsed.data;
+			if (
+				frame.t === "acp_event" ||
+				frame.t === "acp_permission" ||
+				frame.t === "acp_turn_end"
+			) {
+				await externalTasks.onRunnerFrame(runner, frame);
+				return;
+			}
+			if (frame.t === "capabilities") {
+				if (hub.isCurrent(runner.id, sock))
+					await updateRunnerCapabilities(runner, frame.capabilities);
+				return;
+			}
 			if (frame.t !== "hello") {
 				hub.onFrame(runner.id, sock, frame);
 				return;
 			}
 			hub.attach(runner.id, sock);
-			if (!(await markRunnerOnline(runner, frame)))
+			if (!(await markRunnerOnline(runner, frame))) {
 				hub.kick(runner.id, RUNNER_WS_CLOSE.REVOKED, "revoked");
+				return;
+			}
+			await externalTasks.onRunnerHello(runner, frame.acpTasks ?? []);
 		},
 		onClose: async (_evt, ws) => {
 			if (hub.detach(runner.id, hold(ws))) await markRunnerOffline(runner);

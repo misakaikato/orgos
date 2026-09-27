@@ -11,6 +11,7 @@ import { parseJson } from "@/lib/http";
 import { upgradeWs } from "@/lib/ws-upgrade";
 import { type AppEnv, requireAuth, requireMember } from "@/middleware/auth";
 import { authenticateRunner, runnerWsEvents } from "@/realtime/runner-ws";
+import { externalTasks } from "@/services/external-tasks";
 import {
 	createPairingCode,
 	listRunners,
@@ -49,7 +50,10 @@ export function registerRunnerRoutes(app: Hono<AppEnv>): void {
 	});
 
 	app.delete("/api/runners/:id", async (c) => {
-		await revokeRunner(c.get("scope"), c.get("principal"), c.req.param("id"));
+		const s = c.get("scope");
+		const runnerId = c.req.param("id");
+		await revokeRunner(s, c.get("principal"), runnerId);
+		await externalTasks.onRunnerRevoked(s, runnerId);
 		return c.body(null, 204);
 	});
 

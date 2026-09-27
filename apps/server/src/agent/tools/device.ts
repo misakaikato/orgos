@@ -91,7 +91,7 @@ async function runOnDevice<N extends DeviceCapabilityName>(
 		};
 	}
 	if (needsApproval(DEVICE_CAPABILITIES[capability].risk)) {
-		const outcome = await requestApproval(scope.s, {
+		const { outcome } = await requestApproval(scope.s, {
 			agentId: scope.agent.principal.id,
 			conversationId: scope.conversation.id,
 			runnerId: runner.id,

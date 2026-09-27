@@ -5,6 +5,7 @@
  * `events` 只追加：代码中不存在更新或删除事件行的路径。
  */
 import {
+	AGENT_ENGINES,
 	AGENT_ROLES,
 	CONVERSATION_KINDS,
 	CONVERSATION_MEMBER_ROLES,
@@ -14,6 +15,8 @@ import {
 	PRINCIPAL_KINDS,
 	PRINCIPAL_STATUSES,
 	RUNNER_STATUSES,
+	TASK_LOG_KINDS,
+	TASK_STATES,
 	WORK_ITEM_KINDS,
 	WORK_ITEM_STATUSES,
 } from "@orgos/protocol";
@@ -119,19 +122,35 @@ export const runners = pgTable(
 	(t) => [index("runners_owner_idx").on(t.ownerId)],
 );
 
-export const agents = pgTable("agents", {
-	principalId: uuid("principal_id")
-		.primaryKey()
-		.references(() => principals.id),
-	tenantId: tenantId(),
-	role: text("role", { enum: AGENT_ROLES }).notNull(),
-	description: text("description").notNull().default(""),
-	delegationPolicy: text("delegation_policy").notNull().default(""),
-	model: text("model").notNull().default(DEFAULT_AGENT_MODEL),
-	runnerId: uuid("runner_id").references(() => runners.id),
-	createdAt: createdAt(),
-	updatedAt: updatedAt(),
-});
+export const agents = pgTable(
+	"agents",
+	{
+		principalId: uuid("principal_id")
+			.primaryKey()
+			.references(() => principals.id),
+		tenantId: tenantId(),
+		role: text("role", { enum: AGENT_ROLES }).notNull(),
+		description: text("description").notNull().default(""),
+		delegationPolicy: text("delegation_policy").notNull().default(""),
+		model: text("model").notNull().default(DEFAULT_AGENT_MODEL),
+		runnerId: uuid("runner_id").references(() => runners.id),
+		/** builtin：orgos 的运行循环；acp：经设备 Runner 以 ACP 接入的外部 agent。 */
+		engine: text("engine", { enum: AGENT_ENGINES })
+			.notNull()
+			.default("builtin"),
+		/** 外部助手的适配器（ACP_ADAPTERS 的 id）与设备上的工作目录。 */
+		adapter: text("adapter"),
+		workspace: text("workspace"),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [
+		check(
+			"agents_acp_binding_check",
+			sql`${t.engine} <> 'acp' or (${t.runnerId} is not null and ${t.adapter} is not null and ${t.workspace} is not null)`,
+		),
+	],
+);
 
 export const conversations = pgTable(
 	"conversations",
@@ -277,4 +296,65 @@ export const llmRequests = pgTable(
 		index("llm_requests_agent_idx").on(t.agentId),
 		index("llm_requests_conversation_idx").on(t.conversationId),
 	],
+);
+
+/**
+ * 任务：交给某个执行者、有边界的一件事（状态机对齐 A2A）。外部助手的一次会话、
+ * 代理之间的一次交办都是任务；聊天里只放任务卡片，过程进 task_logs。
+ */
+export const tasks = pgTable(
+	"tasks",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id),
+		requesterId: uuid("requester_id")
+			.notNull()
+			.references(() => principals.id),
+		assigneeId: uuid("assignee_id")
+			.notNull()
+			.references(() => principals.id),
+		onBehalfOfId: uuid("on_behalf_of_id")
+			.notNull()
+			.references(() => principals.id),
+		title: text("title").notNull(),
+		goal: text("goal").notNull(),
+		state: text("state", { enum: TASK_STATES }).notNull().default("submitted"),
+		engine: text("engine", { enum: AGENT_ENGINES }).notNull(),
+		adapter: text("adapter"),
+		runnerId: uuid("runner_id").references(() => runners.id),
+		workspace: text("workspace"),
+		externalSessionId: text("external_session_id"),
+		resultSummary: text("result_summary"),
+		artifacts: jsonb("artifacts").notNull().default([]),
+		costMicroUsd: bigint("cost_micro_usd", { mode: "number" }),
+		/** 已分配的最大日志 seq（task_logs.seq 在任务内连续）。 */
+		lastLogSeq: integer("last_log_seq").notNull().default(0),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+		endedAt: timestamp("ended_at", { withTimezone: true }),
+	},
+	(t) => [
+		index("tasks_conversation_idx").on(t.conversationId),
+		index("tasks_assignee_state_idx").on(t.assigneeId, t.state),
+	],
+);
+
+/** 任务的过程记录：只追加。 */
+export const taskLogs = pgTable(
+	"task_logs",
+	{
+		id: bigserial("id", { mode: "number" }).primaryKey(),
+		tenantId: tenantId(),
+		taskId: uuid("task_id")
+			.notNull()
+			.references(() => tasks.id),
+		seq: integer("seq").notNull(),
+		kind: text("kind", { enum: TASK_LOG_KINDS }).notNull(),
+		payload: jsonb("payload").notNull(),
+		createdAt: createdAt(),
+	},
+	(t) => [unique("task_logs_task_seq_unique").on(t.taskId, t.seq)],
 );

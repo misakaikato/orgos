@@ -17,6 +17,20 @@ export function usePrincipalMap(): PrincipalMap {
 	);
 }
 
+/** 我的外部助手（经 ACP 接入）的 id：界面在它们的团子旁标"外部"。 */
+export function useExternalAgentIds(): ReadonlySet<string> {
+	const agents = useStore((s) => s.me?.agents);
+	return useMemo(
+		() =>
+			new Set(
+				(agents ?? [])
+					.filter((a) => a.engine === "acp")
+					.map((a) => a.principal.id),
+			),
+		[agents],
+	);
+}
+
 /** 与某主体开私聊（已有则复用）并跳转过去。 */
 export function useOpenDm(): {
 	open: (principalId: string) => Promise<void>;

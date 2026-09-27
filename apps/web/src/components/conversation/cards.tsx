@@ -176,14 +176,15 @@ export function EscalationCard({
 const APPROVAL_NOTE = {
 	approve: "已允许，",
 	deny: "已拒绝，没有执行。",
-	expired: "10 分钟内没有处理，已过期，没有执行。",
-	cancelled: "等待期间有了新消息或运行被停止，已取消，没有执行。",
+	expired: "10 分钟内没有处理，已过期，视为拒绝，没有执行。",
+	cancelled: "等待期间有了新消息、运行被停止或任务已结束，已取消，没有执行。",
 } as const;
 
 /**
- * 设备审批卡片：代理要在本人的设备上写文件或执行命令。显示设备名、能力与完整参数；
- * 本人看到"允许 / 拒绝"，其他成员只看到等待状态。状态由会话事件派生——有对应的
- * approval.resolved 即为完成态。
+ * 审批卡片：代理要在本人的设备上写文件、执行命令，或外部助手请求使用工具。
+ * 显示设备名、能力（或外部助手请求的工具）与完整参数；外部助手的请求带它给出的选项，
+ * 本人选哪个就原样回给它。本人看到按钮，其他成员只看到等待状态。
+ * 状态由会话事件派生——有对应的 approval.resolved 即为完成态。
  */
 export function ApprovalCard({
 	event,
@@ -196,13 +197,17 @@ export function ApprovalCard({
 	map: PrincipalMap;
 	meId: string;
 }) {
-	const { workItemId, runnerName, capability, args } = event.payload;
+	const { workItemId, runnerName, capability, args, toolCall, options } =
+		event.payload;
 	const mine = event.onBehalfOfId === meId;
 	const agentName = map.get(event.actorId)?.displayName ?? "代理";
 	const ownerName = event.onBehalfOfId
 		? (map.get(event.onBehalfOfId)?.displayName ?? "本人")
 		: "本人";
 	const outcome = resolved?.payload.outcome ?? null;
+	const chosen = options?.find(
+		(o) => o.optionId === resolved?.payload.optionId,
+	);
 	const title = outcome
 		? `${APPROVAL_OUTCOME_LABEL[outcome]}：${capabilityLabel(capability)}`
 		: mine
@@ -215,17 +220,23 @@ export function ApprovalCard({
 				title={title}
 				meta={formatClock((resolved ?? event).createdAt)}
 				actions={
-					!resolved && mine ? <ApprovalActions workItemId={workItemId} /> : null
+					!resolved && mine ? (
+						<ApprovalActions workItemId={workItemId} options={options} />
+					) : null
 				}
 			>
 				<p className="break-words">
-					{agentName}想在“{runnerName}”上{capabilityLabel(capability)}
+					{toolCall && capability !== "shell.exec"
+						? `${agentName}请求：${toolCall.title}`
+						: `${agentName}想在“${runnerName}”上${capabilityLabel(capability)}`}
 				</p>
 				<ApprovalDetails capability={capability} args={args} />
 				{outcome ? (
 					<p className="mt-2 text-12 text-muted">
 						{outcome === "approve"
-							? `${APPROVAL_NOTE.approve}${agentName}会在这里给出结果。`
+							? chosen
+								? `${APPROVAL_NOTE.approve}选了“${chosen.name}”，${agentName}会接着做。`
+								: `${APPROVAL_NOTE.approve}${agentName}会在这里给出结果。`
 							: APPROVAL_NOTE[outcome]}
 					</p>
 				) : mine ? null : (

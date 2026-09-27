@@ -3,6 +3,7 @@
 import type { Agent, AgentUsage } from "@orgos/protocol";
 import { useEffect, useState } from "react";
 import { AgentCard } from "@/components/agents/agent-card";
+import { ExternalAgentForm } from "@/components/agents/external-agent-form";
 import { NewAgentForm } from "@/components/agents/new-agent-form";
 import { NotesPanel } from "@/components/agents/notes-panel";
 import { PageHeader } from "@/components/page-header";
@@ -11,6 +12,7 @@ import { api } from "@/lib/api";
 import { cx } from "@/lib/cx";
 import {
 	loadRunners,
+	refreshConversations,
 	refreshMyAgents,
 	setMyAgents,
 	useStore,
@@ -59,7 +61,9 @@ function AgentsPanel({
 	ownerHandle: string;
 }) {
 	const [usage, setUsage] = useState<Map<string, AgentUsage>>(new Map());
-	const [creating, setCreating] = useState(false);
+	const [creating, setCreating] = useState<"specialist" | "external" | null>(
+		null,
+	);
 
 	useEffect(() => {
 		void refreshMyAgents().catch(() => {});
@@ -91,20 +95,31 @@ function AgentsPanel({
 					}
 				/>
 			))}
-			{creating ? (
+			{creating === "specialist" ? (
 				<NewAgentForm
 					ownerHandle={ownerHandle}
-					onCancel={() => setCreating(false)}
+					onCancel={() => setCreating(null)}
 					onCreated={(agent) => {
-						setCreating(false);
+						setCreating(null);
 						setMyAgents([...agents, agent]);
 					}}
 				/>
+			) : creating === "external" ? (
+				<ExternalAgentForm
+					ownerHandle={ownerHandle}
+					onCancel={() => setCreating(null)}
+					onCreated={(agent) => {
+						setCreating(null);
+						setMyAgents([...agents, agent]);
+						void refreshConversations().catch(() => {});
+					}}
+				/>
 			) : (
-				<div>
-					<Button variant="primary" onClick={() => setCreating(true)}>
+				<div className="flex flex-wrap gap-2">
+					<Button variant="primary" onClick={() => setCreating("specialist")}>
 						新建助手
 					</Button>
+					<Button onClick={() => setCreating("external")}>接入外部助手</Button>
 				</div>
 			)}
 		</div>

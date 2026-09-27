@@ -2,10 +2,14 @@
  * 实体的线上形态（REST 出参、WS 帧共用）。枚举值数组同时是数据库列的取值来源。
  */
 import { z } from "zod";
+import { AcpPermissionOptionSchema, AcpToolCallSchema } from "./acp";
 
 export const MEMBER_ROLES = ["owner", "member"] as const;
 export const PRINCIPAL_KINDS = ["human", "agent"] as const;
 export const AGENT_ROLES = ["front", "specialist"] as const;
+/** 代理由谁驱动：orgos 自己的运行循环，或经设备 Runner 以 ACP 接入的外部 agent。 */
+export const AGENT_ENGINES = ["builtin", "acp"] as const;
+export type AgentEngine = (typeof AGENT_ENGINES)[number];
 export const CONVERSATION_KINDS = ["dm", "group", "negotiation"] as const;
 export const CONVERSATION_MEMBER_ROLES = ["member", "observer"] as const;
 export const WORK_ITEM_KINDS = [
@@ -59,8 +63,18 @@ export const AgentSchema = z.object({
 	model: z.string(),
 	runnerId: z.uuid().nullable(),
 	updatedAt: z.iso.datetime(),
+	/** 缺省为 builtin。 */
+	engine: z.enum(AGENT_ENGINES).optional(),
+	/** 外部助手：适配器（ACP_ADAPTERS 的 id）与设备上的工作目录。 */
+	adapter: z.string().nullable().optional(),
+	workspace: z.string().nullable().optional(),
 });
 export type Agent = z.infer<typeof AgentSchema>;
+
+/** 外部助手（经 ACP 接入）：只替本人干活，只在与本人的私聊里接活。 */
+export function isExternalAgent(agent: Pick<Agent, "engine">): boolean {
+	return agent.engine === "acp";
+}
 
 export const UserSchema = z.object({
 	id: z.string(),
@@ -132,6 +146,10 @@ export const WORK_ITEM_PAYLOAD_SCHEMAS = {
 		runnerId: z.uuid(),
 		capability: z.string(),
 		args: z.unknown(),
+		/** 外部助手的权限请求：所属任务、请求的工具调用与 agent 给出的选项（所选选项原样回给 agent）。 */
+		taskId: z.uuid().optional(),
+		toolCall: AcpToolCallSchema.optional(),
+		options: z.array(AcpPermissionOptionSchema).optional(),
 	}),
 	confirmation: z.object({
 		negotiationConversationId: z.uuid(),
@@ -165,6 +183,8 @@ export const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
 /** approval 待办了结后的 `work_items.resolution`。 */
 export const ApprovalResolutionSchema = z.object({
 	outcome: z.enum(APPROVAL_OUTCOMES),
+	/** 带选项的审批：本人选的（或过期时代为选的拒绝）选项。 */
+	optionId: z.string().optional(),
 });
 export type ApprovalResolution = z.infer<typeof ApprovalResolutionSchema>;
 
@@ -244,3 +264,163 @@ export const NoteSchema = z.object({
 	updatedAt: z.iso.datetime(),
 });
 export type Note = z.infer<typeof NoteSchema>;
+
+// ─────────────────────────── 任务 ───────────────────────────
+
+/**
+ * 任务：交给某个执行者、有边界的一件事（外部助手的一次会话，或代理之间的一次交办）。
+ * 状态机对齐 A2A 的任务定义。
+ */
+export const TASK_STATES = [
+	"submitted",
+	"working",
+	"input_required",
+	"awaiting_approval",
+	"completed",
+	"failed",
+	"canceled",
+] as const;
+export type TaskState = (typeof TASK_STATES)[number];
+
+export const TASK_ENDED_STATES: ReadonlySet<TaskState> = new Set([
+	"completed",
+	"failed",
+	"canceled",
+]);
+
+export function isTaskEnded(state: TaskState): boolean {
+	return TASK_ENDED_STATES.has(state);
+}
+
+/** 允许的状态迁移（唯一定义处）；结束态不再迁移。 */
+export const TASK_TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
+	submitted: ["working", "failed", "canceled"],
+	working: [
+		"input_required",
+		"awaiting_approval",
+		"completed",
+		"failed",
+		"canceled",
+	],
+	awaiting_approval: ["working", "completed", "failed", "canceled"],
+	input_required: ["working", "completed", "failed", "canceled"],
+	completed: [],
+	failed: [],
+	canceled: [],
+};
+
+export function canTransition(from: TaskState, to: TaskState): boolean {
+	return TASK_TRANSITIONS[from].includes(to);
+}
+
+/** 外部任务无活动多久后自动完成。 */
+export const TASK_IDLE_COMPLETE_MS = 24 * 60 * 60 * 1000;
+
+export const TASK_LOG_KINDS = [
+	"prompt",
+	"agent_text",
+	"tool_call",
+	"tool_result",
+	"permission",
+	"state",
+	"error",
+] as const;
+export type TaskLogKind = (typeof TASK_LOG_KINDS)[number];
+
+export const TASK_ARTIFACT_KINDS = ["file", "diff", "link"] as const;
+
+export const TaskArtifactSchema = z.object({
+	kind: z.enum(TASK_ARTIFACT_KINDS),
+	label: z.string(),
+	ref: z.string(),
+});
+export type TaskArtifact = z.infer<typeof TaskArtifactSchema>;
+
+export const TaskSchema = z.object({
+	id: z.uuid(),
+	tenantId: z.uuid(),
+	conversationId: z.uuid(),
+	requesterId: z.uuid(),
+	assigneeId: z.uuid(),
+	onBehalfOfId: z.uuid(),
+	title: z.string(),
+	goal: z.string(),
+	state: z.enum(TASK_STATES),
+	engine: z.enum(AGENT_ENGINES),
+	adapter: z.string().nullable(),
+	runnerId: z.uuid().nullable(),
+	workspace: z.string().nullable(),
+	externalSessionId: z.string().nullable(),
+	/** 进行中是最新进度，结束后是结果。 */
+	resultSummary: z.string().nullable(),
+	artifacts: z.array(TaskArtifactSchema),
+	costMicroUsd: z.number().int().nullable(),
+	createdAt: z.iso.datetime(),
+	updatedAt: z.iso.datetime(),
+	endedAt: z.iso.datetime().nullable(),
+});
+export type Task = z.infer<typeof TaskSchema>;
+
+/** 各 kind 的 `task_logs.payload`（写入前按此校验；字段一律宽容，外部 agent 的内容按不可信输入对待）。 */
+export const TASK_LOG_PAYLOAD_SCHEMAS = {
+	/** 交给执行者的一段话（首次交办或追问）。 */
+	prompt: z.object({ text: z.string(), byId: z.uuid().optional() }),
+	/** 执行者说的一段话（流式片段在 Runner 侧合并后记一条）。 */
+	agent_text: z.object({ text: z.string() }),
+	tool_call: z.object({
+		toolCallId: z.string().optional(),
+		title: z.string(),
+		kind: z.string().optional(),
+		input: z.unknown().optional(),
+	}),
+	tool_result: z.object({
+		toolCallId: z.string().optional(),
+		title: z.string().optional(),
+		ok: z.boolean(),
+		output: z.string().optional(),
+		/** 写了哪个文件（相对工作目录），用于产出列表。 */
+		path: z.string().optional(),
+	}),
+	permission: z.object({
+		title: z.string(),
+		/** 请求时带的选项；决定后记所选选项与结局。 */
+		options: z.array(AcpPermissionOptionSchema).optional(),
+		optionId: z.string().nullable().optional(),
+		outcome: z.string().optional(),
+		/** 无需再问本人（本任务内已始终允许、或同一命令刚在权限请求里批准过）。 */
+		auto: z.string().optional(),
+		input: z.unknown().optional(),
+	}),
+	state: z.object({
+		state: z.string(),
+		sessionId: z.string().optional(),
+		agentName: z.string().optional(),
+		note: z.string().optional(),
+	}),
+	error: z.object({ message: z.string(), fatal: z.boolean().optional() }),
+} as const satisfies Record<TaskLogKind, z.ZodType>;
+
+export type TaskLogPayload<K extends TaskLogKind> = z.infer<
+	(typeof TASK_LOG_PAYLOAD_SCHEMAS)[K]
+>;
+
+export const TaskLogSchema = z.object({
+	id: z.number().int(),
+	taskId: z.uuid(),
+	seq: z.number().int(),
+	kind: z.enum(TASK_LOG_KINDS),
+	payload: z.unknown(),
+	createdAt: z.iso.datetime(),
+});
+export type TaskLog = z.infer<typeof TaskLogSchema>;
+
+/** 任务标题：目标的第一行，最多 40 字。 */
+export const TASK_TITLE_MAX_CHARS = 40;
+
+export function taskTitleOf(goal: string): string {
+	const line = goal.trim().split("\n", 1)[0]?.trim() ?? "";
+	const chars = Array.from(line);
+	return chars.length > TASK_TITLE_MAX_CHARS
+		? `${chars.slice(0, TASK_TITLE_MAX_CHARS).join("")}…`
+		: line || "任务";
+}

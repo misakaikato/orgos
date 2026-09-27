@@ -15,6 +15,13 @@
       "when": 1790487785288,
       "tag": "0001_twin_model",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790500114836,
+      "tag": "0002_tasks",
+      "breakpoints": true
     }
   ]
 }

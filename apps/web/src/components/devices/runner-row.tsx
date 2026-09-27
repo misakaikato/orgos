@@ -1,6 +1,10 @@
 "use client";
 
-import type { Runner } from "@orgos/protocol";
+import {
+	AGENT_ACP_CAPABILITY,
+	findAdapter,
+	type Runner,
+} from "@orgos/protocol";
 import { useState } from "react";
 import { IconDevice } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -13,6 +17,18 @@ function presence(runner: Runner): string {
 	return runner.lastSeenAt
 		? `离线 · 最后在线 ${formatListTime(runner.lastSeenAt)}`
 		: "离线 · 还没连上过";
+}
+
+/** 这台设备能运行的外部助手（探测可用的）。 */
+function externalLine(runner: Runner): string | null {
+	const acp = runner.capabilities.find((c) => c.name === AGENT_ACP_CAPABILITY);
+	if (!acp) return null;
+	const ok = (acp.adapters ?? [])
+		.filter((a) => a.available)
+		.map((a) => findAdapter(a.id)?.label ?? a.id);
+	return ok.length > 0
+		? `可运行的外部助手：${ok.join("、")}`
+		: "这台设备上还没有可用的外部助手";
 }
 
 /** 设备列表的一行：名称、系统、工作目录、在线状态点与最后在线；吊销要二次确认。 */
@@ -67,6 +83,9 @@ export function RunnerRow({
 					>
 						工作目录 {runner.workspace}
 					</p>
+				) : null}
+				{online && externalLine(runner) ? (
+					<p className="mt-1 text-13 text-muted">{externalLine(runner)}</p>
 				) : null}
 				<p className="mt-1 text-13 text-muted">
 					{boundTo.length > 0

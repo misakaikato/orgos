@@ -23,6 +23,7 @@ import {
 	postMessage,
 	requireConversation,
 } from "@/services/conversations";
+import { externalTasks } from "@/services/external-tasks";
 
 export function registerConversationRoutes(app: Hono<AppEnv>): void {
 	app.use("/api/conversations", requireAuth, requireMember);
@@ -105,12 +106,14 @@ export function registerConversationRoutes(app: Hono<AppEnv>): void {
 	});
 
 	app.post("/api/conversations/:id/stop", async (c) => {
+		const s = c.get("scope");
 		const { conversation } = await requireConversation(
-			c.get("scope"),
+			s,
 			c.req.param("id"),
 			c.get("principal").id,
 		);
 		scheduler.stop(conversation.id);
+		await externalTasks.interrupt(s, conversation.id);
 		return c.body(null, 204);
 	});
 }

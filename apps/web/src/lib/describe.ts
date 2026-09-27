@@ -1,7 +1,7 @@
 /**
  * 事件的一行文字描述（会话里的系统行、卡片副标题与列表预览共用）。
  */
-import type { Event, NEGOTIATION_OUTCOMES } from "@orgos/protocol";
+import type { Event, NEGOTIATION_OUTCOMES, TaskState } from "@orgos/protocol";
 import { APPROVAL_OUTCOME_LABEL, capabilityLabel } from "@/lib/device";
 import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
 
@@ -11,6 +11,17 @@ export const OUTCOME_LABEL: Record<NegotiationOutcome, string> = {
 	agreed: "已谈妥，等双方本人确认",
 	rejected: "未谈成",
 	exhausted: "步数用尽，未谈成",
+};
+
+/** 任务状态在界面上的说法（状态胶囊、系统描述共用）。 */
+export const TASK_STATE_LABEL: Record<TaskState, string> = {
+	submitted: "已交办",
+	working: "进行中",
+	input_required: "等你回复",
+	awaiting_approval: "等你批准",
+	completed: "已完成",
+	failed: "失败",
+	canceled: "已停止",
 };
 
 export function nameOf(id: string, map: PrincipalMap, meId: string): string {
@@ -56,7 +67,13 @@ export function describeEvent(
 		case "approval.requested":
 			return `${actor}请求在“${event.payload.runnerName}”上${capabilityLabel(event.payload.capability)}`;
 		case "approval.resolved":
-			return `设备操作的审批${APPROVAL_OUTCOME_LABEL[event.payload.outcome]}`;
+			return `审批${APPROVAL_OUTCOME_LABEL[event.payload.outcome]}`;
+		case "task.created":
+			return `${actor}接了任务：${event.payload.title}`;
+		case "task.updated":
+			return `任务${TASK_STATE_LABEL[event.payload.state]}`;
+		case "task.ended":
+			return `任务${TASK_STATE_LABEL[event.payload.state]}${event.payload.summary ? `：${event.payload.summary}` : ""}`;
 	}
 }
 

@@ -9,17 +9,19 @@
  *   只点听到新内容的代理；最多 4 轮。第 2 轮起的每次运行、每次转交都算一次交接，累计到 8 次停止；
  * - 因上限停止时落一条 agent.action{tool:'system', ok:false}，summary 写明是哪个上限；
  * - 协商（C4）：negotiate 建好协商会话后，在该会话的队列里驱动两个分身轮流各走一步（发起方先），
- *   每步交给 `recordNegotiationReply` 判定，直到结束或等本人拍板；本人答复后恢复同一分身接着走。
+ *   每步交给 `recordNegotiationReply` 判定，直到结束或等本人拍板；本人答复后恢复同一分身接着走；
+ * - 外部助手不经运行循环：本人在与它的私聊里发的消息交给外部任务服务（追问或新任务）。
  */
 import {
 	DecisionResolutionSchema,
 	type Event,
+	isExternalAgent,
 	type WorkItem,
 } from "@orgos/protocol";
 import { desc, eq, gt, ne } from "drizzle-orm";
 import { getLlmClient } from "@/agent/llm";
 import type { LlmClient, RunTrigger } from "@/agent/llm-types";
-import { runAgent } from "@/agent/loop";
+import { type RunResult, runAgent } from "@/agent/loop";
 import { LIMIT_SUMMARY, MAX_ROUNDS, RunSession } from "@/agent/session";
 import {
 	type ActingFor,
@@ -33,7 +35,9 @@ import { conversations, events, principals } from "@/db/schema";
 import type { Scoped } from "@/db/scope";
 import { toEvent } from "@/lib/serialize";
 import { recordAgentAction } from "@/services/agent-events";
+import { findAgent } from "@/services/agents";
 import { triggerConversationOf } from "@/services/conversations";
+import { externalTasks } from "@/services/external-tasks";
 import {
 	counterpartOf,
 	type NegotiationReply,
@@ -309,7 +313,19 @@ export class Scheduler {
 		}
 	}
 
-	private run(input: ChainInput, t: Trigger, trigger: MessageEvent) {
+	private async run(
+		input: ChainInput,
+		t: Trigger,
+		trigger: MessageEvent,
+	): Promise<RunResult> {
+		const agent = await findAgent(input.s, { id: t.agentId });
+		if (agent && isExternalAgent(agent)) {
+			await externalTasks.onOwnerMessage(input.s, agent, input.conversationId, {
+				actorId: trigger.actorId,
+				text: trigger.payload.text,
+			});
+			return { outcome: "ended" };
+		}
 		return runAgent({
 			s: input.s,
 			agentId: t.agentId,
