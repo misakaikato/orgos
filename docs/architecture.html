@@ -361,9 +361,9 @@
 <text class="s" x="692" y="464">近期简报 ≤10 行</text>
 <text class="c" x="692" y="488">context.ts · prompt.ts</text>
 <rect class="box " x="860" y="386" width="165" height="112" rx="10"/>
-<text class="t" x="872" y="408">工具 13 个</text>
+<text class="t" x="872" y="408">工具 15 个</text>
 <text class="s" x="872" y="428">memory_search · save</text>
-<text class="s" x="872" y="446">record_decision</text>
+<text class="s" x="872" y="446">record_decision · app_api_*</text>
 <text class="s" x="872" y="464">escalate · negotiate 等</text>
 <text class="c" x="872" y="488">tools/*.ts</text>
 <text class="t" x="20" y="572">业务层</text>
@@ -468,7 +468,7 @@
 <text class="s" x="1052" y="420">可选</text>
 </svg>
 			</div>
-			<figcaption>箭头只画层与层之间的主要调用。几条贯穿全局的约束：写事件只经 <code>services/events.ts</code>；可见性过滤只在 <code>memory/access.ts</code> 的 <code>visibilityFilter</code>；模型调用只经 <code>gateway/core.ts</code> 的同一个函数（代理引擎进程内调用、外部 agent 经 <code>/llm/v1</code>）；所有查询经 <code>scoped(tenantId)</code>。数字（77 个端点、13 个工具、16 种事件、32 张表）按 2026 年 9 月 27 日的代码统计。</figcaption>
+			<figcaption>箭头只画层与层之间的主要调用。几条贯穿全局的约束：写事件只经 <code>services/events.ts</code>；可见性过滤只在 <code>memory/access.ts</code> 的 <code>visibilityFilter</code>；模型调用只经 <code>gateway/core.ts</code> 的同一个函数（代理引擎进程内调用、外部 agent 经 <code>/llm/v1</code>）；所有查询经 <code>scoped(tenantId)</code>。数字（77 个端点、15 个工具、16 种事件、32 张表）按 2026 年 9 月 27 日的代码统计。</figcaption>
 		</figure>
 	</section>
 
@@ -1069,6 +1069,7 @@
 					<tr><td class="k">分身之间协商</td><td>结构化提案往返，最多 8 步；拿不准问各自本人；谈成后双方确认</td><td>约到"10 月 5 日 10:00–10:30"，8 次模型调用</td></tr>
 					<tr><td class="k">问部门</td><td>私聊部门分身；按章程答复并附依据，章程外上报负责人</td><td>产品部按路线图答出"10 月 31 日上线、24 日起灰度"；插队需求上报林晓后转告</td></tr>
 						<tr><td class="k">部门之间协商</td><td>部门分身出面，拍板人是负责人</td><td>销售部与研发部约定 10 月 9 日 14:00–15:00 联调，两步谈成</td></tr>
+						<tr><td class="k">指挥分身操作软件</td><td>分身先搜接口目录再进程内调用，权限同本人；事件记为"分身代本人"</td><td>林晓一句话建成"结算页联调"群；许诺借林晓分身拉群成功，要私聊记录被上报</td></tr>
 						<tr><td class="k">代理用我的电脑</td><td>设备 Runner；读直接做，写与执行先审批</td><td>批准后 done.txt 真实写入磁盘</td></tr>
 				</tbody>
 			</table>
@@ -1099,9 +1100,9 @@
 		<h2 id="f5">进度</h2>
 		<div class="road">
 			<div class="col"><h3><i class="dot done"></i>已完成并验收</h3><ul>
-				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li><li>组织结构与部门分身（问部门、章程外上报、部门协商真机通过）</li></ul></div>
+				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li><li>组织结构与部门分身（问部门、章程外上报、部门协商真机通过）</li><li>应用接口工具（本人指挥分身拉群、他人借分身拉群、越权请求上报真机通过）</li></ul></div>
 			<div class="col"><h3><i class="dot review"></i>施工中</h3><ul>
-				<li>应用接口工具：代理以本人权限调用 orgos 全部接口</li><li>桌面客户端：聊天窗口 + 菜单栏看护 Runner（Electron）</li></ul></div>
+				<li>桌面客户端：聊天窗口 + 菜单栏看护 Runner（Electron）</li></ul></div>
 			<div class="col"><h3><i class="dot plan"></i>下一步（按顺序）</h3><ul>
 				<li>端到端总验收</li><li>架构收束：走向正式产品的沿用、重做与技术债清单</li></ul></div>
 			<div class="col"><h3><i class="dot later"></i>阶段二</h3><ul>

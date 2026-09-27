@@ -73,13 +73,10 @@ export function registerConversationRoutes(app: Hono<AppEnv>): void {
 	app.post("/api/conversations/:id/messages", async (c) => {
 		const req = await parseJson(c, PostMessageRequestSchema);
 		const s = c.get("scope");
-		const event = await postMessage(
-			s,
-			c.get("principal"),
-			c.req.param("id"),
-			req,
-		);
-		if (event.type === "message.posted")
+		const me = c.get("principal");
+		const event = await postMessage(s, me, c.req.param("id"), req);
+		// 代理替本人发的消息记在代理名下，不开启新一轮（代理的消息不触发、也不打断代理）。
+		if (event.type === "message.posted" && event.actorId === me.id)
 			void scheduler.onHumanMessage(s, event);
 		const body: PostMessageResponse = { event };
 		return c.json(body, 201);

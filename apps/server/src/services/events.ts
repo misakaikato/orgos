@@ -1,7 +1,11 @@
 /**
  * 会话事件的唯一写入口。`events` 表只追加：此处没有、全库也不应出现更新或删除事件的路径。
  * 每条事件都落在一个话题里（调用方给出），写入同时推进该话题的最近活动。
+ *
+ * 代办：代理经应用接口替本人操作时（`actingAsAgent` 之内），本人名义写下的事件记为
+ * actorId=代理、onBehalfOfId=本人。只在这里实现。
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
 	EVENT_PAYLOAD_SCHEMAS,
 	type Event,
@@ -27,6 +31,29 @@ export type AppendInput = EventDraft & {
 
 export type Append = (input: AppendInput) => Promise<Event>;
 
+/** 由哪个代理替哪位本人代办。 */
+export type AgentDelegation = { agentId: string; ownerId: string };
+
+const delegation = new AsyncLocalStorage<AgentDelegation>();
+
+/** 在代办标记下执行 `fn`：其中以本人名义写下的事件都记在代理名下。 */
+export function actingAsAgent<R>(
+	mark: AgentDelegation,
+	fn: () => Promise<R>,
+): Promise<R> {
+	return delegation.run(mark, fn);
+}
+
+function attribution(input: AppendInput): {
+	actorId: string;
+	onBehalfOfId: string | null;
+} {
+	const mark = delegation.getStore();
+	return mark && input.actorId === mark.ownerId
+		? { actorId: mark.agentId, onBehalfOfId: mark.ownerId }
+		: { actorId: input.actorId, onBehalfOfId: input.onBehalfOfId ?? null };
+}
+
 /**
  * 在事务 `tx` 内追加一条会话事件。
  *
@@ -51,8 +78,7 @@ export async function appendEvent(
 		topicId: input.topicId,
 		seq: bumped.lastSeq,
 		type: input.type,
-		actorId: input.actorId,
-		onBehalfOfId: input.onBehalfOfId ?? null,
+		...attribution(input),
 		payload,
 		createdAt: at,
 	});

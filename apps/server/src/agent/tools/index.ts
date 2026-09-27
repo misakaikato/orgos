@@ -1,9 +1,10 @@
 /**
  * 代理工具表：唯一的注册处。本阶段注册 pass、memory_search、memory_save、record_decision（单元分身）、
  * delegate_to_teammate、escalate_to_owner、create_commitment、negotiate、negotiation_reply，
- * 以及设备的 device_list / device_read / device_write / device_exec。
+ * 设备的 device_list / device_read / device_write / device_exec，以及应用接口的 app_api_search / app_api_call。
  */
 import type { ToolSpec } from "@/agent/llm-types";
+import { appApiCallTool, appApiSearchTool } from "@/agent/tools/app-api";
 import {
 	createCommitmentTool,
 	memorySaveTool,
@@ -36,6 +37,8 @@ export const TOOLS: readonly AgentTool[] = [
 	deviceReadTool,
 	deviceWriteTool,
 	deviceExecTool,
+	appApiSearchTool,
+	appApiCallTool,
 ];
 
 /** 本次运行可用的工具（不可用的不出现在给模型的列表里）。 */

@@ -1,6 +1,9 @@
 import { ERROR_CODES } from "@orgos/protocol";
+import { eq } from "drizzle-orm";
 import type { MiddlewareHandler } from "hono";
 import { auth } from "@/auth";
+import { db } from "@/db";
+import { user } from "@/db/auth-schema";
 import {
 	findMembership,
 	findSelfPrincipal,
@@ -11,6 +14,7 @@ import {
 	type Tenant,
 } from "@/db/scope";
 import { AppError } from "@/lib/errors";
+import { type AgentDelegation, actingAsAgent } from "@/services/events";
 
 export type SessionUser = { id: string; email: string; name: string };
 
@@ -46,8 +50,51 @@ export async function sessionUserOf(
 	};
 }
 
-/** 解析会话；无效 → 401。 */
+/**
+ * 进程内调用的上下文：代理替本人调用应用接口时，经 `app.request` 的 env 参数传入。
+ * 键是本模块私有的 Symbol，只能由 `internalCallEnv` 构造；网络请求的 env 由运行时给出，伪造不了。
+ */
+const INTERNAL_CALLER = Symbol("orgos.internal-caller");
+
+type InternalCaller = { user: SessionUser; delegation: AgentDelegation };
+type InternalEnv = { [INTERNAL_CALLER]: InternalCaller };
+
+function internalCallerOf(env: unknown): InternalCaller | null {
+	if (typeof env !== "object" || env === null || !(INTERNAL_CALLER in env))
+		return null;
+	return (env as InternalEnv)[INTERNAL_CALLER];
+}
+
+/** 代理 `agentId` 替本人（kind=human）调用应用接口时用的 env：请求者即本人。 */
+export async function internalCallEnv(
+	agentId: string,
+	owner: PrincipalRow,
+): Promise<InternalEnv> {
+	if (owner.kind !== "human" || !owner.userId)
+		throw new Error("只有个人代理能调用应用接口");
+	const [row] = await db
+		.select({ id: user.id, email: user.email, name: user.name })
+		.from(user)
+		.where(eq(user.id, owner.userId));
+	if (!row) throw new Error("本人的登录账号不存在");
+	return {
+		[INTERNAL_CALLER]: {
+			user: row,
+			delegation: { agentId, ownerId: owner.id },
+		},
+	};
+}
+
+/**
+ * 解析会话；无效 → 401。进程内调用以代理的本人为请求者，其后写下的事件带代办标记。
+ */
 export const requireAuth: MiddlewareHandler<AppEnv> = async (c, next) => {
+	const internal = internalCallerOf(c.env);
+	if (internal) {
+		c.set("user", internal.user);
+		await actingAsAgent(internal.delegation, next);
+		return;
+	}
 	const user = await sessionUserOf(c.req.raw.headers);
 	if (!user) {
 		throw new AppError(401, ERROR_CODES.UNAUTHORIZED, "未登录");

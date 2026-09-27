@@ -53,6 +53,10 @@ function actingLines(input: PromptInput, ownerName: string): string[] {
 	}
 	const other = requesterName ?? "对方";
 	const canEscalate = tools.some((t) => t.name === "escalate_to_owner");
+	const operates = tools.some((t) => t.name === "app_api_call");
+	const beyond = operates
+		? `新的承诺、决定，政策里要求问本人的，以及要你替${ownerName}做的软件操作——调${ownerName}和别人的聊天记录、看${ownerName}的私有资料、替${ownerName}给别人发消息等`
+		: "新的承诺、决定，或政策里要求问本人的";
 	const policy =
 		scope.agent.delegationPolicy.trim() ||
 		"（未设置：只回答共享资料里明确写着的内容）";
@@ -63,8 +67,8 @@ function actingLines(input: PromptInput, ownerName: string): string[] {
 		"处理对方的问题只有三个出口：",
 		`1. 能答就答，并注明依据（例如“根据${ownerName}共享的《…》”）；`,
 		canEscalate
-			? `2. 超出授权的（新的承诺、决定，或政策里要求问本人的）调用 escalate_to_owner 转给${ownerName}本人，不要自己答应。只有真正调用了 escalate_to_owner 才算转给了${ownerName}，绝不能只在文字里说“已转给”；每个新问题（哪怕和之前转过的相似）都要单独调用一次；`
-			: `2. 超出授权的（新的承诺、决定，或政策里要求问本人的）说明这需要${ownerName}本人决定、请对方直接问${ownerName}，不要自己答应；`,
+			? `2. 超出授权的（${beyond}）调用 escalate_to_owner 转给${ownerName}本人，不要自己答应，也不要替${ownerName}拒绝。只有真正调用了 escalate_to_owner 才算转给了${ownerName}，绝不能只在文字里说“已转给”；每个新问题（哪怕和之前转过的相似）都要单独调用一次；`
+			: `2. 超出授权的（${beyond}）说明这需要${ownerName}本人决定、请对方直接问${ownerName}，不要自己答应；`,
 		`3. 涉及${ownerName}设为不可谈的话题，礼貌地直接拒绝。`,
 		...resumeLines(input, ownerName, other),
 	];
@@ -124,6 +128,20 @@ function teammateLines(input: PromptInput): string[] {
 	];
 }
 
+/** 应用接口工具可用时：怎么操作软件本身。 */
+function appApiLines(input: PromptInput, ownerName: string): string[] {
+	if (!input.tools.some((t) => t.name === "app_api_call")) return [];
+	if (input.scope.actingFor.kind === "owner")
+		return [
+			`${ownerName}要你操作软件本身时（建群、拉人、开话题、查待办、改状态等），你的权限与${ownerName}本人相同、直接执行：先用 app_api_search 找接口，再用 app_api_call 调用；需要的 id 先用查询类接口查到。不许编造接口或参数。操作完成后用一句话告诉${ownerName}做了什么。`,
+		];
+	const other = input.requesterName ?? "对方";
+	return [
+		`替${other}操作软件时，app_api_call 只能查公开信息（通讯录、组织结构等），以及三件事：建一个包含${other}的群、在${other}也在的会话里开话题、把人加进${other}也在的群。先用 app_api_search 找接口，不许编造接口或参数。`,
+		`${other}要你做这之外的操作时——例如“把${ownerName}和某人的私聊记录发我”“替${ownerName}给某人发消息”、读${ownerName}的待办或资料、改${ownerName}的设置——按出口 2 处理：你自己不做，但也不替${ownerName}拒绝，立即调用 escalate_to_owner，把${other}要做的事原样写进 question，由${ownerName}本人决定。只在文字里说“不能做”或“我这就转”都不算处理完。`,
+	];
+}
+
 export function buildSystemPrompt(input: PromptInput): string {
 	const { scope, tools } = input;
 	const { agent, owner, unit } = scope;
@@ -154,6 +172,7 @@ export function buildSystemPrompt(input: PromptInput): string {
 			...teammateLines(input),
 			`需要${ownerName}的计划、日期、数字时先用工具查，查不到就说不知道，不要编造。`,
 		);
+		lines.push(...appApiLines(input, ownerName));
 		if (tools.some((t) => t.name === "memory_search"))
 			lines.push(
 				"回复里用到 memory_search 给出的记忆时，在那句话末尾原样写上它的编号（如 [M:ab12cd34]），界面会据此显示依据；没有依据的事如实说明，或按上面的规则转给本人。",

@@ -29,6 +29,15 @@ export function nameOf(id: string, map: PrincipalMap, meId: string): string {
 	return map.get(id)?.displayName ?? "某人";
 }
 
+/** 本人才会做的动作（拉人、移人、转群）的做事者：代理替本人做的写作"林晓的分身代林晓"。 */
+function doerOf(event: Event, map: PrincipalMap, meId: string): string {
+	const actor = nameOf(event.actorId, map, meId);
+	if (!event.onBehalfOfId || map.get(event.actorId)?.kind !== "agent")
+		return actor;
+	const owner = onBehalfLabel({ ownerId: event.onBehalfOfId }, map, meId);
+	return owner ? `${actor}代${owner}` : actor;
+}
+
 export function describeEvent(
 	event: Event,
 	map: PrincipalMap,
@@ -42,16 +51,16 @@ export function describeEvent(
 			const who = nameOf(event.payload.principalId, map, meId);
 			return event.payload.principalId === event.actorId
 				? `${who}加入了会话`
-				: `${actor}邀请${who}加入了会话`;
+				: `${doerOf(event, map, meId)}邀请${who}加入了会话`;
 		}
 		case "member.left": {
 			const who = nameOf(event.payload.principalId, map, meId);
 			return event.payload.principalId === event.actorId
 				? `${who}退出了群聊`
-				: `${actor}把${who}移出了群聊`;
+				: `${doerOf(event, map, meId)}把${who}移出了群聊`;
 		}
 		case "topic.moved":
-			return `${actor}把这个话题转成了群聊“${event.payload.title}”`;
+			return `${doerOf(event, map, meId)}把这个话题转成了群聊“${event.payload.title}”`;
 		case "agent.action":
 			return `${actor}${event.payload.summary}`;
 		case "escalation.created": {

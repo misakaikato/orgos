@@ -9,7 +9,7 @@
  *
  * 按本次运行的触发文本决定行为，优先级：
  * 1. 本次运行已有工具结果 → `完成：<工具结果前 60 字>`，不再调工具；
- * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具；
+ * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具（`#api <METHOD> <path> <json>` 调 app_api_call）；
  * 3. 群聊里文本既没有 @ 本代理、也不含本代理 handle → pass；
  * 4. 上报后恢复运行 → `本人答复：<答复原文>`（暂不答复时为 `本人暂不答复`，附言跟在冒号后）；
  * 5. 协商：发起方第一步 continue + `{"slot":"周四 15:00"}`；应答方看到 proposal 时，
@@ -125,7 +125,40 @@ const DIRECTIVES: Directive[] = [
 		tool: "device_exec",
 		args: (m) => ({ command: rest(m) }),
 	},
+	{
+		pattern: /#api\s+([A-Za-z]+)\s+(\S+)\s*([\s\S]*)$/,
+		tool: "app_api_call",
+		args: (m) => apiArgs(rest(m).toUpperCase(), rest(m, 2), rest(m, 3)),
+	},
 ];
+
+/** `#api <METHOD> <path> <json>`：路径里的查询串拆成 query，json 为请求体（不是合法 JSON 时原样作为字符串）。 */
+function apiArgs(
+	method: string,
+	target: string,
+	json: string,
+): Record<string, unknown> {
+	const at = target.indexOf("?");
+	const path = at < 0 ? target : target.slice(0, at);
+	const query =
+		at < 0
+			? undefined
+			: Object.fromEntries(new URLSearchParams(target.slice(at + 1)));
+	let body: unknown;
+	if (json) {
+		try {
+			body = JSON.parse(json);
+		} catch {
+			body = json;
+		}
+	}
+	return {
+		method,
+		path,
+		...(query ? { query } : {}),
+		...(body === undefined ? {} : { body }),
+	};
+}
 
 function firstDirective(text: string): MockDecision | null {
 	let best: { at: number; decision: MockDecision } | null = null;

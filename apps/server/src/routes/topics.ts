@@ -71,13 +71,9 @@ export function registerTopicRoutes(app: Hono<AppEnv>): void {
 	app.post("/api/topics/:id/to-task", async (c) => {
 		const { goal } = await parseJson(c, TopicToTaskRequestSchema);
 		const s = c.get("scope");
-		const { task, posted } = await topicToTask(
-			s,
-			c.get("principal"),
-			c.req.param("id"),
-			goal,
-		);
-		if (posted?.type === "message.posted")
+		const me = c.get("principal");
+		const { task, posted } = await topicToTask(s, me, c.req.param("id"), goal);
+		if (posted?.type === "message.posted" && posted.actorId === me.id)
 			void scheduler.onHumanMessage(s, posted);
 		const assignee = await taskAssignee(s, task);
 		const body: TaskResponse = { task, ...(assignee ? { assignee } : {}) };

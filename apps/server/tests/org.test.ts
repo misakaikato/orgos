@@ -512,7 +512,7 @@ describe("问部门：与单元分身私聊", () => {
 });
 
 describe("章程进单元分身的系统提示", () => {
-	it("系统提示里有章程、负责人与提问人是否成员；有 record_decision，没有交办", async () => {
+	it("系统提示里有章程、负责人与提问人是否成员；有 record_decision，没有交办与应用接口", async () => {
 		const agent = await findAgent(s(), { id: product.twin.id });
 		const owner = await s().first(
 			principals,
@@ -540,6 +540,8 @@ describe("章程进单元分身的系统提示", () => {
 		expect(names).toContain("escalate_to_owner");
 		expect(names).not.toContain("delegate_to_teammate");
 		expect(names).not.toContain("negotiate");
+		expect(names).not.toContain("app_api_search");
+		expect(names).not.toContain("app_api_call");
 		const prompt = buildSystemPrompt({
 			scope,
 			tools,
