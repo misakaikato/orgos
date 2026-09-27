@@ -79,7 +79,10 @@
 	--spacing-control: var(--control-h);
 	--container-thread: var(--thread-max);
 
+	--animate-mascot-breathe: mascot-breathe 4s ease-in-out infinite;
 	--animate-mascot-bounce: mascot-bounce 1.2s ease-in-out infinite;
+	--animate-mascot-done:
+		mascot-done 420ms ease-out, mascot-breathe 4s ease-in-out 420ms infinite;
 	--animate-typing-dot: typing-dot 1.2s ease-in-out infinite;
 	--animate-pop-in: pop-in 160ms ease-out;
 	--animate-caret: caret-blink 1s steps(1) infinite;
@@ -93,6 +96,33 @@
 	}
 	50% {
 		opacity: 0;
+	}
+}
+
+/* 团子待命时的呼吸（DESIGN.md §4）：幅度 2%。 */
+@keyframes mascot-breathe {
+	0%,
+	100% {
+		transform: scale(1);
+	}
+	50% {
+		transform: scale(1.02);
+	}
+}
+
+/* 团子完成时的一次放大回弹，之后回到呼吸。 */
+@keyframes mascot-done {
+	0% {
+		transform: scale(1);
+	}
+	45% {
+		transform: scale(1.08);
+	}
+	75% {
+		transform: scale(0.97);
+	}
+	100% {
+		transform: scale(1);
 	}
 }
 

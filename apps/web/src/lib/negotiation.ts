@@ -16,6 +16,8 @@ export type NegotiationView = {
 	proposal: unknown;
 	/** 本人对结果的处理，键为本人 id。 */
 	confirmations: ReadonlyMap<string, "confirm" | "reject">;
+	/** 协商停在等本人拍板时，请本人定的那个分身。 */
+	waitingAgentId: string | null;
 };
 
 export function negotiationView(events: readonly Event[]): NegotiationView {
@@ -38,11 +40,14 @@ export function negotiationView(events: readonly Event[]): NegotiationView {
 				break;
 		}
 	}
+	const last = steps.at(-1);
 	return {
 		steps,
-		lastStatus: steps.at(-1)?.payload.status ?? null,
+		lastStatus: last?.payload.status ?? null,
 		outcome,
 		proposal,
 		confirmations,
+		waitingAgentId:
+			!outcome && last?.payload.status === "need_owner" ? last.actorId : null,
 	};
 }

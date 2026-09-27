@@ -113,10 +113,17 @@ describe("mockDecide 优先级", () => {
 			role: "initiator" | "responder",
 			goal: string,
 			lastProposal?: unknown,
+			flags: { lastProposalMine?: boolean; ownerAnswered?: boolean } = {},
 		) =>
 			mockDecide(
 				trigger("对方的上一步", {
-					negotiation: { role, goal, lastProposal },
+					negotiation: {
+						role,
+						goal,
+						lastProposal,
+						lastProposalMine: flags.lastProposalMine ?? false,
+						ownerAnswered: flags.ownerAnswered ?? false,
+					},
 				}),
 				[],
 			);
@@ -137,6 +144,16 @@ describe("mockDecide 优先级", () => {
 		);
 		expect(step("responder", "约周四 #reject", MOCK_PROPOSAL)).toMatchObject({
 			args: { status: "reject" },
+		});
+		expect(
+			step("responder", "约周四 #needowner", MOCK_PROPOSAL, {
+				ownerAnswered: true,
+			}),
+		).toMatchObject({ args: { status: "agree", proposal: MOCK_PROPOSAL } });
+		expect(
+			step("initiator", "约周四", MOCK_PROPOSAL, { lastProposalMine: true }),
+		).toMatchObject({
+			args: { status: "continue", proposal: MOCK_PROPOSAL },
 		});
 	});
 

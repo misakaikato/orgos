@@ -23,6 +23,8 @@ export const AgentActionPayloadSchema = z.object({
 export const EscalationCreatedPayloadSchema = z.object({
 	workItemId: z.uuid(),
 	question: z.string(),
+	/** 协商中分身请本人拍板（need_owner）时：所在的协商会话。 */
+	negotiationConversationId: z.uuid().optional(),
 });
 
 export const EscalationResolvedPayloadSchema = z.object({

@@ -6,7 +6,9 @@ import {
 	conversationTitle,
 	dmPeer,
 	humanPair,
-	mascotTraits,
+	MASCOT_ART_COUNT,
+	mascotArt,
+	mascotArtAt,
 	unavailableHint,
 } from "@/lib/principals";
 
@@ -125,20 +127,28 @@ describe("avatarText", () => {
 	});
 });
 
-describe("mascotTraits", () => {
-	it("同一 id 永远得到同一只团子，各维度落在取值范围内", () => {
-		const ids = Array.from({ length: 200 }, (_, i) => `agent-${i}`);
+describe("mascotArt", () => {
+	const ids = Array.from({ length: 200 }, (_, i) => `agent-${i}`);
+
+	it("同一 id 永远得到同一张插画", () => {
+		for (const id of ids) expect(mascotArt(id)).toEqual(mascotArt(id));
+		expect(mascotArt(MY_TWIN)).toEqual(mascotArt(MY_TWIN));
+	});
+
+	it("200 个 id 覆盖全部 12 张插画", () => {
+		expect(MASCOT_ART_COUNT).toBe(12);
+		expect(new Set(ids.map((id) => mascotArt(id).index)).size).toBe(12);
+	});
+
+	it("插画与名字色一一对应，且与 mascotArt 的结果一致", () => {
+		const tones = Array.from({ length: 12 }, (_, i) => mascotArtAt(i + 1).tone);
+		expect(tones).toEqual([1, 2, 3, 5, 6, 7, 4, 8, 1, 2, 4, 5]);
+		expect(mascotArtAt(1).src).toBe("/mascots/m01.png");
+		expect(mascotArtAt(12).src).toBe("/mascots/m12.png");
 		for (const id of ids) {
-			const t = mascotTraits(id);
-			expect(mascotTraits(id)).toEqual(t);
-			expect(t.tone).toBeGreaterThanOrEqual(1);
-			expect(t.tone).toBeLessThanOrEqual(8);
+			const art = mascotArt(id);
+			expect(art).toEqual(mascotArtAt(art.index));
 		}
-		const all = ids.map(mascotTraits);
-		expect(new Set(all.map((t) => t.tone)).size).toBe(8);
-		expect(new Set(all.map((t) => t.shape)).size).toBe(4);
-		expect(new Set(all.map((t) => t.eyes)).size).toBe(3);
-		expect(new Set(all.map((t) => t.blush)).size).toBe(2);
 	});
 });
 

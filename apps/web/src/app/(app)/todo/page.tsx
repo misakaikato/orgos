@@ -4,11 +4,13 @@ import type { WorkItem } from "@orgos/protocol";
 import Link from "next/link";
 import { useEffect } from "react";
 import { MessageCard } from "@/components/conversation/cards";
+import { ProposalBlock } from "@/components/conversation/message-item";
 import { IconChevronRight } from "@/components/icons";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/ui/avatar";
 import { SoonButton } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/ui/states";
+import { ConfirmationActions } from "@/components/work-items/confirmation-actions";
 import { DecisionForm } from "@/components/work-items/decision-form";
 import { appHref } from "@/lib/auth-mode";
 import { nameOf } from "@/lib/describe";
@@ -25,20 +27,15 @@ const KIND_LABEL: Record<WorkItem["kind"], string> = {
 	commitment: "你答应过的事",
 };
 
-/** 尚未接通的处理动作：审批在 S6、协商确认在 S5 接通。 */
-function PendingActions({ item }: { item: WorkItem }) {
+/** 卡片底部的处理动作：协商确认可处理；审批尚未接通。 */
+function ItemActions({ item }: { item: WorkItem }) {
+	if (item.kind === "confirmation")
+		return <ConfirmationActions workItemId={item.id} />;
 	if (item.kind === "approval")
 		return (
 			<>
 				<SoonButton variant="primary">批准</SoonButton>
 				<SoonButton variant="danger">拒绝</SoonButton>
-			</>
-		);
-	if (item.kind === "confirmation")
-		return (
-			<>
-				<SoonButton variant="primary">确认</SoonButton>
-				<SoonButton variant="danger">驳回</SoonButton>
 			</>
 		);
 	return null;
@@ -54,9 +51,9 @@ function WorkItemCard({
 	meId: string;
 }) {
 	const requester = map.get(item.requesterId);
-	const pendingActions =
+	const actions =
 		item.kind === "approval" || item.kind === "confirmation" ? (
-			<PendingActions item={item} />
+			<ItemActions item={item} />
 		) : null;
 	return (
 		<MessageCard
@@ -64,7 +61,7 @@ function WorkItemCard({
 			title={KIND_LABEL[item.kind]}
 			meta={formatListTime(item.createdAt)}
 			className="w-full"
-			actions={pendingActions}
+			actions={actions}
 		>
 			<p className="font-semibold break-words">{item.title}</p>
 			{item.body && item.body !== item.title ? (
@@ -87,10 +84,14 @@ function WorkItemCard({
 					</Link>
 				) : null}
 			</div>
+			{item.kind === "confirmation" && item.payload.proposal !== undefined ? (
+				<ProposalBlock proposal={item.payload.proposal} />
+			) : null}
 			{item.kind === "decision" ? (
 				<DecisionForm
 					workItemId={item.id}
 					requesterName={nameOf(item.requesterId, map, meId)}
+					negotiating={item.payload.negotiationConversationId !== undefined}
 				/>
 			) : null}
 		</MessageCard>

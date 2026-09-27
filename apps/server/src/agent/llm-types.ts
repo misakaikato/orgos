@@ -50,6 +50,10 @@ export type RunTrigger = {
 		role: "initiator" | "responder";
 		goal: string;
 		lastProposal?: unknown;
+		/** 最近的 proposal 是自己提的。 */
+		lastProposalMine: boolean;
+		/** 本人已答复过自己在这次协商里的 need_owner。 */
+		ownerAnswered: boolean;
 	};
 };
 

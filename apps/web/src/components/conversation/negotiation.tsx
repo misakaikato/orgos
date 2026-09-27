@@ -12,8 +12,9 @@ import { IconClose } from "@/components/icons";
 import { Mascot } from "@/components/mascot";
 import { PersonAvatar } from "@/components/ui/avatar";
 import { Tag } from "@/components/ui/badge";
-import { Button, IconButton, SoonButton } from "@/components/ui/button";
+import { Button, IconButton } from "@/components/ui/button";
 import { ErrorState, LoadingRows } from "@/components/ui/states";
+import { ConfirmationActions } from "@/components/work-items/confirmation-actions";
 import { cx } from "@/lib/cx";
 import { nameOf, OUTCOME_LABEL } from "@/lib/describe";
 import { formatClock, formatStamp } from "@/lib/format";
@@ -42,12 +43,13 @@ function useNegotiation(event: NegotiationStartedEvent, map: PrincipalMap) {
 			s.conversations.find((x) => x.conversation.id === event.conversationId)
 				?.members,
 	);
-	const myConfirmation = useStore((s) =>
-		s.workItems?.find(
-			(w) =>
-				w.kind === "confirmation" &&
-				w.payload.negotiationConversationId === negotiationId,
-		),
+	const myConfirmationId = useStore(
+		(s) =>
+			s.workItems?.find(
+				(w) =>
+					w.kind === "confirmation" &&
+					w.payload.negotiationConversationId === negotiationId,
+			)?.id ?? null,
 	);
 	useEffect(() => {
 		ensureEvents(negotiationId);
@@ -68,30 +70,75 @@ function useNegotiation(event: NegotiationStartedEvent, map: PrincipalMap) {
 		initiator,
 		responder,
 		owners,
-		confirmPending: Boolean(myConfirmation),
+		myConfirmationId,
 	};
 }
 
-function titleOf(view: NegotiationView, confirmPending: boolean): string {
+/** 协商停在等本人拍板时，等的是谁（"你" 或某人的名字）。 */
+function waitingOwnerName(
+	view: NegotiationView,
+	map: PrincipalMap,
+	meId: string,
+): string | null {
+	if (!view.waitingAgentId) return null;
+	const ownerId = map.get(view.waitingAgentId)?.ownerId;
+	if (!ownerId) return "本人";
+	return nameOf(ownerId, map, meId);
+}
+
+type Settlement = "confirmed" | "rejected" | "open";
+
+/** 谈妥之后两位本人的处理进度。 */
+function settlementOf(view: NegotiationView, owners: Principal[]): Settlement {
+	const actions = [...view.confirmations.values()];
+	if (actions.includes("reject")) return "rejected";
+	return owners.length > 0 &&
+		owners.every((o) => view.confirmations.get(o.id) === "confirm")
+		? "confirmed"
+		: "open";
+}
+
+function titleOf(
+	view: NegotiationView,
+	settlement: Settlement,
+	confirmPending: boolean,
+): string {
 	if (confirmPending) return "两位的分身谈妥了，等你确认";
-	if (view.outcome === "agreed") return "两位的分身谈妥了";
+	if (view.outcome === "agreed")
+		return settlement === "confirmed"
+			? "双方都确认了"
+			: settlement === "rejected"
+				? "协商结果被驳回"
+				: "两位的分身谈妥了";
 	if (view.outcome) return "两位的分身没谈成";
 	return "两位的分身正在约时间";
 }
 
-function progressOf(view: NegotiationView): string {
+function progressOf(view: NegotiationView, waitingOn: string | null): string {
 	const last = view.steps.at(-1);
 	if (!last) return "刚开始";
+	if (waitingOn)
+		return `第 ${last.payload.step} 步 · 等${waitingOn === "你" ? "你" : `${waitingOn}本人`}拍板`;
 	return `第 ${last.payload.step} 步 · ${STEP_LABEL[last.payload.status]}`;
+}
+
+function resultOf(view: NegotiationView, settlement: Settlement): string {
+	if (view.outcome !== "agreed")
+		return view.outcome ? OUTCOME_LABEL[view.outcome] : "";
+	if (settlement === "confirmed") return "已谈妥，双方本人都确认了";
+	if (settlement === "rejected") return "已谈妥，但有人驳回了结果";
+	return OUTCOME_LABEL.agreed;
 }
 
 function ConfirmState({
 	owner,
 	view,
+	settlement,
 	meId,
 }: {
 	owner: Principal;
 	view: NegotiationView;
+	settlement: Settlement;
 	meId: string;
 }) {
 	const action = view.confirmations.get(owner.id);
@@ -105,8 +152,10 @@ function ConfirmState({
 				<Tag tone="good">已确认</Tag>
 			) : action === "reject" ? (
 				<Tag tone="danger">已驳回</Tag>
+			) : settlement === "rejected" ? (
+				<Tag>已作废</Tag>
 			) : (
-				<Tag>待确认</Tag>
+				<Tag tone="pending">待确认</Tag>
 			)}
 		</li>
 	);
@@ -114,7 +163,8 @@ function ConfirmState({
 
 /**
  * 协商卡片（DESIGN.md §4）：嵌在两人私聊里，显示目标、当前步数与状态、双方团子；
- * 结束后显示结果与两人各自的确认状态；"查看过程"在右侧抽屉按时间线展示每一步与 proposal。
+ * 停在等本人拍板时说明在等谁；结束后显示结果与两人各自的确认状态，本人有待确认时给出
+ * "确认 / 驳回"；"查看过程"在右侧抽屉按时间线展示每一步与 proposal。
  */
 export function NegotiationCard({
 	event,
@@ -128,22 +178,24 @@ export function NegotiationCard({
 	const n = useNegotiation(event, map);
 	const [drawer, setDrawer] = useState(false);
 	const { view } = n;
+	const waitingOn = waitingOwnerName(view, map, meId);
+	const settlement = settlementOf(view, n.owners);
+	const working = !view.outcome && !waitingOn;
+	const openDrawer = <Button onClick={() => setDrawer(true)}>查看过程</Button>;
 	return (
 		<CardRow actorId={event.actorId} map={map}>
 			<MessageCard
-				pending={n.confirmPending}
-				title={titleOf(view, n.confirmPending)}
+				pending={n.myConfirmationId !== null}
+				title={titleOf(view, settlement, n.myConfirmationId !== null)}
 				meta={formatClock(event.createdAt)}
 				actions={
-					<>
-						{n.confirmPending ? (
-							<>
-								<SoonButton variant="primary">确认</SoonButton>
-								<SoonButton variant="danger">驳回</SoonButton>
-							</>
-						) : null}
-						<Button onClick={() => setDrawer(true)}>查看过程</Button>
-					</>
+					n.myConfirmationId ? (
+						<ConfirmationActions workItemId={n.myConfirmationId}>
+							{openDrawer}
+						</ConfirmationActions>
+					) : (
+						openDrawer
+					)
 				}
 			>
 				<p className="font-semibold break-words">{event.payload.goal}</p>
@@ -151,13 +203,13 @@ export function NegotiationCard({
 					<Mascot
 						id={n.initiator.id}
 						size={32}
-						state={view.outcome ? "idle" : "working"}
+						state={working ? "working" : "idle"}
 					/>
 					{n.responder ? (
 						<Mascot
 							id={n.responder.id}
 							size={32}
-							state={view.outcome ? "idle" : "working"}
+							state={working ? "working" : "idle"}
 						/>
 					) : null}
 					<span className="min-w-0 flex-1 truncate text-13 text-muted">
@@ -167,9 +219,14 @@ export function NegotiationCard({
 								? "正在读取协商过程…"
 								: view.outcome
 									? `共 ${view.steps.length} 步`
-									: progressOf(view)}
+									: progressOf(view, waitingOn)}
 					</span>
 				</div>
+				{waitingOn === "你" ? (
+					<p className="mt-2 text-13 text-muted">
+						你的分身在等你拍板，答复后它会接着协商。
+					</p>
+				) : null}
 				{view.outcome ? (
 					<>
 						<p className="mt-3 flex items-center gap-2">
@@ -177,10 +234,12 @@ export function NegotiationCard({
 								aria-hidden="true"
 								className={cx(
 									"size-2 shrink-0 rounded-pill",
-									view.outcome === "agreed" ? "bg-good" : "bg-danger",
+									view.outcome === "agreed" && settlement !== "rejected"
+										? "bg-good"
+										: "bg-danger",
 								)}
 							/>
-							{OUTCOME_LABEL[view.outcome]}
+							{resultOf(view, settlement)}
 						</p>
 						{view.outcome === "agreed" && view.proposal !== undefined ? (
 							<ProposalBlock proposal={view.proposal} />
@@ -188,7 +247,13 @@ export function NegotiationCard({
 						{view.outcome === "agreed" && n.owners.length > 0 ? (
 							<ul className="mt-3 flex flex-col gap-1.5">
 								{n.owners.map((o) => (
-									<ConfirmState key={o.id} owner={o} view={view} meId={meId} />
+									<ConfirmState
+										key={o.id}
+										owner={o}
+										view={view}
+										settlement={settlement}
+										meId={meId}
+									/>
 								))}
 							</ul>
 						) : null}
@@ -201,6 +266,7 @@ export function NegotiationCard({
 					negotiationId={n.negotiationId}
 					status={n.status}
 					view={view}
+					waitingOn={waitingOn}
 					map={map}
 					meId={meId}
 					onClose={() => setDrawer(false)}
@@ -216,6 +282,7 @@ function NegotiationDrawer({
 	negotiationId,
 	status,
 	view,
+	waitingOn,
 	map,
 	meId,
 	onClose,
@@ -224,6 +291,7 @@ function NegotiationDrawer({
 	negotiationId: string;
 	status: string | undefined;
 	view: NegotiationView;
+	waitingOn: string | null;
 	map: PrincipalMap;
 	meId: string;
 	onClose: () => void;
@@ -302,6 +370,15 @@ function NegotiationDrawer({
 									</li>
 								);
 							})}
+							{waitingOn ? (
+								<li className="flex items-center gap-2 text-13 text-muted">
+									<span
+										aria-hidden="true"
+										className="size-2 shrink-0 rounded-pill bg-pending"
+									/>
+									{`等${waitingOn === "你" ? "你" : `${waitingOn}本人`}拍板，答复后接着协商`}
+								</li>
+							) : null}
 							{view.outcome ? (
 								<li className="flex items-center gap-2 text-14 font-semibold text-ink">
 									<span

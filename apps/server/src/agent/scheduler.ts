@@ -7,7 +7,9 @@
  * - 上报被本人处理后，恢复上报的代理（resume）：排进同一队列，不被新的人类消息作废或打断；
  * - 群聊轮次（假设 5）：被 @ 的先说，其余按入群顺序各轮到一次（pass 无声）；有人发言才进下一轮，
  *   只点听到新内容的代理；最多 4 轮。第 2 轮起的每次运行、每次转交都算一次交接，累计到 8 次停止；
- * - 因上限停止时落一条 agent.action{tool:'system', ok:false}，summary 写明是哪个上限。
+ * - 因上限停止时落一条 agent.action{tool:'system', ok:false}，summary 写明是哪个上限；
+ * - 协商（C4）：negotiate 建好协商会话后，在该会话的队列里驱动两个分身轮流各走一步（发起方先），
+ *   每步交给 `recordNegotiationReply` 判定，直到结束或等本人拍板；本人答复后恢复同一分身接着走。
  */
 import {
 	DecisionResolutionSchema,
@@ -32,6 +34,12 @@ import type { Scoped } from "@/db/scope";
 import { toEvent } from "@/lib/serialize";
 import { recordAgentAction } from "@/services/agent-events";
 import { triggerConversationOf } from "@/services/conversations";
+import {
+	counterpartOf,
+	type NegotiationReply,
+	negotiationStateOf,
+	recordNegotiationReply,
+} from "@/services/negotiations";
 import { escalatingAgentOf } from "@/services/work-items";
 
 export type MessageEvent = Extract<Event, { type: "message.posted" }>;
@@ -159,6 +167,7 @@ export class Scheduler {
 					},
 					session,
 					llm: this.deps.llm(),
+					startNegotiation: (id) => void this.negotiate(s, id),
 				});
 			},
 		);
@@ -178,6 +187,17 @@ export class Scheduler {
 		const agent = await s.first(principals, eq(principals.id, agentId));
 		if (!agent) return;
 		const { action, text } = resolution.data;
+		const negotiationId = item.payload.negotiationConversationId;
+		if (negotiationId) {
+			void this.negotiate(s, negotiationId, {
+				agentId,
+				resume: {
+					answer: text ?? "",
+					...(action === "decline" ? { declined: true } : {}),
+				},
+			});
+			return;
+		}
 		void this.resume(s, {
 			conversationId: item.conversationId,
 			agentId,
@@ -187,6 +207,61 @@ export class Scheduler {
 				...(action === "decline" ? { declined: true } : {}),
 			},
 		});
+	}
+
+	/**
+	 * 驱动一场协商：排进协商会话的队列，两个分身轮流各走一步，直到结束或等本人拍板。
+	 * 不给 `from` 时从发起方开始（新协商）；给了则是本人答复后恢复那个分身。
+	 * 一次运行没有以 negotiation_reply 结束时，视为 continue，message 取它的最终文本。
+	 */
+	negotiate(
+		s: Scoped,
+		negotiationId: string,
+		from?: { agentId: string; resume: NonNullable<RunTrigger["resume"]> },
+	): Promise<void> {
+		return this.enqueue(
+			negotiationId,
+			{ interruptible: false },
+			async (session) => {
+				const state = await negotiationStateOf(s, negotiationId);
+				if (state.state !== (from ? "waiting_owner" : "running")) return;
+				if (!from && state.step > 0) return;
+				let agentId = from?.agentId ?? state.initiatorAgentId;
+				let trigger: RunTrigger["text"] = from?.resume.answer ?? state.goal;
+				let resume = from?.resume;
+				for (;;) {
+					const res = await runAgent({
+						s,
+						agentId,
+						conversationId: negotiationId,
+						actingFor: { kind: "owner" },
+						trigger: {
+							text: trigger,
+							mentions: [],
+							...(resume ? { resume } : {}),
+						},
+						session,
+						llm: this.deps.llm(),
+						startNegotiation: (id) => void this.negotiate(s, id),
+					});
+					if (res.outcome === "stopped") return;
+					const reply: NegotiationReply = res.reply ?? {
+						status: "continue",
+						message: res.text ?? "",
+					};
+					const next = await recordNegotiationReply(
+						s,
+						negotiationId,
+						agentId,
+						reply,
+					);
+					if (next.state !== "running") return;
+					agentId = counterpartOf(next, agentId);
+					trigger = reply.message;
+					resume = undefined;
+				}
+			},
+		);
 	}
 
 	/** POST /stop：立即中止正在跑的运行，排队中的轮次不再开始。 */
@@ -247,6 +322,7 @@ export class Scheduler {
 			triggerEventId: trigger.id,
 			session: input.session,
 			llm: input.llm,
+			startNegotiation: (id) => void this.negotiate(input.s, id),
 		});
 	}
 

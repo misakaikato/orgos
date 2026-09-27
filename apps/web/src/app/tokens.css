@@ -49,11 +49,6 @@
 	--mascot-8-ink: #93642f;
 
 	/* 团子五官与体积：画在团子色上，两套主题相同 */
-	--mascot-eye: #2b2724;
-	--mascot-shine: #ffffff;
-	--mascot-blush: #ff8fa8;
-	--mascot-shade: rgb(40 20 10 / 0.16);
-	--mascot-gloss: rgb(255 255 255 / 0.32);
 
 	/* 人的头像底色：低饱和，白字 ≥4.5:1 */
 	--avatar-1: #56789c;

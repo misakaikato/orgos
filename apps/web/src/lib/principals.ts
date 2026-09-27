@@ -127,35 +127,31 @@ export function hashString(s: string): number {
 	return h;
 }
 
-export type MascotShape = "round" | "pear" | "bean" | "sprout";
-export type MascotEyes = "dot" | "smile" | "oval";
+/** 团子插画：12 张图各自的名字色（--mascot-N / --mascot-N-ink 的 N）。图与色的唯一对应表。 */
+const MASCOT_ART_TONES = [1, 2, 3, 5, 6, 7, 4, 8, 1, 2, 4, 5] as const;
 
-export type MascotTraits = {
-	shape: MascotShape;
-	eyes: MascotEyes;
-	blush: boolean;
-	/** 团子色 1–8，对应 --mascot-N。 */
+export const MASCOT_ART_COUNT = MASCOT_ART_TONES.length;
+
+export type MascotArt = {
+	/** 插画序号 1–12，对应 public/mascots/mNN.png。 */
+	index: number;
+	src: string;
+	/** 团子色 1–8。 */
 	tone: number;
 };
 
-const MASCOT_SHAPES: readonly MascotShape[] = [
-	"round",
-	"pear",
-	"bean",
-	"sprout",
-];
-const MASCOT_EYES: readonly MascotEyes[] = ["dot", "smile", "oval"];
-
-/** 团子外形：由代理 id 确定性选取（DESIGN.md §4），各维度取哈希的不同位段。 */
-export function mascotTraits(id: string): MascotTraits {
-	const h = hashString(id);
-	const mix = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d) >>> 0;
+/** 第 index 张团子插画（1 起）。 */
+export function mascotArtAt(index: number): MascotArt {
 	return {
-		shape: MASCOT_SHAPES[h % 4] ?? "round",
-		eyes: MASCOT_EYES[(h >>> 8) % 3] ?? "dot",
-		blush: (mix >>> 4) % 3 !== 0,
-		tone: ((mix >>> 12) % 8) + 1,
+		index,
+		src: `/mascots/m${String(index).padStart(2, "0")}.png`,
+		tone: MASCOT_ART_TONES[index - 1] ?? 1,
 	};
+}
+
+/** 代理的团子：由 id 哈希确定性选取 12 张插画之一（DESIGN.md §4）。 */
+export function mascotArt(id: string): MascotArt {
+	return mascotArtAt((hashString(id) % MASCOT_ART_COUNT) + 1);
 }
 
 /** 除我以外的成员。 */

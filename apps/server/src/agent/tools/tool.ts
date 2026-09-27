@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { RunSession } from "@/agent/session";
 import type { ActingFor } from "@/agent/triggers";
 import type { PrincipalRow, Scoped } from "@/db/scope";
+import type { NegotiationReply } from "@/services/negotiations";
 
 export type ToolScope = {
 	s: Scoped;
@@ -24,6 +25,8 @@ export type ToolScope = {
 	session: RunSession;
 	/** 同步运行一位同组代理一次，返回它的最终文本。 */
 	delegate(target: Agent, task: string): Promise<string>;
+	/** 协商会话已建好：交给调度器驱动两个分身轮流回应（不等待）。 */
+	startNegotiation(negotiationConversationId: string): void;
 };
 
 export type ToolOutcome = {
@@ -34,8 +37,10 @@ export type ToolOutcome = {
 	ok: boolean;
 	/** pass：本次运行无声结束。 */
 	pass?: true;
-	/** 记下动作后本次运行随即结束，不再产生回复消息（上报后等本人答复）。 */
+	/** 记下动作后本次运行随即结束，不再产生回复消息（上报后等本人答复、协商中回应了一步）。 */
 	end?: true;
+	/** 协商中的这一步回应（negotiation_reply）。 */
+	reply?: NegotiationReply;
 };
 
 export type AgentTool = {

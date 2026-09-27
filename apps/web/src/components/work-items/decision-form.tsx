@@ -23,10 +23,13 @@ function errorText(e: unknown): string {
 export function DecisionForm({
 	workItemId,
 	requesterName,
+	negotiating = false,
 }: {
 	workItemId: string;
 	/** 提问的人，用于占位提示。 */
 	requesterName: string;
+	/** 分身在协商中请你拍板：答复后它据此接着协商，而不是转告提问的人。 */
+	negotiating?: boolean;
 }) {
 	const [text, setText] = useState("");
 	const [saveAsNote, setSaveAsNote] = useState(false);
@@ -68,7 +71,11 @@ export function DecisionForm({
 				value={text}
 				maxLength={RESOLUTION_TEXT_MAX_LENGTH}
 				disabled={pending !== null}
-				placeholder={`写下答复，分身会转告${requesterName}`}
+				placeholder={
+					negotiating
+						? "写下你的决定，分身会据此接着协商"
+						: `写下答复，分身会转告${requesterName}`
+				}
 				onChange={(e) => setText(e.target.value)}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit(e);

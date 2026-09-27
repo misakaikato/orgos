@@ -2,6 +2,7 @@
  * 待办（"待我处理"）：处理人必为人。写入只经本文件，写入前按 kind 校验载荷。
  */
 import {
+	type ConfirmationResolution,
 	type DecisionResolution,
 	ERROR_CODES,
 	RESOLVE_ACTIONS_BY_KIND,
@@ -11,7 +12,7 @@ import {
 	type WorkItem,
 	type WorkItemDraft,
 } from "@orgos/protocol";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { events, principals, workItems } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
@@ -97,15 +98,24 @@ export async function escalateToOwner(
 		question: string;
 		title: string;
 		sourceEventId?: number | null;
+		/** 协商中请本人拍板：答复后恢复该协商而不是在会话里回复。 */
+		negotiationConversationId?: string;
 		at?: Date;
 	},
 ): Promise<WorkItem> {
 	const agent = await requireAgentPrincipal(s, input.agentId);
+	const negotiation = input.negotiationConversationId
+		? { negotiationConversationId: input.negotiationConversationId }
+		: {};
 	await requireConversation(s, input.conversationId, agent.id);
 	const item = await transactWithEvents(s, async (tx, append) => {
 		const item = await createWorkItem(tx, {
 			kind: "decision",
-			payload: { question: input.question, askedById: input.requesterId },
+			payload: {
+				question: input.question,
+				askedById: input.requesterId,
+				...negotiation,
+			},
 			title: input.title,
 			body: input.question,
 			ownerId: agent.ownerId,
@@ -118,7 +128,11 @@ export async function escalateToOwner(
 			actorId: agent.id,
 			onBehalfOfId: agent.ownerId,
 			type: "escalation.created",
-			payload: { workItemId: item.id, question: input.question },
+			payload: {
+				workItemId: item.id,
+				question: input.question,
+				...negotiation,
+			},
 			at: input.at,
 		});
 		return item;
@@ -156,12 +170,12 @@ function noteTitleOf(question: string): string {
 
 /**
  * 本人处理一条待办。不存在、跨租户、不是我的 → 404；动作与 kind 不符 → 400；
- * 已处理 → 409。本阶段接通 decision 的 answer / decline；approve / deny、confirm / reject
- * 返回 400 NOT_IMPLEMENTED。
+ * 已处理 → 409。approval 的 approve / deny 返回 400 NOT_IMPLEMENTED。提交后推 work_item 帧。
  *
- * decision：待办置 done 并写入 resolution；answer 且 saveAsNote 时以本人为作者写一条共享资料
- * （标题取问题前 30 字）；在原会话落 `escalation.resolved`。提交后推 work_item 帧。
- * 恢复上报代理的运行由调用方交给调度器。
+ * - decision：待办置 done 并写入 resolution；answer 且 saveAsNote 时以本人为作者写一条共享资料
+ *   （标题取问题前 30 字）；在原会话落 `escalation.resolved`。恢复上报代理的运行由调用方交给调度器。
+ * - confirmation：在协商会话落 `confirmation.resolved`，待办置 done；reject 时同一协商里
+ *   另一方仍未处理的确认待办置 cancelled。同一协商的处理经协商会话的行锁串行。
  */
 export async function resolveWorkItem(
 	s: Scoped,
@@ -185,18 +199,54 @@ export async function resolveWorkItem(
 			`这类待办不能执行 ${req.action}`,
 		);
 	}
-	if (item.status !== "open")
-		throw new AppError(409, ERROR_CODES.WORK_ITEM_NOT_OPEN, "待办已处理");
+	if (item.status !== "open") throw notOpen();
 	if (
-		item.kind !== "decision" ||
-		(req.action !== "answer" && req.action !== "decline")
+		item.kind === "decision" &&
+		(req.action === "answer" || req.action === "decline")
 	)
-		throw new AppError(
-			400,
-			ERROR_CODES.NOT_IMPLEMENTED,
-			"这类待办的处理还未开放",
-		);
+		return resolveDecision(s, me, item, req);
+	if (
+		item.kind === "confirmation" &&
+		(req.action === "confirm" || req.action === "reject")
+	)
+		return resolveConfirmation(s, me, item, req.action);
+	throw new AppError(
+		400,
+		ERROR_CODES.NOT_IMPLEMENTED,
+		"这类待办的处理还未开放",
+	);
+}
 
+function notOpen(): AppError {
+	return new AppError(409, ERROR_CODES.WORK_ITEM_NOT_OPEN, "待办已处理");
+}
+
+/** 把仍为 open 的待办置为 done；已被别人或并发请求处理过 → 409。 */
+async function closeOpen(
+	tx: Scoped,
+	id: string,
+	resolution: unknown,
+): Promise<WorkItem> {
+	const [updated] = await tx.executor
+		.update(workItems)
+		.set({ status: "done", resolution })
+		.where(
+			tx.where(
+				workItems,
+				and(eq(workItems.id, id), eq(workItems.status, "open")),
+			),
+		)
+		.returning();
+	if (!updated) throw notOpen();
+	return toWorkItem(updated);
+}
+
+async function resolveDecision(
+	s: Scoped,
+	me: PrincipalRow,
+	item: Extract<WorkItem, { kind: "decision" }>,
+	req: Extract<ResolveWorkItemRequest, { action: "answer" | "decline" }>,
+): Promise<WorkItem> {
 	const text = req.text?.trim() || undefined;
 	const resolved = await transactWithEvents(s, async (tx, append) => {
 		let noteId: string | undefined;
@@ -215,18 +265,7 @@ export async function resolveWorkItem(
 			...(text ? { text } : {}),
 			...(noteId ? { noteId } : {}),
 		};
-		const [updated] = await tx.executor
-			.update(workItems)
-			.set({ status: "done", resolution })
-			.where(
-				tx.where(
-					workItems,
-					and(eq(workItems.id, item.id), eq(workItems.status, "open")),
-				),
-			)
-			.returning();
-		if (!updated)
-			throw new AppError(409, ERROR_CODES.WORK_ITEM_NOT_OPEN, "待办已处理");
+		const updated = await closeOpen(tx, item.id, resolution);
 		if (item.conversationId) {
 			await append({
 				conversationId: item.conversationId,
@@ -239,8 +278,52 @@ export async function resolveWorkItem(
 				},
 			});
 		}
-		return toWorkItem(updated);
+		return updated;
 	});
 	notifyWorkItem(resolved);
 	return resolved;
+}
+
+async function resolveConfirmation(
+	s: Scoped,
+	me: PrincipalRow,
+	item: Extract<WorkItem, { kind: "confirmation" }>,
+	action: ConfirmationResolution["action"],
+): Promise<WorkItem> {
+	const negotiationId = item.payload.negotiationConversationId;
+	const { mine, cancelled } = await transactWithEvents(
+		s,
+		async (tx, append) => {
+			// 先落事件：它锁住协商会话的行，同一协商的并发处理在此排队。
+			await append({
+				conversationId: negotiationId,
+				actorId: me.id,
+				type: "confirmation.resolved",
+				payload: { workItemId: item.id, action },
+			});
+			const resolution: ConfirmationResolution = { action };
+			const mine = await closeOpen(tx, item.id, resolution);
+			const cancelled =
+				action === "reject"
+					? (
+							await tx.executor
+								.update(workItems)
+								.set({ status: "cancelled" })
+								.where(
+									tx.where(
+										workItems,
+										eq(workItems.kind, "confirmation"),
+										eq(workItems.status, "open"),
+										ne(workItems.id, item.id),
+										sql`${workItems.payload}->>'negotiationConversationId' = ${negotiationId}`,
+									),
+								)
+								.returning()
+						).map(toWorkItem)
+					: [];
+			return { mine, cancelled };
+		},
+	);
+	for (const w of [mine, ...cancelled]) notifyWorkItem(w);
+	return mine;
 }

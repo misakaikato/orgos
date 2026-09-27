@@ -19,7 +19,7 @@ export type PromptInput = {
 	now?: Date;
 };
 
-function formatNow(now: Date): string {
+export function formatNow(now: Date): string {
 	return new Intl.DateTimeFormat("zh-CN", {
 		timeZone: "Asia/Shanghai",
 		dateStyle: "full",

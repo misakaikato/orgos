@@ -7,7 +7,8 @@
  * 3. 群聊里文本既没有 @ 本代理、也不含本代理 handle → pass；
  * 4. 上报后恢复运行 → `本人答复：<答复原文>`（暂不答复时为 `本人暂不答复`，附言跟在冒号后）；
  * 5. 协商：发起方第一步 continue + `{"slot":"周四 15:00"}`；应答方看到 proposal 时，
- *    目标含 #needowner → need_owner，含 #reject → reject，否则 agree 同一 proposal；
+ *    目标含 #needowner（且本人还没答复过）→ need_owner，含 #reject → reject，否则 agree 同一 proposal；
+ *    最近的 proposal 是自己提的（对方还没回应它）→ continue 重申同一 proposal；
  * 6. 其余 → `收到：<触发文本>`。
  *
  * 文本按 8 字切片流式输出；每次调用写一行 llm_requests（provider='mock'，tokens 按字数估算）。
@@ -133,7 +134,18 @@ function negotiationStep(n: NonNullable<RunTrigger["negotiation"]>) {
 			proposal: MOCK_PROPOSAL,
 		};
 	}
-	if (n.role === "responder" && n.goal.includes("#needowner"))
+	if (n.lastProposalMine) {
+		return {
+			status: "continue",
+			message: "仍然提议这个时间",
+			proposal: n.lastProposal,
+		};
+	}
+	if (
+		n.role === "responder" &&
+		n.goal.includes("#needowner") &&
+		!n.ownerAnswered
+	)
 		return { status: "need_owner", message: "这需要问本人" };
 	if (n.role === "responder" && n.goal.includes("#reject"))
 		return { status: "reject", message: "这个时间不行" };

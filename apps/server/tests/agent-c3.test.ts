@@ -363,7 +363,7 @@ describe("POST /api/work-items/:id/resolve", () => {
 		);
 	});
 
-	it("审批与确认待办的处理尚未接通 → 400 NOT_IMPLEMENTED", async () => {
+	it("审批待办的处理尚未接通 → 400 NOT_IMPLEMENTED", async () => {
 		const approval = await createWorkItem(tenant(), {
 			kind: "approval",
 			payload: {
@@ -376,33 +376,15 @@ describe("POST /api/work-items/:id/resolve", () => {
 			ownerId: alice.me.principal.id,
 			requesterId: alice.me.principal.id,
 		});
-		const confirmation = await createWorkItem(tenant(), {
-			kind: "confirmation",
-			payload: {
-				negotiationConversationId: crypto.randomUUID(),
-				proposal: { slot: "周四 15:00" },
-			},
-			title: "确认协商结果",
-			body: "周四 15:00",
-			ownerId: alice.me.principal.id,
-			requesterId: alice.me.principal.id,
-		});
-		for (const [id, action] of [
-			[approval.id, "approve"],
-			[approval.id, "deny"],
-			[confirmation.id, "confirm"],
-			[confirmation.id, "reject"],
-		] as const) {
+		for (const action of ["approve", "deny"] as const) {
 			await expectError(
-				await resolve(alice.client, id, { action }),
+				await resolve(alice.client, approval.id, { action }),
 				400,
 				"NOT_IMPLEMENTED",
 			);
 		}
 		const open = await openItems(alice.client);
-		expect(open.map((w) => w.id)).toEqual(
-			expect.arrayContaining([approval.id, confirmation.id]),
-		);
+		expect(open.map((w) => w.id)).toContain(approval.id);
 	});
 
 	it("已处理的待办再处理 → 409", async () => {

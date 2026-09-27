@@ -116,6 +116,7 @@ export function EscalationCard({
 	meId: string;
 }) {
 	const workItemId = event.payload.workItemId;
+	const negotiating = event.payload.negotiationConversationId !== undefined;
 	const requesterId = useStore(
 		(s) => s.workItems?.find((w) => w.id === workItemId)?.requesterId,
 	);
@@ -143,12 +144,20 @@ export function EscalationCard({
 					</p>
 				) : null}
 				{!resolved && mine ? (
-					<DecisionForm workItemId={workItemId} requesterName={requesterName} />
+					<DecisionForm
+						workItemId={workItemId}
+						requesterName={requesterName}
+						negotiating={negotiating}
+					/>
 				) : (
 					<p className="mt-2 text-12 text-muted">
-						{resolved
-							? `${agentName}会在这里接着回复`
-							: `${agentName}转来，${ownerName}答复后会在这里接着回复`}
+						{negotiating
+							? resolved
+								? `${agentName}会据此接着协商`
+								: `${agentName}在协商中请${ownerName}拍板，答复后接着协商`
+							: resolved
+								? `${agentName}会在这里接着回复`
+								: `${agentName}转来，${ownerName}答复后会在这里接着回复`}
 					</p>
 				)}
 			</MessageCard>

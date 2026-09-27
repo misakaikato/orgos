@@ -109,6 +109,10 @@ export const NegotiationStateSchema = z.object({
 	maxSteps: z.number().int().min(1),
 	state: z.enum(NEGOTIATION_STATES),
 	lastProposal: z.unknown().optional(),
+	/** 提出 lastProposal 的代理：只有另一方 agree 同一 proposal 才算达成。 */
+	lastProposalBy: z.uuid().optional(),
+	/** 发起方本人让分身去协商的那个会话：结束时分身在这里回一句结果摘要。 */
+	originConversationId: z.uuid().optional(),
 });
 export type NegotiationState = z.infer<typeof NegotiationStateSchema>;
 
@@ -118,7 +122,12 @@ export type NegotiationState = z.infer<typeof NegotiationStateSchema>;
 export const WORK_ITEM_PAYLOAD_SCHEMAS = {
 	question: z.object({}),
 	commitment: z.object({}),
-	decision: z.object({ question: z.string(), askedById: z.uuid() }),
+	decision: z.object({
+		question: z.string(),
+		askedById: z.uuid(),
+		/** 协商中分身请本人拍板时：答复后恢复该协商。 */
+		negotiationConversationId: z.uuid().optional(),
+	}),
 	approval: z.object({
 		runnerId: z.uuid(),
 		capability: z.string(),
@@ -138,6 +147,14 @@ export const DecisionResolutionSchema = z.object({
 	noteId: z.uuid().optional(),
 });
 export type DecisionResolution = z.infer<typeof DecisionResolutionSchema>;
+
+/** confirmation 待办被本人处理后的 `work_items.resolution`（另一方驳回而作废的待办没有 resolution）。 */
+export const ConfirmationResolutionSchema = z.object({
+	action: z.enum(["confirm", "reject"]),
+});
+export type ConfirmationResolution = z.infer<
+	typeof ConfirmationResolutionSchema
+>;
 
 const workItemBase = {
 	id: z.uuid(),
