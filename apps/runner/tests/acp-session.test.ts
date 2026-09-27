@@ -1,6 +1,6 @@
 /**
  * 真实起仓库内的 fake ACP agent：一个任务一个会话、追问复用同一会话、权限请求与回传、
- * fs 越界拒绝、终端先审批（本任务内始终允许）、取消即终止进程、子进程看不到被清洗的键。
+ * fs 越界拒绝、终端先审批（本话题内始终允许）、取消即终止进程、子进程看不到被清洗的键。
  */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -194,7 +194,7 @@ describe("一个任务一个 ACP 会话", () => {
 		expect(texts(TASK)).not.toContain("top secret");
 	});
 
-	it("终端：先审批；选“本任务内始终允许”后同一任务不再问", async () => {
+	it("终端：先审批；选“本话题内始终允许”后同一话题不再问", async () => {
 		manager.handle({ t: "acp_prompt", taskId: TASK, prompt: "#sh echo hi" });
 		const perm = await until("终端审批", () =>
 			permissions(TASK).find((p) => p.source === "terminal"),
@@ -205,7 +205,7 @@ describe("一个任务一个 ACP 会话", () => {
 		});
 		expect(perm.options.map((o) => o.name)).toEqual([
 			"允许",
-			"本任务内始终允许",
+			"本话题内始终允许",
 			"拒绝",
 		]);
 		manager.handle({
@@ -226,7 +226,7 @@ describe("一个任务一个 ACP 会话", () => {
 				(f) =>
 					f.t === "acp_event" &&
 					f.kind === "permission" &&
-					(f.payload as { auto?: string }).auto === "本任务内已始终允许",
+					(f.payload as { auto?: string }).auto === "本话题内已始终允许",
 			),
 		).toBe(true);
 	});

@@ -8,6 +8,7 @@ import {
 	MarkReadRequestSchema,
 	PostMessageRequestSchema,
 	type PostMessageResponse,
+	StopQuerySchema,
 } from "@orgos/protocol";
 import type { Hono } from "hono";
 import { scheduler } from "@/agent/scheduler";
@@ -21,9 +22,11 @@ import {
 	markRead,
 	openDm,
 	postMessage,
+	removeMember,
 	requireConversation,
 } from "@/services/conversations";
-import { externalTasks } from "@/services/external-tasks";
+import { externalSessions } from "@/services/external-sessions";
+import { topicIn } from "@/services/topics";
 
 export function registerConversationRoutes(app: Hono<AppEnv>): void {
 	app.use("/api/conversations", requireAuth, requireMember);
@@ -49,9 +52,8 @@ export function registerConversationRoutes(app: Hono<AppEnv>): void {
 			const body: CreateConversationResponse = { conversation };
 			return c.json(body, created ? 201 : 200);
 		}
-		const body: CreateConversationResponse = {
-			conversation: await createGroup(s, me, req.title, req.memberIds),
-		};
+		const { conversation } = await createGroup(s, me, req.title, req.memberIds);
+		const body: CreateConversationResponse = { conversation };
 		return c.json(body, 201);
 	});
 
@@ -105,15 +107,27 @@ export function registerConversationRoutes(app: Hono<AppEnv>): void {
 		return c.body(null, 204);
 	});
 
+	app.delete("/api/conversations/:id/members/:principalId", async (c) => {
+		await removeMember(
+			c.get("scope"),
+			c.get("principal"),
+			c.req.param("id"),
+			c.req.param("principalId"),
+		);
+		return c.body(null, 204);
+	});
+
 	app.post("/api/conversations/:id/stop", async (c) => {
+		const { topicId } = parseQuery(c, StopQuerySchema);
 		const s = c.get("scope");
 		const { conversation } = await requireConversation(
 			s,
 			c.req.param("id"),
 			c.get("principal").id,
 		);
-		scheduler.stop(conversation.id);
-		await externalTasks.interrupt(s, conversation.id);
+		const topic = topicId ? await topicIn(s, conversation.id, topicId) : null;
+		scheduler.stop(conversation.id, topic?.id);
+		externalSessions.interrupt(conversation.id, topic?.id);
 		return c.body(null, 204);
 	});
 }

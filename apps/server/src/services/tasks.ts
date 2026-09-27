@@ -1,11 +1,12 @@
 /**
- * 任务：全系统唯一的交办形态（代理之间的 delegate_to_teammate、与外部助手的一次会话）。
- * 写入只经本文件：建任务、状态迁移、进度与产出、过程日志。
+ * 任务：带状态的话题（kind=task 的话题恰好对应一个当前任务）。代理之间的交办、本人把话题转为任务、
+ * "新任务"都经这里。写入只经本文件：建任务、状态迁移、进度与产出、过程日志。
  *
  * - 状态迁移按 protocol 的 `TASK_TRANSITIONS` 判定，条件更新（WHERE state = from）防并发；
- *   迁移在交办所在会话落 `task.updated`，进入结束态落 `task.ended`；
+ *   迁移在任务话题落 `task.updated`，进入结束态落 `task.ended`；运行的开始与结束经 `@/services/runs` 驱动迁移；
  * - 进度与产出变化只推 `{t:'task'}` 帧，不落会话事件；
- * - `task_logs` 只追加，seq 取自 `tasks.last_log_seq` 的原子自增，任务内连续。
+ * - 过程日志只追加：服务于任务的记录 seq 取自 `tasks.last_log_seq`（任务内连续），
+ *   不服务于任务的运行的记录 seq 取自 `runs.last_log_seq`（运行内连续）。
  */
 import {
 	canTransition,
@@ -24,15 +25,38 @@ import {
 	type TasksQuery,
 	taskTitleOf,
 } from "@orgos/protocol";
-import { asc, desc, eq, gt, inArray, lt, notInArray, sql } from "drizzle-orm";
-import { conversationMembers, principals, taskLogs, tasks } from "@/db/schema";
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	gt,
+	inArray,
+	lt,
+	notInArray,
+	or,
+	sql,
+} from "drizzle-orm";
+import {
+	conversationMembers,
+	principals,
+	runs,
+	taskLogs,
+	tasks,
+} from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, notFound } from "@/lib/errors";
-import { toPrincipal, toTask, toTaskLog } from "@/lib/serialize";
+import { toPrincipal, toRunLog, toTask, toTaskLog } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
 import { browserHub } from "@/realtime/browser-hub";
 import { requireConversation } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
+import {
+	attachTask,
+	insertTopic,
+	publishTopic,
+	type TopicRow,
+} from "@/services/topics";
 
 type TaskRow = typeof tasks.$inferSelect;
 
@@ -98,13 +122,14 @@ export async function requireTask(s: Scoped, taskId: string): Promise<Task> {
 	return toTask(row);
 }
 
-/** 我看得到的任务：我是交办所在会话的成员。否则 404。 */
+/** 我看得到的任务：我是任务所在会话的成员，或任务是为我办的。否则 404。 */
 export async function requireVisibleTask(
 	s: Scoped,
 	me: PrincipalRow,
 	taskId: string,
 ): Promise<Task> {
 	const task = await requireTask(s, taskId);
+	if (task.onBehalfOfId === me.id || task.requesterId === me.id) return task;
 	await requireConversation(s, task.conversationId, me.id);
 	return task;
 }
@@ -139,7 +164,10 @@ export async function listTasks(
 				tasks,
 				query.conversationId
 					? eq(tasks.conversationId, query.conversationId)
-					: inArray(tasks.conversationId, mine),
+					: or(
+							inArray(tasks.conversationId, mine),
+							eq(tasks.onBehalfOfId, me.id),
+						),
 				query.state ? eq(tasks.state, query.state) : undefined,
 			),
 		)
@@ -148,25 +176,17 @@ export async function listTasks(
 	return rows.map(toTask);
 }
 
-/** 某执行者在某会话里仍未结束的最新任务。 */
-export async function openTaskOf(
+/** 话题当前的任务（仍未结束的）；没有则 null。 */
+export async function openTaskOfTopic(
 	s: Scoped,
-	conversationId: string,
-	assigneeId: string,
+	topic: Pick<TopicRow, "taskId">,
 ): Promise<Task | null> {
-	const [row] = await s.executor
-		.select()
-		.from(tasks)
-		.where(
-			s.where(
-				tasks,
-				eq(tasks.conversationId, conversationId),
-				eq(tasks.assigneeId, assigneeId),
-				notInArray(tasks.state, ENDED),
-			),
-		)
-		.orderBy(desc(tasks.createdAt))
-		.limit(1);
+	if (!topic.taskId) return null;
+	const row = await s.first(
+		tasks,
+		eq(tasks.id, topic.taskId),
+		notInArray(tasks.state, ENDED),
+	);
 	return row ? toTask(row) : null;
 }
 
@@ -178,6 +198,19 @@ export async function openTasksOfAssignee(
 	const rows = await s.select(
 		tasks,
 		eq(tasks.assigneeId, assigneeId),
+		notInArray(tasks.state, ENDED),
+	);
+	return rows.map(toTask);
+}
+
+/** 某台设备上的外部助手全部未结束的任务。 */
+export async function openTasksOnRunner(
+	s: Scoped,
+	runnerId: string,
+): Promise<Task[]> {
+	const rows = await s.select(
+		tasks,
+		eq(tasks.runnerId, runnerId),
 		notInArray(tasks.state, ENDED),
 	);
 	return rows.map(toTask);
@@ -197,7 +230,17 @@ export async function listTaskLogs(
 		)
 		.orderBy(asc(taskLogs.seq))
 		.limit(limit);
-	return rows.map(toTaskLog);
+	return rows.map((r) => toTaskLog({ ...r, taskId }));
+}
+
+/** 一次运行的过程记录（不论是否记在任务名下），按写入顺序。 */
+export async function listRunLogs(s: Scoped, runId: string) {
+	const rows = await s.executor
+		.select()
+		.from(taskLogs)
+		.where(s.where(taskLogs, eq(taskLogs.runId, runId)))
+		.orderBy(asc(taskLogs.id));
+	return rows.map(toRunLog);
 }
 
 // ─────────────────────────── 推送 ───────────────────────────
@@ -210,7 +253,7 @@ async function recipientsOf(s: Scoped, task: Task): Promise<string[]> {
 	return [...new Set([...rows.map((r) => r.principalId), task.onBehalfOfId])];
 }
 
-/** 任务变了：推给交办所在会话的成员，并通知进程内的等待者。 */
+/** 任务变了：推给任务所在会话的成员与委托人，并通知进程内的等待者。 */
 async function publish(s: Scoped, task: Task): Promise<void> {
 	emit(task);
 	browserHub.sendTo(await recipientsOf(s, task), { t: "task", task });
@@ -220,6 +263,8 @@ async function publish(s: Scoped, task: Task): Promise<void> {
 
 export type CreateTaskInput = {
 	conversationId: string;
+	/** 把已有的话题转为任务；不给则在会话里新开一个任务话题（标题取目标）。 */
+	topic?: TopicRow;
 	requesterId: string;
 	/** 执行者：一位代理。 */
 	assignee: { id: string; ownerId: string };
@@ -232,20 +277,29 @@ export type CreateTaskInput = {
 };
 
 /**
- * 建一个 submitted 任务，并在交办所在会话落 `task.created`（actor 为执行者，代其本人）；
- * 同时记下第一段话（prompt 日志）。
+ * 建一个 submitted 任务并让话题指向它（新开或转为任务话题），在该话题落 `task.created`
+ * （actor 为执行者，代其本人），同时记下第一段话（prompt 日志）。返回任务与它的话题。
  */
 export async function createTask(
 	s: Scoped,
 	input: CreateTaskInput,
-): Promise<Task> {
-	const task = await transactWithEvents(s, async (tx, append) => {
+): Promise<{ task: Task; topic: TopicRow }> {
+	const created = await transactWithEvents(s, async (tx, append) => {
+		const bare =
+			input.topic ??
+			(await insertTopic(tx, {
+				conversationId: input.conversationId,
+				title: taskTitleOf(input.goal),
+				kind: "task",
+				createdBy: input.requesterId,
+			}));
 		const row = await tx.insert(tasks, {
 			conversationId: input.conversationId,
+			topicId: bare.id,
 			requesterId: input.requesterId,
 			assigneeId: input.assignee.id,
 			onBehalfOfId: input.onBehalfOfId,
-			title: taskTitleOf(input.goal),
+			title: input.topic ? input.topic.title : taskTitleOf(input.goal),
 			goal: input.goal,
 			state: "submitted",
 			engine: input.engine,
@@ -253,53 +307,79 @@ export async function createTask(
 			runnerId: input.runnerId ?? null,
 			workspace: input.workspace ?? null,
 		});
+		const topic = await attachTask(tx, bare.id, row.id);
 		await append({
 			conversationId: input.conversationId,
+			topicId: topic.id,
 			actorId: input.assignee.id,
 			onBehalfOfId: input.assignee.ownerId,
 			type: "task.created",
 			payload: { taskId: row.id, title: row.title },
 		});
-		await insertLog(tx, row.id, "prompt", {
+		await insertLog(tx, { taskId: row.id }, "prompt", {
 			text: input.goal,
 			byId: input.requesterId,
 		});
-		return toTask(row);
+		return { task: toTask(row), topic };
 	});
-	await publish(s, task);
-	return task;
+	await publish(s, created.task);
+	await publishTopic(s, created.topic);
+	return created;
 }
+
+/** 日志记在谁名下：服务于任务的记在任务名下，否则记在运行名下。 */
+export type LogOwner =
+	| { taskId: string; runId?: string | null }
+	| {
+			taskId?: null;
+			runId: string;
+	  };
 
 async function insertLog<K extends TaskLogKind>(
 	tx: Scoped,
-	taskId: string,
+	owner: LogOwner,
 	kind: K,
 	payload: TaskLogPayload<K>,
-): Promise<TaskLog> {
+): Promise<TaskLog | null> {
 	const parsed = TASK_LOG_PAYLOAD_SCHEMAS[kind].parse(payload);
-	const [bumped] = await tx.executor
-		.update(tasks)
-		.set({ lastLogSeq: sql`${tasks.lastLogSeq} + 1`, updatedAt: new Date() })
-		.where(tx.where(tasks, eq(tasks.id, taskId)))
-		.returning({ seq: tasks.lastLogSeq });
-	if (!bumped) throw notFound("任务不存在");
+	const runId = owner.runId ?? null;
+	let seq: number | undefined;
+	if (owner.taskId) {
+		const [bumped] = await tx.executor
+			.update(tasks)
+			.set({ lastLogSeq: sql`${tasks.lastLogSeq} + 1`, updatedAt: new Date() })
+			.where(tx.where(tasks, eq(tasks.id, owner.taskId)))
+			.returning({ seq: tasks.lastLogSeq });
+		if (!bumped) throw notFound("任务不存在");
+		seq = bumped.seq;
+	} else if (runId) {
+		const [bumped] = await tx.executor
+			.update(runs)
+			.set({ lastLogSeq: sql`${runs.lastLogSeq} + 1` })
+			.where(tx.where(runs, eq(runs.id, runId)))
+			.returning({ seq: runs.lastLogSeq });
+		if (!bumped) throw notFound("运行不存在");
+		seq = bumped.seq;
+	}
+	if (seq === undefined) return null;
 	const row = await tx.insert(taskLogs, {
-		taskId,
-		seq: bumped.seq,
+		taskId: owner.taskId ?? null,
+		runId,
+		seq,
 		kind,
 		payload: parsed,
 	});
-	return toTaskLog(row);
+	return row.taskId ? toTaskLog({ ...row, taskId: row.taskId }) : null;
 }
 
-/** 追加一条过程日志（同时算作一次活动：刷新 updated_at）。 */
+/** 追加一条过程日志（记在任务名下时同时算作任务的一次活动：刷新 updated_at）。 */
 export async function appendTaskLog<K extends TaskLogKind>(
 	s: Scoped,
-	taskId: string,
+	owner: LogOwner,
 	kind: K,
 	payload: TaskLogPayload<K>,
-): Promise<TaskLog> {
-	return s.transaction((tx) => insertLog(tx, taskId, kind, payload));
+): Promise<void> {
+	await s.transaction((tx) => insertLog(tx, owner, kind, payload));
 }
 
 /** 按 kind 校验一段来自 Runner 的日志载荷；不合法 → null。 */
@@ -315,6 +395,8 @@ export type TransitionOptions = {
 	/** 进度或结果的一段话。 */
 	summary?: string;
 	artifacts?: TaskArtifact[];
+	/** 促成这次迁移的运行（记进状态日志）。 */
+	runId?: string | null;
 };
 
 /**
@@ -354,6 +436,7 @@ export async function transitionTask(
 		);
 		const base = {
 			conversationId: task.conversationId,
+			topicId: row.topicId,
 			actorId: task.assigneeId,
 			onBehalfOfId: actor?.ownerId ?? null,
 		};
@@ -381,7 +464,9 @@ export async function transitionTask(
 				},
 			});
 		}
-		await insertLog(tx, taskId, "state", { state: to });
+		await insertLog(tx, { taskId, runId: opts.runId ?? null }, "state", {
+			state: to,
+		});
 		return task;
 	});
 	if (next) await publish(s, next);
@@ -425,8 +510,8 @@ export function withArtifact(
 	return [...list, artifact];
 }
 
-/** 本人能否结束这个任务：只有外部任务可以，且只有执行者的本人。 */
-export async function requireOwnExternalTask(
+/** 本人能否结束这个任务：只有执行者的本人，且任务尚未结束。 */
+export async function requireOwnOpenTask(
 	s: Scoped,
 	me: PrincipalRow,
 	taskId: string,
@@ -434,14 +519,10 @@ export async function requireOwnExternalTask(
 	const task = await requireVisibleTask(s, me, taskId);
 	const assignee = await s.first(
 		principals,
-		eq(principals.id, task.assigneeId),
+		and(eq(principals.id, task.assigneeId)),
 	);
-	if (task.engine !== "acp" || assignee?.ownerId !== me.id)
-		throw new AppError(
-			403,
-			ERROR_CODES.FORBIDDEN,
-			"只能结束自己外部助手的任务",
-		);
+	if (assignee?.ownerId !== me.id)
+		throw new AppError(403, ERROR_CODES.FORBIDDEN, "只能结束自己代理的任务");
 	if (isTaskEnded(task.state))
 		throw new AppError(409, ERROR_CODES.TASK_ENDED, "任务已经结束");
 	return task;

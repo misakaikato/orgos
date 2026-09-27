@@ -1,11 +1,12 @@
 /**
- * 一个任务一个 ACP 会话：`AcpTaskSession` 包住一个 `AcpClient`，`AcpManager` 按任务 id 起停它们。
+ * 一个会话槽一个 ACP 会话：`AcpTaskSession` 包住一个 `AcpClient`，`AcpManager` 按帧里的 taskId
+ * （服务端按话题开槽，填话题 id）起停它们。
  *
  * - 起：握手成功记一条 state（带外部会话 id），然后发第一段话；失败记一条致命 error 并收掉进程；
  * - 追问：同一会话里排队，一轮结束（stopReason）上报 `acp_turn_end` 后再发下一段；
  * - 权限：agent 的 `session/request_permission` 与 `terminal/create` 都转成 `acp_permission`
- *   等本人决定（terminal 带"本任务内始终允许"选项）；同一条命令刚在权限请求里被批准过、
- *   或本任务内已始终允许时，终端直接放行并留一条记录——不让本人为同一件事批两次；
+ *   等本人决定（terminal 带"本话题内始终允许"选项）；同一条命令刚在权限请求里被批准过、
+ *   或本话题内已始终允许时，终端直接放行并留一条记录——不让本人为同一件事批两次；
  * - 打断：`session/cancel`，会话保留；结束或取消：终止 agent 进程与它开的终端。
  */
 import { stat } from "node:fs/promises";
@@ -30,7 +31,7 @@ import { resolveExisting } from "@/workspace";
 
 export type SendUp = (frame: AcpUp) => void;
 
-/** 终端上"本任务内始终允许"那一项的 optionId。 */
+/** 终端上"本话题内始终允许"那一项的 optionId。 */
 const ALLOW_TASK = "allow_task";
 
 function commandOf(input: unknown): string | null {
@@ -62,14 +63,14 @@ export class AcpTaskSession {
 	>();
 	/** 在权限请求里刚被批准、还没开终端的命令。 */
 	private readonly approvedCommands: string[] = [];
-	/** 本任务内命令始终允许。 */
+	/** 本话题内命令始终允许。 */
 	private terminalAlways = false;
 
 	constructor(
 		readonly taskId: string,
 		private readonly opts: {
 			config: AcpConfig;
-			/** 设备工作目录与任务要求的工作目录（后者必须在前者之内）。 */
+			/** 设备工作目录与外部助手的工作目录（后者必须在前者之内）。 */
 			runnerWorkspace: string;
 			workspace: string;
 			send: SendUp;
@@ -232,7 +233,7 @@ export class AcpTaskSession {
 		if (this.terminalAlways) {
 			this.emit("permission", {
 				title: command,
-				auto: "本任务内已始终允许",
+				auto: "本话题内已始终允许",
 				input: { command },
 			});
 			return { allowed: true };
@@ -272,22 +273,22 @@ export class AcpTaskSession {
 }
 
 /**
- * 本机全部外部任务的会话：按任务 id 处理服务端下发的 acp_* 帧。
- * 会话在收到 acp_start 时同步登记（重连的 hello 据此上报在跑的任务）。
+ * 本机全部外部 agent 会话：按会话槽处理服务端下发的 acp_* 帧。
+ * 会话在收到 acp_start 时同步登记（重连的 hello 据此上报在跑的会话槽）。
  */
 export class AcpManager {
 	private readonly sessions = new Map<string, AcpTaskSession>();
 
 	constructor(
 		private readonly deps: {
-			/** 设备工作目录（任务工作目录必须在它之内）。 */
+			/** 设备工作目录（外部助手的工作目录必须在它之内）。 */
 			runnerWorkspace: string;
 			adapters: AdapterRegistry;
 			send: SendUp;
 		},
 	) {}
 
-	/** 仍在运行的任务。 */
+	/** 仍在运行的会话槽。 */
 	running(): string[] {
 		return [...this.sessions.keys()];
 	}
@@ -318,13 +319,13 @@ export class AcpManager {
 		}
 	}
 
-	/** 服务端还以为在跑、本机却没有的任务。 */
+	/** 服务端还以为在跑、本机却没有的会话槽。 */
 	private lost(taskId: string): void {
 		this.deps.send({
 			t: "acp_event",
 			taskId,
 			kind: "error",
-			payload: { message: "设备上没有这个任务的外部助手", fatal: true },
+			payload: { message: "设备上没有这个话题的外部助手会话", fatal: true },
 		});
 	}
 

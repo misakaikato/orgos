@@ -1,5 +1,6 @@
 /**
  * 会话事件的唯一写入口。`events` 表只追加：此处没有、全库也不应出现更新或删除事件的路径。
+ * 每条事件都落在一个话题里（调用方给出），写入同时推进该话题的最近活动。
  */
 import {
 	EVENT_PAYLOAD_SCHEMAS,
@@ -12,9 +13,12 @@ import type { Scoped } from "@/db/scope";
 import { notFound } from "@/lib/errors";
 import { toEvent } from "@/lib/serialize";
 import { browserHub } from "@/realtime/browser-hub";
+import { touchTopic } from "@/services/topics";
 
 export type AppendInput = EventDraft & {
 	conversationId: string;
+	/** 事件所在的话题（须属于该会话）。 */
+	topicId: string;
 	actorId: string;
 	onBehalfOfId?: string | null;
 	/** 发生时间，缺省为当前时间；只在回放历史（演示数据）时指定，且须与 seq 顺序一致。 */
@@ -40,14 +44,17 @@ export async function appendEvent(
 		.where(tx.where(conversations, eq(conversations.id, input.conversationId)))
 		.returning({ lastSeq: conversations.lastSeq });
 	if (!bumped) throw notFound("会话不存在");
+	const at = input.at ?? new Date();
+	await touchTopic(tx, input.conversationId, input.topicId, at);
 	const row = await tx.insert(events, {
 		conversationId: input.conversationId,
+		topicId: input.topicId,
 		seq: bumped.lastSeq,
 		type: input.type,
 		actorId: input.actorId,
 		onBehalfOfId: input.onBehalfOfId ?? null,
 		payload,
-		...(input.at ? { createdAt: input.at } : {}),
+		createdAt: at,
 	});
 	return toEvent(row);
 }

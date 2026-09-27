@@ -90,24 +90,24 @@ export function DraftBubble({
 	);
 }
 
-/** 会话里所有正在工作的代理：有草稿显示草稿气泡，否则显示"正在工作"。 */
+/** 话题里所有正在工作的代理：有草稿显示草稿气泡，否则显示"正在工作"。 */
 export function AgentActivityRows({
 	activity,
 	map,
 	meId,
 }: {
-	activity: Readonly<Record<string, AgentActivity>> | undefined;
+	activity: readonly AgentActivity[];
 	map: PrincipalMap;
 	meId: string;
 }) {
-	if (!activity) return null;
 	return (
 		<>
-			{Object.entries(activity).map(([agentId, a]) => {
-				const agent = map.get(agentId) ?? fallbackPrincipal(agentId, "agent");
+			{activity.map((a) => {
+				const agent =
+					map.get(a.agentId) ?? fallbackPrincipal(a.agentId, "agent");
 				return a.draft ? (
 					<DraftBubble
-						key={agentId}
+						key={a.runId}
 						agent={agent}
 						text={a.draft}
 						map={map}
@@ -115,7 +115,7 @@ export function AgentActivityRows({
 					/>
 				) : (
 					<WorkingIndicator
-						key={agentId}
+						key={a.runId}
 						agent={agent}
 						label={a.state === "tool" ? a.label : undefined}
 					/>

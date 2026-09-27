@@ -4,9 +4,9 @@
  * - 未读分隔：打开会话时已读位置之后第一条他人消息前；
  * - 气泡：消息；同一发送者 3 分钟内连续的合并（只有第一条带头像与名字）；
  * - 代理动作不单独成行，折叠进该代理下一条气泡；没有下一条时在分隔前或末尾单列一行；
- * - 卡片：上报（带是否已答复）、审批（带结局）、协商（两人私聊里的 negotiation.started，过程在协商会话里）、
- *   任务（每个任务一张卡，随任务状态更新，放在该任务最近一次状态变化的位置——追问之后它跟到追问下面）；
- * - 系统行：成员加入、上报已答复。
+ * - 卡片：上报（带是否已答复）、审批（带结局）、协商（两人私聊里的 negotiation.started，过程在协商会话里）；
+ * - 系统行：成员加入与退出、上报已答复、接了任务与任务结束、话题已转成群聊。
+ * 任务的状态与进度在任务话题顶部的状态条上，不进消息列。
  * 协商的每一步、结果与确认属于协商会话本身，由协商卡片读取，不进消息列。
  */
 import type { Event } from "@orgos/protocol";
@@ -25,17 +25,14 @@ export type EscalationResolvedEvent = EventOf<"escalation.resolved">;
 export type NegotiationStartedEvent = EventOf<"negotiation.started">;
 export type ApprovalEvent = EventOf<"approval.requested">;
 export type ApprovalResolvedEvent = EventOf<"approval.resolved">;
-export type TaskCreatedEvent = EventOf<"task.created">;
-type TaskEvent = EventOf<"task.created" | "task.updated" | "task.ended">;
-
-/** 任务卡片需要的：任务 id、执行者、标题（取自 task.created）、交办时间。 */
-export type TaskRef = {
-	taskId: string;
-	actorId: string;
-	title: string;
-	createdAt: string;
-};
-export type SystemEvent = EventOf<"member.joined" | "escalation.resolved">;
+export type SystemEvent = EventOf<
+	| "member.joined"
+	| "member.left"
+	| "escalation.resolved"
+	| "task.created"
+	| "task.ended"
+	| "topic.moved"
+>;
 
 /** 气泡的归属：我 / 其他人 / 代理。 */
 export type BubbleSide = "me" | "human" | "agent";
@@ -67,7 +64,6 @@ export type ThreadRow =
 			resolved: ApprovalResolvedEvent | null;
 	  }
 	| { kind: "negotiation"; key: string; event: NegotiationStartedEvent }
-	| { kind: "task"; key: string; task: TaskRef }
 	| { kind: "system"; key: string; event: SystemEvent };
 
 function keyOf(event: Event): string {
@@ -91,20 +87,10 @@ export function buildThreadRows(
 	const rows: ThreadRow[] = [];
 	const resolvedBy = new Map<string, EscalationResolvedEvent>();
 	const approvedBy = new Map<string, ApprovalResolvedEvent>();
-	/** 每个任务：交办那条事件与最近一条状态事件。 */
-	const created = new Map<string, TaskCreatedEvent>();
-	const latest = new Map<string, TaskEvent>();
 	for (const e of events) {
 		if (e.type === "escalation.resolved")
 			resolvedBy.set(e.payload.workItemId, e);
 		if (e.type === "approval.resolved") approvedBy.set(e.payload.workItemId, e);
-		if (e.type === "task.created") created.set(e.payload.taskId, e);
-		if (
-			e.type === "task.created" ||
-			e.type === "task.updated" ||
-			e.type === "task.ended"
-		)
-			latest.set(e.payload.taskId, e);
 	}
 
 	/** 各代理尚未归属到气泡的动作，按首次出现排序。 */
@@ -201,26 +187,12 @@ export function buildThreadRows(
 				rows.push({ kind: "negotiation", key, event });
 				lastBubble = null;
 				break;
-			case "task.created":
-			case "task.updated":
-			case "task.ended": {
-				if (latest.get(event.payload.taskId) !== event) break;
-				const origin = created.get(event.payload.taskId);
-				rows.push({
-					kind: "task",
-					key: `task-${event.payload.taskId}`,
-					task: {
-						taskId: event.payload.taskId,
-						actorId: event.actorId,
-						title: origin?.payload.title ?? "任务",
-						createdAt: origin?.createdAt ?? event.createdAt,
-					},
-				});
-				lastBubble = null;
-				break;
-			}
 			case "member.joined":
+			case "member.left":
 			case "escalation.resolved":
+			case "task.created":
+			case "task.ended":
+			case "topic.moved":
 				rows.push({ kind: "system", key, event });
 				lastBubble = null;
 				break;
@@ -228,6 +200,7 @@ export function buildThreadRows(
 			case "negotiation.ended":
 			case "confirmation.resolved":
 			case "approval.resolved":
+			case "task.updated":
 				break;
 		}
 	}

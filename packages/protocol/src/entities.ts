@@ -127,6 +127,10 @@ export const NegotiationStateSchema = z.object({
 	lastProposalBy: z.uuid().optional(),
 	/** 发起方本人让分身去协商的那个会话：结束时分身在这里回一句结果摘要。 */
 	originConversationId: z.uuid().optional(),
+	/** 发起协商的那个话题（在 originConversationId 里）。 */
+	originTopicId: z.uuid().optional(),
+	/** 两位本人私聊里放协商卡片的话题：上报与确认都落在这里。 */
+	cardTopicId: z.uuid().optional(),
 });
 export type NegotiationState = z.infer<typeof NegotiationStateSchema>;
 
@@ -148,6 +152,8 @@ export const WORK_ITEM_PAYLOAD_SCHEMAS = {
 		args: z.unknown(),
 		/** 外部助手的权限请求：所属任务、请求的工具调用与 agent 给出的选项（所选选项原样回给 agent）。 */
 		taskId: z.uuid().optional(),
+		/** 发起请求的那次运行：运行结束时仍未处理的审批随之取消。 */
+		runId: z.uuid().optional(),
 		toolCall: AcpToolCallSchema.optional(),
 		options: z.array(AcpPermissionOptionSchema).optional(),
 	}),
@@ -340,6 +346,8 @@ export const TaskSchema = z.object({
 	id: z.uuid(),
 	tenantId: z.uuid(),
 	conversationId: z.uuid(),
+	/** 任务所在的话题（kind=task）。 */
+	topicId: z.uuid().optional(),
 	requesterId: z.uuid(),
 	assigneeId: z.uuid(),
 	onBehalfOfId: z.uuid(),
@@ -387,7 +395,7 @@ export const TASK_LOG_PAYLOAD_SCHEMAS = {
 		options: z.array(AcpPermissionOptionSchema).optional(),
 		optionId: z.string().nullable().optional(),
 		outcome: z.string().optional(),
-		/** 无需再问本人（本任务内已始终允许、或同一命令刚在权限请求里批准过）。 */
+		/** 无需再问本人（本话题内已始终允许、或同一命令刚在权限请求里批准过）。 */
 		auto: z.string().optional(),
 		input: z.unknown().optional(),
 	}),
@@ -411,8 +419,16 @@ export const TaskLogSchema = z.object({
 	kind: z.enum(TASK_LOG_KINDS),
 	payload: z.unknown(),
 	createdAt: z.iso.datetime(),
+	/** 产生这条记录的运行。 */
+	runId: z.uuid().nullable().optional(),
 });
 export type TaskLog = z.infer<typeof TaskLogSchema>;
+
+/** 一次运行的过程记录：服务于任务的运行记在任务名下（taskId 非空），否则只记在运行名下。 */
+export const RunLogSchema = TaskLogSchema.extend({
+	taskId: z.uuid().nullable(),
+});
+export type RunLog = z.infer<typeof RunLogSchema>;
 
 /** 任务标题：目标的第一行，最多 40 字。 */
 export const TASK_TITLE_MAX_CHARS = 40;
@@ -424,3 +440,87 @@ export function taskTitleOf(goal: string): string {
 		? `${chars.slice(0, TASK_TITLE_MAX_CHARS).join("")}…`
 		: line || "任务";
 }
+
+// ─────────────────────────── 话题 ───────────────────────────
+
+/**
+ * 话题：会话内一条独立的上下文。每个会话恰好一个主线（isMain）；任务 = 带状态的话题（kind=task）。
+ */
+export const TOPIC_KINDS = ["chat", "task"] as const;
+export type TopicKind = (typeof TOPIC_KINDS)[number];
+
+export const TOPIC_TITLE_MAX_LENGTH = 60;
+export const MAIN_TOPIC_TITLE = "主线";
+
+export const TopicSchema = z.object({
+	id: z.uuid(),
+	tenantId: z.uuid(),
+	conversationId: z.uuid(),
+	title: z.string(),
+	kind: z.enum(TOPIC_KINDS),
+	/** kind=task：当前（或最近一次）的任务。 */
+	taskId: z.uuid().nullable(),
+	isMain: z.boolean(),
+	createdBy: z.uuid(),
+	archivedAt: z.iso.datetime().nullable(),
+	createdAt: z.iso.datetime(),
+	lastEventAt: z.iso.datetime(),
+	/** 由另一个话题转成群聊时：新群主线引用的原话题（只读前置历史）。 */
+	sourceTopicId: z.uuid().nullable().optional(),
+	/** 已转成群聊：转去的群。 */
+	movedToConversationId: z.uuid().nullable().optional(),
+	/** 任务话题的任务状态（话题栏的状态点）。 */
+	taskState: z.enum(TASK_STATES).nullable().optional(),
+	/** 话题列表里：他人发来、在我已读位置之后的消息数（话题栏的未读点）。 */
+	unread: z.number().int().optional(),
+});
+export type Topic = z.infer<typeof TopicSchema>;
+
+/** 任务话题在话题栏上的三种状态点。 */
+export type TopicTaskPhase = "active" | "attention" | "done";
+
+export function topicTaskPhase(state: TaskState): TopicTaskPhase {
+	if (isTaskEnded(state)) return "done";
+	return state === "input_required" || state === "awaiting_approval"
+		? "attention"
+		: "active";
+}
+
+// ─────────────────────────── 运行记录 ───────────────────────────
+
+/** 一次代理运行（内置循环的一次运行，或外部 agent 的一轮）。 */
+export const RUN_STATES = [
+	"running",
+	"completed",
+	"failed",
+	"canceled",
+] as const;
+export type RunState = (typeof RUN_STATES)[number];
+
+export const RunSchema = z.object({
+	id: z.uuid(),
+	tenantId: z.uuid(),
+	agentId: z.uuid(),
+	conversationId: z.uuid(),
+	topicId: z.uuid(),
+	taskId: z.uuid().nullable(),
+	/** 由什么触发：`event:<id>`、`work_item:<id>`、`run:<id>`（被转交）、`negotiation:<id>`。 */
+	trigger: z.string(),
+	actingForId: z.uuid(),
+	engine: z.enum(AGENT_ENGINES),
+	state: z.enum(RUN_STATES),
+	startedAt: z.iso.datetime(),
+	endedAt: z.iso.datetime().nullable(),
+	summary: z.string().nullable(),
+	/** 外部 agent 的这一轮所在的 ACP 会话。 */
+	externalSessionId: z.string().nullable(),
+});
+export type Run = z.infer<typeof RunSchema>;
+
+// ─────────────────────────── 租户设置 ───────────────────────────
+
+export const TenantSettingsSchema = z.object({
+	/** 允许选用不经 orgos 审批、不限工作目录的外部适配器（pi、Hermes）。仅租户 owner 可改。 */
+	allowUnsupervisedAdapters: z.boolean(),
+});
+export type TenantSettings = z.infer<typeof TenantSettingsSchema>;

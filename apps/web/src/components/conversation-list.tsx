@@ -1,6 +1,6 @@
 "use client";
 
-import type { ConversationSummary } from "@orgos/protocol";
+import type { ConversationSummary, Topic } from "@orgos/protocol";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -9,6 +9,7 @@ import { IconPlus, IconSearch } from "@/components/icons";
 import { Avatar, GroupAvatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { type EmptyAction, EmptyState } from "@/components/ui/states";
+import { isWorkingIn } from "@/lib/activity";
 import { appHref } from "@/lib/auth-mode";
 import { cx } from "@/lib/cx";
 import { previewOf } from "@/lib/describe";
@@ -53,7 +54,7 @@ function ConversationRow({
 	const avatar = peer ? (map.get(peer.id) ?? peer) : null;
 	const time = item.lastEvent?.createdAt ?? item.conversation.createdAt;
 	const working = useStore((s) =>
-		Boolean(avatar && s.activity[item.conversation.id]?.[avatar.id]),
+		Boolean(avatar && isWorkingIn(s.activity[item.conversation.id], avatar.id)),
 	);
 	return (
 		<Link
@@ -97,21 +98,40 @@ function ConversationRow({
 	);
 }
 
+/** 最近有活动的话题名（主线不显示）：已加载话题的以本地为准，否则取列表里的 lastTopic。 */
+function lastTopicName(
+	item: ConversationSummary,
+	topics: Readonly<Record<string, readonly Topic[]>>,
+): string | null {
+	const id = item.lastEvent?.topicId ?? item.lastTopic?.id;
+	if (!id) return null;
+	const local = topics[item.conversation.id]?.find((t) => t.id === id);
+	if (local) return local.isMain ? null : local.title;
+	return item.lastTopic?.id === id && !item.lastTopic.isMain
+		? item.lastTopic.title
+		: null;
+}
+
 function toRows(
 	items: readonly ConversationSummary[],
 	map: PrincipalMap,
 	meId: string,
 	pendingBy: ReadonlyMap<string, number>,
+	topics: Readonly<Record<string, readonly Topic[]>>,
 ): Row[] {
-	return items.map((item) => ({
-		item,
-		title: conversationTitle(item, meId),
-		preview: item.lastEvent
+	return items.map((item) => {
+		const topic = lastTopicName(item, topics);
+		const text = item.lastEvent
 			? previewOf(item.lastEvent, map, meId, item.conversation.kind !== "dm")
-			: "还没有消息",
-		filter: conversationFilter(item, meId),
-		pending: pendingBy.get(item.conversation.id) ?? 0,
-	}));
+			: "还没有消息";
+		return {
+			item,
+			title: conversationTitle(item, meId),
+			preview: topic ? `${topic} · ${text}` : text,
+			filter: conversationFilter(item, meId),
+			pending: pendingBy.get(item.conversation.id) ?? 0,
+		};
+	});
 }
 
 /** 会话列表栏：搜索 + 新建、三个筛选胶囊、按时间排序的会话行（DESIGN.md §4、§5）。 */
@@ -121,6 +141,7 @@ export function ConversationList() {
 	const conversations = useStore((s) => s.conversations);
 	const workItems = useStore((s) => s.workItems);
 	const connection = useStore((s) => s.connection);
+	const topics = useStore((s) => s.topics);
 	const map = usePrincipalMap();
 	const { open, error } = useOpenDm();
 	const [filter, setFilter] = useState<ListFilter>("all");
@@ -136,7 +157,7 @@ export function ConversationList() {
 				(pendingBy.get(w.conversationId) ?? 0) + 1,
 			);
 	const needle = query.trim().toLowerCase();
-	const rows = toRows(conversations, map, meId, pendingBy).filter(
+	const rows = toRows(conversations, map, meId, pendingBy, topics).filter(
 		(r) =>
 			(filter === "all" || r.filter === filter) &&
 			(!needle ||

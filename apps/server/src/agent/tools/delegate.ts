@@ -1,8 +1,10 @@
 /**
- * delegate_to_teammate：把一件活交给同组的一位代理——每次交办都是一个任务。
+ * delegate_to_teammate：把一件活交给同组的一位代理——每次交办都是一个任务，也就是目标私聊
+ * （本人与该代理的私聊）里新开的一个任务话题。
  *
- * - 内置代理：在当前会话建 engine=builtin 的任务，同步运行它一次，结果写回任务并作为工具结果；
- * - 外部助手（只为本人）：在本人与它的私聊里开新任务，等这一轮结束，交回它的进度摘要。
+ * - 内置代理：建 engine=builtin 的任务话题，同步运行它一次（结果发在任务话题里），任务随之结束，
+ *   结果作为工具结果交回；
+ * - 外部助手（只为本人）：建任务话题并在其 ACP 会话里交办，等这一轮结束，交回它的进度摘要。
  *
  * 可交办范围只由 `delegatableTeammates` 决定：为他人办事时只能交给同组的内置助手，
  * 且助手同样处于"为他人"限制；外部助手只替本人干活。深度 ≤ 2。
@@ -15,11 +17,12 @@ import {
 } from "@orgos/protocol";
 import { z } from "zod";
 import { MAX_DELEGATE_DEPTH } from "@/agent/session";
-import { forOwner, makeTool, type ToolScope } from "@/agent/tools/tool";
+import { makeTool, type ToolScope } from "@/agent/tools/tool";
 import type { ActingFor } from "@/agent/triggers";
 import { findAgent } from "@/services/agents";
-import { BUSY_TEXT, externalTasks } from "@/services/external-tasks";
-import { createTask, transitionTask } from "@/services/tasks";
+import { openDm } from "@/services/conversations";
+import { externalSessions } from "@/services/external-sessions";
+import { createTask } from "@/services/tasks";
 
 /** 本次运行可以交办的同事（同组、不含自己）。 */
 export function delegatableTeammates(
@@ -49,18 +52,13 @@ async function delegateToExternal(
 	task: string,
 ) {
 	const name = teammate.principal.displayName;
-	const res = await externalTasks.delegate(scope.s, teammate, {
+	const done = await externalSessions.delegate(scope.s, teammate, {
 		requesterId: scope.agent.principal.id,
 		goal: task,
+		parentRunId: scope.runId,
 		signal: scope.session.stopSignal,
 	});
-	if ("busy" in res)
-		return {
-			result: `${name}${BUSY_TEXT}`,
-			summary: `交给${name}：它手上还有任务`,
-			ok: false,
-		};
-	const { state, resultSummary } = res.task;
+	const { state, resultSummary } = done;
 	const note = STATE_TEXT[state];
 	return {
 		result: [note, resultSummary].filter(Boolean).join("：") || "没有结果",
@@ -114,31 +112,28 @@ export const delegateTool = makeTool({
 		if (isExternalAgent(teammate))
 			return delegateToExternal(scope, teammate, task);
 
-		const created = await createTask(scope.s, {
-			conversationId: scope.conversation.id,
+		const { conversation } = await openDm(
+			scope.s,
+			scope.owner,
+			teammate.principal.id,
+		);
+		const { task: created, topic } = await createTask(scope.s, {
+			conversationId: conversation.id,
 			requesterId: scope.agent.principal.id,
 			assignee: { id: teammate.principal.id, ownerId: scope.owner.id },
-			onBehalfOfId: forOwner(scope)
-				? scope.owner.id
-				: scope.actingFor.kind === "other"
+			onBehalfOfId:
+				scope.actingFor.kind === "other"
 					? scope.actingFor.principalId
 					: scope.owner.id,
 			goal: task,
 			engine: "builtin",
 		});
-		await transitionTask(scope.s, created.id, "working");
-		const run = await scope.delegate(teammate, task);
+		const run = await scope.delegate(teammate, task, {
+			conversationId: conversation.id,
+			topicId: topic.id,
+			taskId: created.id,
+		});
 		const text = run.text ?? "没有结果";
-		await transitionTask(
-			scope.s,
-			created.id,
-			run.outcome === "stopped"
-				? "canceled"
-				: run.outcome === "failed"
-					? "failed"
-					: "completed",
-			{ summary: text },
-		);
 		return {
 			result: text,
 			summary: `交给${teammate.principal.displayName}：${task}`,

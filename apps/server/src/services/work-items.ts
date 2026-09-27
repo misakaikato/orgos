@@ -19,7 +19,7 @@ import {
 	type WorkItemDraft,
 	type WorkItemPayload,
 } from "@orgos/protocol";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { events, principals, workItems } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
@@ -30,6 +30,7 @@ import { requireAgentPrincipal } from "@/services/agent-events";
 import { requireConversation } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
 import { createNote } from "@/services/notes";
+import { mainTopicOf } from "@/services/topics";
 
 export type WorkItemStatus = (typeof WORK_ITEM_STATUSES)[number];
 
@@ -101,6 +102,8 @@ export async function escalateToOwner(
 	input: {
 		agentId: string;
 		conversationId: string;
+		/** 卡片落在哪个话题（触发上报的话题）。 */
+		topicId: string;
 		requesterId: string;
 		question: string;
 		title: string;
@@ -132,6 +135,7 @@ export async function escalateToOwner(
 		});
 		await append({
 			conversationId: input.conversationId,
+			topicId: input.topicId,
 			actorId: agent.id,
 			onBehalfOfId: agent.ownerId,
 			type: "escalation.created",
@@ -148,25 +152,28 @@ export async function escalateToOwner(
 	return item;
 }
 
-/** 上报了这条 decision 待办的代理（取自会话里对应的 `escalation.created`）。 */
-export async function escalatingAgentOf(
+/**
+ * 待办的卡片事件（上报的 `escalation.created`、审批的 `approval.requested`）：
+ * 发起它的代理与它所在的话题——答复、恢复运行、了结审批都回到这个话题。
+ */
+export async function cardEventOf(
 	s: Scoped,
 	item: WorkItem,
-): Promise<string | null> {
+): Promise<{ actorId: string; topicId: string } | null> {
 	if (!item.conversationId) return null;
 	const [row] = await s.executor
-		.select({ actorId: events.actorId })
+		.select({ actorId: events.actorId, topicId: events.topicId })
 		.from(events)
 		.where(
 			s.where(
 				events,
 				eq(events.conversationId, item.conversationId),
-				eq(events.type, "escalation.created"),
+				inArray(events.type, ["escalation.created", "approval.requested"]),
 				sql`${events.payload}->>'workItemId' = ${item.id}`,
 			),
 		)
 		.limit(1);
-	return row?.actorId ?? null;
+	return row ?? null;
 }
 
 export const NOTE_TITLE_MAX_CHARS = 30;
@@ -298,9 +305,11 @@ async function resolveDecision(
 			...(noteId ? { noteId } : {}),
 		};
 		const updated = await closeOpen(tx, item.id, resolution);
-		if (item.conversationId) {
+		const card = await cardEventOf(tx, item);
+		if (item.conversationId && card) {
 			await append({
 				conversationId: item.conversationId,
+				topicId: card.topicId,
 				actorId: me.id,
 				type: "escalation.resolved",
 				payload: {
@@ -329,6 +338,7 @@ async function resolveConfirmation(
 			// 先落事件：它锁住协商会话的行，同一协商的并发处理在此排队。
 			await append({
 				conversationId: negotiationId,
+				topicId: (await mainTopicOf(tx, negotiationId)).id,
 				actorId: me.id,
 				type: "confirmation.resolved",
 				payload: { workItemId: item.id, action },
@@ -428,10 +438,12 @@ async function settleApproval(
 			outcome === "approve" || outcome === "deny" ? "done" : "cancelled",
 		);
 		if (!closed) return null;
-		if (item.conversationId) {
+		const card = await cardEventOf(tx, item);
+		if (item.conversationId && card) {
 			const byAgent = actorId === item.requesterId;
 			await append({
 				conversationId: item.conversationId,
+				topicId: card.topicId,
 				actorId,
 				onBehalfOfId: byAgent ? item.ownerId : null,
 				type: "approval.resolved",
@@ -451,6 +463,10 @@ async function settleApproval(
 export type ApprovalRequest = {
 	agentId: string;
 	conversationId: string;
+	/** 审批卡片落在哪个话题（发起请求的运行所在的话题）。 */
+	topicId: string;
+	/** 发起请求的运行。 */
+	runId: string;
 	runnerId: string;
 	runnerName: string;
 	capability: WorkItemPayload<"approval">["capability"];
@@ -458,9 +474,9 @@ export type ApprovalRequest = {
 	title: string;
 	body: string;
 	sourceEventId?: number | null;
-	/** 外部助手的权限请求：所属任务、工具调用与 agent 给出的选项。 */
+	/** 外部助手的权限请求：所属任务（有的话）、工具调用与 agent 给出的选项。 */
 	acp?: {
-		taskId: string;
+		taskId?: string;
 		toolCall: AcpToolCall;
 		options: AcpPermissionOption[];
 	};
@@ -489,6 +505,7 @@ export async function requestApproval(
 				runnerId: input.runnerId,
 				capability: input.capability,
 				args: input.args,
+				runId: input.runId,
 				...(input.acp ?? {}),
 			},
 			title: input.title,
@@ -500,6 +517,7 @@ export async function requestApproval(
 		});
 		await append({
 			conversationId: input.conversationId,
+			topicId: input.topicId,
 			actorId: agent.id,
 			onBehalfOfId: agent.ownerId,
 			type: "approval.requested",
@@ -509,6 +527,7 @@ export async function requestApproval(
 				runnerName: input.runnerName,
 				capability: input.capability,
 				args: input.args,
+				runId: input.runId,
 				...(input.acp ?? {}),
 			},
 		});
@@ -547,17 +566,17 @@ export async function requestApproval(
 }
 
 /**
- * 任务结束后仍 open 的审批（进程重启后已没有等待者）：一律取消，actor 为发起的代理。
+ * 运行结束后仍 open 的审批（等待者已不在，或进程重启后已没有等待者）：一律取消，actor 为发起的代理。
  */
-export async function cancelTaskApprovals(
+export async function cancelRunApprovals(
 	s: Scoped,
-	taskId: string,
+	runId: string,
 ): Promise<void> {
 	const rows = await s.select(
 		workItems,
 		eq(workItems.kind, "approval"),
 		eq(workItems.status, "open"),
-		sql`${workItems.payload}->>'taskId' = ${taskId}`,
+		sql`${workItems.payload}->>'runId' = ${runId}`,
 	);
 	for (const row of rows) {
 		const item = toWorkItem(row) as ApprovalItem;

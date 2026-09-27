@@ -6,7 +6,7 @@
  *
  * 文件末尾的"身份解析"一节是仅有的例外：租户根表本身、登录后"我属于哪个租户"的查找，
  * 以及设备凭配对码或 token 认出自己属于哪个租户，天然发生在知道租户之前；
- * 另有进程级的维护（启动时设备置离线、找出有未结束任务的租户），只返回租户 id，
+ * 另有进程级的维护（启动时设备置离线、找出有未结束任务或进行中运行的租户），只返回租户 id，
  * 具体处理仍经 `scoped(tenantId)`。
  */
 import { TASK_ENDED_STATES } from "@orgos/protocol";
@@ -18,6 +18,7 @@ import {
 	pairingCodes,
 	principals,
 	runners,
+	runs,
 	tasks,
 	tenants,
 	user,
@@ -241,5 +242,16 @@ export async function tenantsWithOpenTasks(
 		.selectDistinct({ tenantId: tasks.tenantId })
 		.from(tasks)
 		.where(notInArray(tasks.state, [...TASK_ENDED_STATES]));
+	return rows.map((r) => r.tenantId);
+}
+
+/** 有进行中运行的租户（进程启动时收尾上一个进程留下的运行）。 */
+export async function tenantsWithRunningRuns(
+	executor: Executor = db,
+): Promise<string[]> {
+	const rows = await executor
+		.selectDistinct({ tenantId: runs.tenantId })
+		.from(runs)
+		.where(eq(runs.state, "running"));
 	return rows.map((r) => r.tenantId);
 }

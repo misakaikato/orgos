@@ -6,10 +6,13 @@ import {
 	type Conversation,
 	type Event,
 	type Principal,
+	type Run,
+	type RunLog,
 	type Task,
 	TaskArtifactSchema,
 	type TaskLog,
 	type Tenant,
+	type Topic,
 	type WorkItem,
 } from "@orgos/protocol";
 import { z } from "zod";
@@ -18,9 +21,11 @@ import type {
 	conversations,
 	events,
 	principals,
+	runs,
 	taskLogs,
 	tasks,
 	tenants,
+	topics,
 	workItems,
 } from "@/db/schema";
 
@@ -94,6 +99,7 @@ export function toEvent(row: EventRow): Event {
 		onBehalfOfId: row.onBehalfOfId,
 		payload: row.payload,
 		createdAt: row.createdAt.toISOString(),
+		topicId: row.topicId,
 	} as Event;
 }
 
@@ -131,6 +137,7 @@ export function toTask(row: TaskRow): Task {
 		id: row.id,
 		tenantId: row.tenantId,
 		conversationId: row.conversationId,
+		topicId: row.topicId,
 		requesterId: row.requesterId,
 		assigneeId: row.assigneeId,
 		onBehalfOfId: row.onBehalfOfId,
@@ -152,13 +159,64 @@ export function toTask(row: TaskRow): Task {
 }
 
 /** 日志行只经 `@/services/tasks` 写入，写入前已按 kind 校验载荷。 */
-export function toTaskLog(row: TaskLogRow): TaskLog {
+export function toRunLog(row: TaskLogRow): RunLog {
 	return {
 		id: row.id,
 		taskId: row.taskId,
+		runId: row.runId,
 		seq: row.seq,
 		kind: row.kind,
 		payload: row.payload,
 		createdAt: row.createdAt.toISOString(),
+	};
+}
+
+/** 任务名下的日志行（taskId 非空）。 */
+export function toTaskLog(row: TaskLogRow & { taskId: string }): TaskLog {
+	return { ...toRunLog(row), taskId: row.taskId };
+}
+
+type TopicRow = typeof topics.$inferSelect;
+
+export function toTopic(
+	row: TopicRow,
+	taskState: Topic["taskState"] = null,
+): Topic {
+	return {
+		id: row.id,
+		tenantId: row.tenantId,
+		conversationId: row.conversationId,
+		title: row.title,
+		kind: row.kind,
+		taskId: row.taskId,
+		isMain: row.isMain,
+		createdBy: row.createdBy,
+		archivedAt: row.archivedAt?.toISOString() ?? null,
+		createdAt: row.createdAt.toISOString(),
+		lastEventAt: row.lastEventAt.toISOString(),
+		sourceTopicId: row.sourceTopicId,
+		movedToConversationId: row.movedToConversationId,
+		taskState,
+	};
+}
+
+type RunRow = typeof runs.$inferSelect;
+
+export function toRun(row: RunRow): Run {
+	return {
+		id: row.id,
+		tenantId: row.tenantId,
+		agentId: row.agentId,
+		conversationId: row.conversationId,
+		topicId: row.topicId,
+		taskId: row.taskId,
+		trigger: row.trigger,
+		actingForId: row.actingForId,
+		engine: row.engine,
+		state: row.state,
+		startedAt: row.startedAt.toISOString(),
+		endedAt: row.endedAt?.toISOString() ?? null,
+		summary: row.summary,
+		externalSessionId: row.externalSessionId,
 	};
 }

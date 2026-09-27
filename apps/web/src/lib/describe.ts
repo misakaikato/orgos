@@ -44,6 +44,14 @@ export function describeEvent(
 				? `${who}加入了会话`
 				: `${actor}邀请${who}加入了会话`;
 		}
+		case "member.left": {
+			const who = nameOf(event.payload.principalId, map, meId);
+			return event.payload.principalId === event.actorId
+				? `${who}退出了群聊`
+				: `${actor}把${who}移出了群聊`;
+		}
+		case "topic.moved":
+			return `${actor}把这个话题转成了群聊“${event.payload.title}”`;
 		case "agent.action":
 			return `${actor}${event.payload.summary}`;
 		case "escalation.created": {

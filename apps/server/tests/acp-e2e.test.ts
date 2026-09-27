@@ -1,9 +1,9 @@
 /**
  * 集成（MOCK_LLM=1，ORGOS_DEV=1）：以子进程真实启动服务端、Runner 命令行与仓库内的 fake ACP agent，
- * 走完规格"任务与外部助手"验收条：建外部助手 → 私聊交办（working → input_required，卡片摘要含回复）→
- * 追问复用同一外部会话 → 权限请求走审批、批准后文件落在工作目录、任务回到 working → 完成 →
- * 新任务 → 日志 seq 连续 → 子进程环境里没有 runner token 与服务器地址；
- * 内置助手的交办生成 engine=builtin 任务；他人经分身交办时外部助手不可用。
+ * 走完"任务与外部助手""话题与运行记录"的验收条：建外部助手 → 主线里交办（外部助手在主线回复，
+ * 运行记录带外部会话 id）→ 子进程环境里没有 runner token 与服务器地址 → 另一个话题另起一个外部会话、
+ * 同话题复用 → 权限请求走审批（卡片在该话题）、批准后文件落在工作目录 → 话题转为任务、再完成，
+ * 日志 seq 连续；内置助手的交办生成 engine=builtin 任务；他人经分身交办时外部助手不可用。
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import {
@@ -23,11 +23,16 @@ import {
 	type Event,
 	EventsResponseSchema,
 	MeResponseSchema,
+	type Run,
+	RunListResponseSchema,
 	RunnerListResponseSchema,
+	RunResponseSchema,
 	type Task,
 	TaskListResponseSchema,
 	TaskLogResponseSchema,
 	TaskResponseSchema,
+	TopicListResponseSchema,
+	TopicResponseSchema,
 	WorkItemListResponseSchema,
 } from "@orgos/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -174,21 +179,24 @@ describe("外部助手（fake 适配器）全链路", () => {
 	let token: string;
 	let ext: { id: string; handle: string };
 	let dm: string;
-	let first: Task;
+	let main: string;
+	let topicB: string;
+	let mainRun: Run;
 
-	async function events(c: Http, id: string): Promise<Event[]> {
+	async function events(
+		c: Http,
+		id: string,
+		topicId?: string,
+	): Promise<Event[]> {
 		const res = await c.request(
 			"GET",
-			`/api/conversations/${id}/events?limit=200`,
+			`/api/conversations/${id}/events?limit=200${topicId ? `&topicId=${topicId}` : ""}`,
 		);
 		return EventsResponseSchema.parse(await res.json()).items;
 	}
 
-	async function tasksIn(id: string): Promise<Task[]> {
-		const res = await alice.client.request(
-			"GET",
-			`/api/tasks?conversationId=${id}`,
-		);
+	async function myTasks(): Promise<Task[]> {
+		const res = await alice.client.request("GET", "/api/tasks");
 		return TaskListResponseSchema.parse(await res.json()).items;
 	}
 
@@ -197,23 +205,22 @@ describe("外部助手（fake 适配器）全链路", () => {
 		return TaskResponseSchema.parse(await res.json()).task;
 	}
 
-	async function post(text: string) {
+	/** 某话题的运行，最近的在前。 */
+	async function runsIn(topicId: string): Promise<Run[]> {
+		const res = await alice.client.request(
+			"GET",
+			`/api/runs?topicId=${topicId}`,
+		);
+		return RunListResponseSchema.parse(await res.json()).items;
+	}
+
+	async function post(text: string, topicId?: string) {
 		const res = await alice.client.request(
 			"POST",
 			`/api/conversations/${dm}/messages`,
-			{ text },
+			{ text, ...(topicId ? { topicId } : {}) },
 		);
 		expect(res.status).toBe(201);
-	}
-
-	/** 该任务在会话里经历过的状态（task.updated / task.ended 的顺序）。 */
-	async function statesOf(taskId: string): Promise<string[]> {
-		return (await events(alice.client, dm)).flatMap((e) =>
-			(e.type === "task.updated" || e.type === "task.ended") &&
-			e.payload.taskId === taskId
-				? [e.payload.state]
-				: [],
-		);
 	}
 
 	beforeAll(async () => {
@@ -279,30 +286,37 @@ describe("外部助手（fake 适配器）全链路", () => {
 			convs.items.find((x) => x.members.some((m) => m.id === ext.id))
 				?.conversation.id ?? "";
 		expect(dm).not.toBe("");
+		const topics = await alice.client.request(
+			"GET",
+			`/api/conversations/${dm}/topics`,
+		);
+		main =
+			TopicListResponseSchema.parse(await topics.json()).items[0]?.id ?? "";
 	});
 
-	it("私聊发“列出文件”：task.created，working → input_required，摘要含回复", async () => {
+	it("主线发“列出文件”：外部助手在主线里回复；运行记录带外部会话 id", async () => {
 		await post("列出文件");
-		first = await until("第一轮结束", async () => {
-			const [t] = await tasksIn(dm);
-			return t?.state === "input_required" ? t : null;
-		});
-		expect(first).toMatchObject({ engine: "acp", adapter: "fake" });
-		expect(first.resultSummary).toContain("我是测试用的假助手");
-		expect(first.externalSessionId).toMatch(/^fake-/);
-		const evts = await events(alice.client, dm);
-		expect(
-			evts.some(
-				(e) => e.type === "task.created" && e.payload.taskId === first.id,
+		const reply = await until("主线回复", async () =>
+			(await events(alice.client, dm)).find(
+				(e) =>
+					e.type === "message.posted" &&
+					e.actorId === ext.id &&
+					e.payload.text.includes("我是测试用的假助手"),
 			),
-		).toBe(true);
-		expect(await statesOf(first.id)).toEqual(["working", "input_required"]);
+		);
+		expect(reply.topicId).toBe(main);
+		mainRun = await until("运行结束", async () => {
+			const [r] = await runsIn(main);
+			return r?.state === "completed" ? r : null;
+		});
+		expect(mainRun).toMatchObject({ engine: "acp", agentId: ext.id });
+		expect(mainRun.externalSessionId).toMatch(/^fake-/);
 	}, 30_000);
 
 	it("fake agent 的进程环境里没有 runner token 与服务器地址", async () => {
-		const res = await alice.client.request("GET", `/api/tasks/${first.id}/log`);
-		const { items } = TaskLogResponseSchema.parse(await res.json());
-		const text = items
+		const res = await alice.client.request("GET", `/api/runs/${mainRun.id}`);
+		const { logs } = RunResponseSchema.parse(await res.json());
+		const text = logs
 			.flatMap((l) =>
 				l.kind === "agent_text" ? [(l.payload as { text: string }).text] : [],
 			)
@@ -314,32 +328,42 @@ describe("外部助手（fake 适配器）全链路", () => {
 		expect(keys).not.toContain("ORGOS_RUNNER_TOKEN");
 		expect(keys).not.toContain("ORGOS_SERVER_URL");
 		expect(keys).not.toContain("ORGOS_RUNNER_HOME");
-		expect(JSON.stringify(items)).not.toContain(token);
+		expect(JSON.stringify(logs)).not.toContain(token);
 		expect(runnerLog).not.toContain(token);
 	});
 
-	it("再发一条：同一任务、同一外部会话", async () => {
-		await post("再看一眼");
-		const again = await until("第二轮结束", async () => {
-			const t = await taskById(first.id);
-			const log = await alice.client.request(
-				"GET",
-				`/api/tasks/${first.id}/log`,
-			);
-			const { items } = TaskLogResponseSchema.parse(await log.json());
-			const done = items.some(
-				(l) =>
-					l.kind === "agent_text" &&
-					(l.payload as { text: string }).text.includes("收到：再看一眼"),
-			);
-			return done && t.state === "input_required" ? t : null;
+	it("另一个话题另起一个外部会话；回到主线仍是原来的会话", async () => {
+		const res = await alice.client.request(
+			"POST",
+			`/api/conversations/${dm}/topics`,
+			{ title: "看代码" },
+		);
+		topicB = TopicResponseSchema.parse(await res.json()).topic.id;
+		await post("看看 calc.py", topicB);
+		const inB = await until("话题 B 的运行结束", async () => {
+			const [r] = await runsIn(topicB);
+			return r?.state === "completed" ? r : null;
 		});
-		expect(await tasksIn(dm)).toHaveLength(1);
-		expect(again.externalSessionId).toBe(first.externalSessionId);
+		expect(inB.externalSessionId).toMatch(/^fake-/);
+		expect(inB.externalSessionId).not.toBe(mainRun.externalSessionId);
+		await post("再看一眼");
+		const again = await until("主线第二轮结束", async () => {
+			const runs = await runsIn(main);
+			return runs.length === 2 && runs[0]?.state === "completed"
+				? runs[0]
+				: null;
+		});
+		expect(again.externalSessionId).toBe(mainRun.externalSessionId);
+		const mainTexts = (await events(alice.client, dm)).flatMap((e) =>
+			e.type === "message.posted" && e.actorId === ext.id
+				? [e.payload.text]
+				: [],
+		);
+		expect(mainTexts.join("")).not.toContain("calc.py");
 	}, 30_000);
 
-	it("#perm 写入 a.txt：审批待办、awaiting_approval；批准后文件存在、回到 working", async () => {
-		await post("#perm 写入 a.txt");
+	it("#perm 写入 a.txt：审批卡片落在该话题；批准后文件存在", async () => {
+		await post("#perm 写入 a.txt", topicB);
 		const item = await until("审批待办", async () => {
 			const res = await alice.client.request(
 				"GET",
@@ -349,8 +373,11 @@ describe("外部助手（fake 适配器）全链路", () => {
 				(w) => w.kind === "approval",
 			);
 		});
-		expect(item.kind === "approval" && item.payload.taskId).toBe(first.id);
-		expect((await taskById(first.id)).state).toBe("awaiting_approval");
+		const card = (await events(alice.client, dm, topicB)).find(
+			(e) =>
+				e.type === "approval.requested" && e.payload.workItemId === item.id,
+		);
+		expect(card?.topicId).toBe(topicB);
 		const ok = await alice.client.request(
 			"POST",
 			`/api/work-items/${item.id}/resolve`,
@@ -360,45 +387,39 @@ describe("外部助手（fake 适配器）全链路", () => {
 		await until("文件落在工作目录", async () =>
 			stat(path.join(workspace, "proj", "a.txt")).then(() => true),
 		);
-		await until(
-			"这一轮结束",
-			async () => (await taskById(first.id)).state === "input_required",
-		);
-		const states = await statesOf(first.id);
-		const at = states.indexOf("awaiting_approval");
-		expect(at).toBeGreaterThan(0);
-		expect(states[at + 1]).toBe("working");
-		const t = await taskById(first.id);
-		expect(t.artifacts.map((a) => a.ref)).toContain("a.txt");
+		await until("这一轮结束", async () => {
+			const [r] = await runsIn(topicB);
+			return r?.state === "completed";
+		});
 	}, 30_000);
 
-	it("点“完成”→ completed；“新任务”→ 新 taskId；日志 seq 连续", async () => {
+	it("话题转为任务 → 交办一句 → 等本人；点“完成”→ completed；日志 seq 连续", async () => {
+		const res = await alice.client.request(
+			"POST",
+			`/api/topics/${topicB}/to-task`,
+			{ goal: "把 calc.py 的注释补全" },
+		);
+		expect(res.status).toBe(201);
+		const created = TaskResponseSchema.parse(await res.json()).task;
+		const waiting = await until("任务这一轮结束", async () => {
+			const t = await taskById(created.id);
+			return t.state === "input_required" ? t : null;
+		});
+		expect(waiting.resultSummary).toContain("收到：把 calc.py 的注释补全");
 		const done = await alice.client.request(
 			"POST",
-			`/api/tasks/${first.id}/complete`,
+			`/api/tasks/${created.id}/complete`,
 		);
 		expect(TaskResponseSchema.parse(await done.json()).task.state).toBe(
 			"completed",
 		);
-		const res = await alice.client.request("POST", "/api/tasks", {
-			conversationId: dm,
-			goal: "新的一件事",
-		});
-		expect(res.status).toBe(201);
-		const next = TaskResponseSchema.parse(await res.json()).task;
-		expect(next.id).not.toBe(first.id);
-		const second = await until("新任务第一轮结束", async () => {
-			const t = await taskById(next.id);
-			return t.state === "input_required" ? t : null;
-		});
-		expect(second.externalSessionId).not.toBe(first.externalSessionId);
-		for (const id of [first.id, next.id]) {
-			const log = await alice.client.request("GET", `/api/tasks/${id}/log`);
-			const { items } = TaskLogResponseSchema.parse(await log.json());
-			expect(items.length).toBeGreaterThan(3);
-			expect(items.map((l) => l.seq)).toEqual(items.map((_, i) => i + 1));
-		}
-		await alice.client.request("POST", `/api/tasks/${next.id}/complete`);
+		const log = await alice.client.request(
+			"GET",
+			`/api/tasks/${created.id}/log`,
+		);
+		const { items } = TaskLogResponseSchema.parse(await log.json());
+		expect(items.length).toBeGreaterThan(3);
+		expect(items.map((l) => l.seq)).toEqual(items.map((_, i) => i + 1));
 	}, 30_000);
 
 	it("#delegate:<执行助手> 整理周报 → engine=builtin 的任务", async () => {
@@ -417,7 +438,7 @@ describe("外部助手（fake 适配器）全链路", () => {
 			text: `#delegate:${ops} 整理周报`,
 		});
 		const t = await until("builtin 任务", async () => {
-			const [x] = await tasksIn(own);
+			const x = (await myTasks()).find((k) => k.goal === "整理周报");
 			return x?.state === "completed" ? x : null;
 		});
 		expect(t.engine).toBe("builtin");
@@ -444,6 +465,8 @@ describe("外部助手（fake 适配器）全链路", () => {
 		expect(reply.type === "message.posted" && reply.payload.text).toContain(
 			"无权限",
 		);
-		expect(await tasksIn(dm)).toHaveLength(2);
+		expect(
+			(await myTasks()).filter((k) => k.goal.includes("帮我看看代码")),
+		).toHaveLength(0);
 	}, 30_000);
 });

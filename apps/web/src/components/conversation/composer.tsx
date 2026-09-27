@@ -60,20 +60,42 @@ function grouped(list: readonly Principal[]): {
 /** 真人私聊里的对方与其分身：输入框据此显示"问分身"开关与忙碌提示。 */
 export type TwinTarget = { peer: Principal; peerTwin: Principal };
 
+/** 群聊里正文 @ 到的人（不含我）与各自在群里的分身。 */
+function mentionedTwins(
+	text: string,
+	members: readonly Principal[],
+	meId: string,
+): TwinTarget[] {
+	const ids = extractMentions(text, members, meId);
+	return ids.flatMap((id) => {
+		const peer = members.find((m) => m.id === id && m.kind === "human");
+		const peerTwin = members.find(
+			(m) => m.kind === "agent" && m.ownerId === id,
+		);
+		return peer && peerTwin ? [{ peer, peerTwin }] : [];
+	});
+}
+
 /**
  * "问分身"开关胶囊（DESIGN.md §4 与真人的私聊）：关闭时对方头像 + "发给X"，
  * 打开时对方分身的团子 + "问X的分身"。
  */
 function AskTwinToggle({
 	target,
+	more = 0,
 	on,
 	onToggle,
 }: {
 	target: TwinTarget;
+	/** 群聊里同时 @ 到的其他人数。 */
+	more?: number;
 	on: boolean;
 	onToggle: () => void;
 }) {
-	const name = target.peer.displayName;
+	const name =
+		more > 0
+			? `${target.peer.displayName}等 ${more + 1} 人`
+			: target.peer.displayName;
 	return (
 		<button
 			type="button"
@@ -100,7 +122,8 @@ function AskTwinToggle({
 /**
  * 浮起的胶囊输入框（DESIGN.md §4）：左"+"、右发送；Enter 发送、Shift+Enter 换行
  * （输入法组字中的 Enter 不发送）；多行自适应最高 8 行；`@` 弹出成员补全（人与代理分组）。
- * 真人私聊里多一个"问分身"开关（发送后复位），对方忙碌 / 离开时上方有一行提示。
+ * 真人私聊里多一个"问分身"开关（发送后复位），对方忙碌 / 离开时上方有一行提示；
+ * 群聊里正文 @ 了某人后出现"问 TA 的分身"开关。
  */
 export function Composer({
 	members,
@@ -109,6 +132,7 @@ export function Composer({
 	onSend,
 	placeholder,
 	twinTarget,
+	isGroup = false,
 	running = false,
 	onStop,
 	banner,
@@ -119,6 +143,8 @@ export function Composer({
 	onSend: (text: string, mentions: string[], askTwin: boolean) => Promise<void>;
 	placeholder: string;
 	twinTarget?: TwinTarget | null;
+	/** 群聊：@ 了某人后可以问 TA 的分身。 */
+	isGroup?: boolean;
 	/** 会话里有代理正在运行：输入为空时发送键换成"停止"。 */
 	running?: boolean;
 	onStop?: () => Promise<void>;
@@ -136,6 +162,8 @@ export function Composer({
 	const [askTwin, setAskTwin] = useState(false);
 	const [stopping, setStopping] = useState(false);
 	const hint = twinTarget ? unavailableHint(twinTarget.peer) : null;
+	const groupTargets = isGroup ? mentionedTwins(text, members, meId) : [];
+	const target = twinTarget ?? groupTargets[0] ?? null;
 
 	const groups = mention
 		? grouped(
@@ -193,7 +221,7 @@ export function Composer({
 			await onSend(
 				text,
 				extractMentions(text, members, meId),
-				Boolean(twinTarget) && askTwin,
+				Boolean(target) && askTwin,
 			);
 			setText("");
 			setMention(null);
@@ -337,9 +365,10 @@ export function Composer({
 						附件即将开放
 					</MenuItem>
 				</Popover>
-				{twinTarget ? (
+				{target ? (
 					<AskTwinToggle
-						target={twinTarget}
+						target={target}
+						more={twinTarget ? 0 : groupTargets.length - 1}
 						on={askTwin}
 						onToggle={() => {
 							setAskTwin((v) => !v);
@@ -352,8 +381,8 @@ export function Composer({
 					rows={1}
 					value={text}
 					placeholder={
-						twinTarget && askTwin
-							? `问${twinTarget.peer.displayName}的分身`
+						target && askTwin
+							? `问${target.peer.displayName}的分身`
 							: placeholder
 					}
 					aria-label="消息"

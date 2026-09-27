@@ -8,11 +8,14 @@ import { llmRequests, notes } from "@/db/schema";
 import { scoped } from "@/db/scope";
 import {
 	actions,
+	allEventsOf,
 	captureFrames,
 	eventsOf,
 	messagesBy,
 	openDm,
 	say,
+	topicEventsOf,
+	topicsOf,
 } from "./agent-helpers";
 import { createTeam, type TeamMember } from "./helpers";
 
@@ -221,23 +224,25 @@ describe("转交", () => {
 		expect(reply?.payload.text).toContain("无权限");
 	});
 
-	it("为他人时助手只能转交给助手：转给分身 → 无权限", async () => {
+	it("为他人时助手只能转交给助手：转给分身 → 无权限（记在助手的任务话题里）", async () => {
 		await say(
 			bob.client,
 			pairDm,
 			`#delegate:${aliceOpsHandle} #delegate:${aliceTwinHandle} 帮忙`,
 			{ askTwin: true },
 		);
-		const delegations = actions(await eventsOf(bob.client, pairDm)).filter(
+		const outer = actions(await eventsOf(bob.client, pairDm)).filter(
 			(a) => a.payload.tool === "delegate_to_teammate",
 		);
-		expect(delegations.slice(-2).map((a) => a.payload)).toEqual([
-			expect.objectContaining({
-				ok: false,
-				summary: expect.stringContaining("无权限"),
-			}),
-			expect.objectContaining({ ok: true }),
-		]);
+		expect(outer.at(-1)?.payload).toMatchObject({ ok: true });
+		const opsDm = await openDm(alice.client, aliceOps);
+		const inner = actions(await allEventsOf(alice.client, opsDm)).filter(
+			(a) => a.payload.tool === "delegate_to_teammate",
+		);
+		expect(inner.at(-1)).toMatchObject({
+			actorId: aliceOps,
+			payload: { ok: false, summary: expect.stringContaining("无权限") },
+		});
 	});
 
 	it("深度 ≤ 2：第三层的代理没有转交工具", async () => {
@@ -247,15 +252,34 @@ describe("转交", () => {
 			cid,
 			`#delegate:${aliceOpsHandle} #delegate:${aliceTwinHandle} #delegate:${aliceOpsHandle} 太深了`,
 		);
-		const events = await eventsOf(alice.client, cid);
-		const delegations = actions(events)
-			.filter((a) => a.payload.tool === "delegate_to_teammate")
-			.slice(-3);
-		expect(delegations.map((a) => a.payload.ok)).toEqual([false, true, true]);
-		expect(delegations[0]?.payload.summary).toContain("无权限");
-		expect(delegations.every((a) => a.actorId === aliceTwin)).toBe(true);
-		expect(messagesBy(events, aliceTwin).at(-1)?.payload.text).toContain(
+		const main = await eventsOf(alice.client, cid);
+		expect(
+			actions(main)
+				.filter((a) => a.payload.tool === "delegate_to_teammate")
+				.at(-1)?.payload.ok,
+		).toBe(true);
+		expect(messagesBy(main, aliceTwin).at(-1)?.payload.text).toContain(
 			"无权限",
 		);
+		// 第二层（助手）交给分身成功，分身在它与本人私聊的任务话题里是第三层，没有转交工具。
+		const opsDm = await openDm(alice.client, aliceOps);
+		const second = actions(await allEventsOf(alice.client, opsDm)).filter(
+			(a) => a.payload.tool === "delegate_to_teammate",
+		);
+		expect(second.at(-1)).toMatchObject({
+			actorId: aliceOps,
+			payload: { ok: true },
+		});
+		const [third] = (await topicsOf(alice.client, cid)).filter(
+			(t) => t.kind === "task",
+		);
+		if (!third) throw new Error("缺少第三层的任务话题");
+		const deepest = actions(
+			await topicEventsOf(alice.client, cid, third.id),
+		).filter((a) => a.payload.tool === "delegate_to_teammate");
+		expect(deepest.map((a) => [a.actorId, a.payload.ok])).toEqual([
+			[aliceTwin, false],
+		]);
+		expect(deepest[0]?.payload.summary).toContain("无权限");
 	});
 });

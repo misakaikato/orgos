@@ -94,6 +94,8 @@ async function runOnDevice<N extends DeviceCapabilityName>(
 		const { outcome } = await requestApproval(scope.s, {
 			agentId: scope.agent.principal.id,
 			conversationId: scope.conversation.id,
+			topicId: scope.conversation.topicId,
+			runId: scope.runId,
 			runnerId: runner.id,
 			runnerName: runner.name,
 			capability,

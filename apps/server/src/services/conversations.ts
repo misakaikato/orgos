@@ -18,13 +18,22 @@ import {
 	conversations,
 	events,
 	principals,
+	topics,
 } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
 import { toConversation, toEvent, toPrincipal } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
+import { browserHub } from "@/realtime/browser-hub";
 import { requireTwinOf } from "@/services/agents";
 import { transactWithEvents } from "@/services/events";
+import {
+	insertConversation,
+	latestTopics,
+	mainTopicOf,
+	type TopicRow,
+	topicIn,
+} from "@/services/topics";
 
 type ConversationRow = typeof conversations.$inferSelect;
 type MembershipRow = typeof conversationMembers.$inferSelect;
@@ -62,32 +71,66 @@ export async function requireConversation(
 }
 
 /**
- * 我能否把 `targetId` 拉进群：同租户的任何人、我自己的内置代理、他人的分身。
- * 不存在或跨租户 → 404；是我自己 → 400；他人的助手、任何外部助手 → 400 AGENT_NOT_REACHABLE。
+ * 拉进群的成员：同租户的人（其分身随本人一起入群）与我自己的内置助手。
+ * 不存在或跨租户 → 404；外部助手、别人的助手 → 400 AGENT_NOT_REACHABLE；
+ * 分身只随本人入群：点名某人的分身而没拉他本人 → 400 AGENT_NOT_REACHABLE。
+ * 返回要加入的主体（人在前、各自的分身紧随其后），不含 `alreadyIn` 里的。
  */
-async function requireGroupReachable(
+async function groupJoiners(
 	s: Scoped,
 	me: PrincipalRow,
-	targetId: string,
-): Promise<PrincipalRow> {
-	const target = await requireSomeoneElse(s, me, targetId);
-	if (target.kind !== "agent") return target;
-	const agent = await s.first(agents, eq(agents.principalId, target.id));
-	if (agent?.engine === "acp") {
+	ids: readonly string[],
+	alreadyIn: ReadonlySet<string>,
+): Promise<{ joiners: PrincipalRow[]; announced: PrincipalRow[] }> {
+	const humans: PrincipalRow[] = [];
+	const helpers: PrincipalRow[] = [];
+	const twinOwners: PrincipalRow[] = [];
+	for (const id of new Set(ids)) {
+		if (id === me.id) continue;
+		const target = await requireSomeoneElse(s, me, id);
+		if (target.kind === "human") {
+			humans.push(target);
+			continue;
+		}
+		const agent = await s.first(agents, eq(agents.principalId, target.id));
+		if (agent?.engine === "acp") {
+			throw new AppError(
+				400,
+				ERROR_CODES.AGENT_NOT_REACHABLE,
+				"外部助手只在与本人的私聊里接活，不能拉进群",
+			);
+		}
+		if (agent?.role === "front") {
+			twinOwners.push(target);
+			continue;
+		}
+		if (target.ownerId !== me.id) {
+			throw new AppError(
+				400,
+				ERROR_CODES.AGENT_NOT_REACHABLE,
+				"别人的助手只替本人办事，不能拉进群",
+			);
+		}
+		helpers.push(target);
+	}
+	const people = new Set([me.id, ...alreadyIn, ...humans.map((h) => h.id)]);
+	if (twinOwners.some((t) => !t.ownerId || !people.has(t.ownerId))) {
 		throw new AppError(
 			400,
 			ERROR_CODES.AGENT_NOT_REACHABLE,
-			"外部助手只在与本人的私聊里接活，不能拉进群",
+			"分身随本人入群：请拉他本人",
 		);
 	}
-	if (target.ownerId !== me.id && agent?.role !== "front") {
-		throw new AppError(
-			400,
-			ERROR_CODES.AGENT_NOT_REACHABLE,
-			"别人的助手只替本人办事，只能拉入对方的分身",
-		);
+	const joiners: PrincipalRow[] = [];
+	for (const h of humans) {
+		if (alreadyIn.has(h.id)) continue;
+		joiners.push(h, await requireTwinOf(s, h.id));
 	}
-	return target;
+	const fresh = helpers.filter((h) => !alreadyIn.has(h.id));
+	return {
+		joiners: [...joiners, ...fresh],
+		announced: [...humans.filter((h) => !alreadyIn.has(h.id)), ...fresh],
+	};
 }
 
 async function requireSomeoneElse(
@@ -154,7 +197,7 @@ export async function openDm(
 		if (existing) {
 			return { conversation: toConversation(existing), created: false };
 		}
-		const conversation = await tx.insert(conversations, {
+		const { conversation } = await insertConversation(tx, {
 			kind: "dm",
 			title: null,
 			createdBy: me.id,
@@ -283,7 +326,8 @@ export async function triggerConversationOf(
 }
 
 /**
- * 建群：我与 memberIds 为成员；每位被拉入者落一条 member.joined。
+ * 建群：我与 memberIds 为成员，每个人的分身随本人入群；被拉入的人与助手各落一条 member.joined。
+ * `sourceTopicId`：由某个话题转成群聊时，新群主线引用它（只读的前置历史）。
  * `at` 只在回放历史（演示数据）时指定。
  */
 export async function createGroup(
@@ -291,30 +335,43 @@ export async function createGroup(
 	me: PrincipalRow,
 	title: string,
 	memberIds: string[],
-	at?: Date,
-): Promise<Conversation> {
-	const invited: PrincipalRow[] = [];
-	for (const id of new Set(memberIds)) {
-		if (id === me.id) continue;
-		invited.push(await requireGroupReachable(s, me, id));
-	}
+	opts: { at?: Date; sourceTopicId?: string } = {},
+): Promise<{ conversation: Conversation; main: TopicRow }> {
+	const { at } = opts;
+	const { joiners, announced } = await groupJoiners(
+		s,
+		me,
+		memberIds,
+		new Set(),
+	);
+	const myTwin = await requireTwinOf(s, me.id);
 	return transactWithEvents(s, async (tx, append) => {
-		const created = await tx.insert(conversations, {
+		const { conversation: created, main: bare } = await insertConversation(tx, {
 			kind: "group",
 			title,
 			createdBy: me.id,
 			...(at ? { createdAt: at } : {}),
 		});
-		for (const p of [me, ...invited]) {
+		const main = opts.sourceTopicId
+			? ((
+					await tx.executor
+						.update(topics)
+						.set({ sourceTopicId: opts.sourceTopicId })
+						.where(tx.where(topics, eq(topics.id, bare.id)))
+						.returning()
+				)[0] ?? bare)
+			: bare;
+		for (const p of [me, myTwin, ...joiners]) {
 			await tx.insert(conversationMembers, {
 				conversationId: created.id,
 				principalId: p.id,
 				role: "member",
 			});
 		}
-		for (const p of invited) {
+		for (const p of announced) {
 			await append({
 				conversationId: created.id,
+				topicId: main.id,
 				actorId: me.id,
 				type: "member.joined",
 				payload: { principalId: p.id },
@@ -326,11 +383,19 @@ export async function createGroup(
 			eq(conversations.id, created.id),
 		);
 		if (!fresh) throw new Error("群聊写入后读不到");
-		return toConversation(fresh);
+		return { conversation: toConversation(fresh), main };
 	});
 }
 
-/** 往群里加一个成员；只有群聊可以加人，已在群里 → 409。 */
+async function memberIdsOf(s: Scoped, conversationId: string) {
+	const rows = await s.select(
+		conversationMembers,
+		eq(conversationMembers.conversationId, conversationId),
+	);
+	return new Set(rows.map((r) => r.principalId));
+}
+
+/** 往群里加人（其分身随之入群）或加我自己的助手；只有群聊可以加人，已在群里 → 409。 */
 export async function addMember(
 	s: Scoped,
 	me: PrincipalRow,
@@ -339,28 +404,93 @@ export async function addMember(
 ): Promise<void> {
 	const { conversation } = await requireConversation(s, conversationId, me.id);
 	if (conversation.kind !== "group") throw badRequest("只有群聊可以加成员");
-	const target = await requireGroupReachable(s, me, principalId);
-	const already = await s.first(
-		conversationMembers,
-		eq(conversationMembers.conversationId, conversation.id),
-		eq(conversationMembers.principalId, target.id),
-	);
-	if (already) {
+	const present = await memberIdsOf(s, conversation.id);
+	if (present.has(principalId)) {
 		throw new AppError(409, ERROR_CODES.ALREADY_MEMBER, "已经在会话里了");
 	}
+	const { joiners, announced } = await groupJoiners(
+		s,
+		me,
+		[principalId],
+		present,
+	);
+	const main = await mainTopicOf(s, conversation.id);
 	await transactWithEvents(s, async (tx, append) => {
-		await tx.insert(conversationMembers, {
+		for (const p of joiners) {
+			if (present.has(p.id)) continue;
+			await tx.insert(conversationMembers, {
+				conversationId: conversation.id,
+				principalId: p.id,
+				role: "member",
+			});
+		}
+		for (const p of announced) {
+			await append({
+				conversationId: conversation.id,
+				topicId: main.id,
+				actorId: me.id,
+				type: "member.joined",
+				payload: { principalId: p.id },
+			});
+		}
+	});
+}
+
+/**
+ * 退群或移出成员：本人可以退出、可以移出自己的助手；群的创建者可以移出别人。
+ * 人退群时其分身一起退；分身不能单独移出。只有群聊可以。
+ */
+export async function removeMember(
+	s: Scoped,
+	me: PrincipalRow,
+	conversationId: string,
+	principalId: string,
+): Promise<void> {
+	const { conversation } = await requireConversation(s, conversationId, me.id);
+	if (conversation.kind !== "group") throw badRequest("只有群聊可以移出成员");
+	const present = await memberIdsOf(s, conversation.id);
+	const target = present.has(principalId)
+		? await s.first(principals, eq(principals.id, principalId))
+		: undefined;
+	if (!target) throw notFound("不在这个群里");
+	const agent =
+		target.kind === "agent"
+			? await s.first(agents, eq(agents.principalId, target.id))
+			: undefined;
+	if (agent?.role === "front") throw badRequest("分身随本人退群，不能单独移出");
+	const allowed =
+		target.id === me.id ||
+		target.ownerId === me.id ||
+		(conversation.createdBy === me.id && target.kind === "human");
+	if (!allowed)
+		throw new AppError(403, ERROR_CODES.FORBIDDEN, "只有群的创建者能移出别人");
+	const leaving = [target.id];
+	if (target.kind === "human") {
+		const twin = await requireTwinOf(s, target.id);
+		if (present.has(twin.id)) leaving.push(twin.id);
+	}
+	const main = await mainTopicOf(s, conversation.id);
+	const left = await transactWithEvents(s, async (tx, append) => {
+		const event = await append({
 			conversationId: conversation.id,
-			principalId: target.id,
-			role: "member",
-		});
-		await append({
-			conversationId: conversation.id,
+			topicId: main.id,
 			actorId: me.id,
-			type: "member.joined",
+			type: "member.left",
 			payload: { principalId: target.id },
 		});
+		await tx.executor
+			.delete(conversationMembers)
+			.where(
+				tx.where(
+					conversationMembers,
+					eq(conversationMembers.conversationId, conversation.id),
+					inArray(conversationMembers.principalId, leaving),
+				),
+			);
+		return event;
 	});
+	// 离开的人已不是成员，单独告诉他。
+	browserHub.sendTo(leaving, { t: "event", event: left });
 }
 
 /**
@@ -380,11 +510,21 @@ export async function postAs(
 		actor.id,
 	);
 	const mentions = [...new Set(req.mentions ?? [])];
+	const trigger = req.askTwin
+		? await triggerConversationOf(s, conversation)
+		: null;
 	if (
-		req.askTwin &&
-		!isHumanPairDm(await triggerConversationOf(s, conversation))
+		trigger &&
+		!isHumanPairDm(trigger) &&
+		!(
+			trigger.kind === "group" &&
+			trigger.members.some(
+				(m) =>
+					m.kind === "human" && m.id !== actor.id && mentions.includes(m.id),
+			)
+		)
 	) {
-		throw badRequest("“问分身”只能在两个人的私聊里使用");
+		throw badRequest("“问分身”只能在两个人的私聊里，或在群里 @ 了某人时使用");
 	}
 	if (mentions.length > 0) {
 		const rows = await s.select(
@@ -396,9 +536,12 @@ export async function postAs(
 			throw badRequest("只能 @ 会话里的成员");
 		}
 	}
+	const topic = await topicIn(s, conversation.id, req.topicId);
+	if (topic.archivedAt) throw badRequest("话题已归档");
 	return transactWithEvents(s, (_tx, append) =>
 		append({
 			conversationId: conversation.id,
+			topicId: topic.id,
 			actorId: actor.id,
 			onBehalfOfId: opts.onBehalfOfId ?? null,
 			type: "message.posted",
@@ -430,6 +573,7 @@ export async function listEvents(
 	query: EventsQuery,
 ): Promise<Event[]> {
 	const { conversation } = await requireConversation(s, conversationId, me.id);
+	const topic = await topicIn(s, conversation.id, query.topicId);
 	const rows = await s.executor
 		.select()
 		.from(events)
@@ -437,6 +581,7 @@ export async function listEvents(
 			s.where(
 				events,
 				eq(events.conversationId, conversation.id),
+				eq(events.topicId, topic.id),
 				gt(events.seq, query.after),
 			),
 		)
@@ -544,14 +689,25 @@ export async function listConversations(
 		membersOf.set(r.conversationId, list);
 	}
 	const lastOf = new Map(lastRows.map((r) => [r.conversationId, toEvent(r)]));
+	const topicOf = await latestTopics(s, ids);
 	const unreadOf = new Map(unreadRows.map((r) => [r.conversationId, r.n]));
 	const readOf = new Map(mine.map((m) => [m.conversationId, m.lastReadSeq]));
 
 	return convRows
 		.map((row): ConversationSummary => {
 			const lastEvent = lastOf.get(row.id);
+			const lastTopic = topicOf.get(row.id);
 			return {
 				conversation: toConversation(row),
+				...(lastTopic
+					? {
+							lastTopic: {
+								id: lastTopic.id,
+								title: lastTopic.title,
+								isMain: lastTopic.isMain,
+							},
+						}
+					: {}),
 				members: membersOf.get(row.id) ?? [],
 				...(lastEvent ? { lastEvent } : {}),
 				unread: unreadOf.get(row.id) ?? 0,

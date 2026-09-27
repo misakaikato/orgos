@@ -17,7 +17,7 @@ export const MessagePostedPayloadSchema = z.object({
 	text: z.string(),
 	/** 被 @ 的主体 id。 */
 	mentions: z.array(z.uuid()),
-	/** 两个真人的私聊里，发送者切到"问分身"：指向对方的分身。 */
+	/** 发送者切到"问分身"：私聊里指向对方的分身，群聊里指向被 @ 的人的分身。 */
 	askTwin: z.boolean().optional(),
 });
 
@@ -67,6 +67,17 @@ export const MemberJoinedPayloadSchema = z.object({
 	principalId: z.uuid(),
 });
 
+/** 退群（本人退出或被移出；人的分身随之一起退）。 */
+export const MemberLeftPayloadSchema = z.object({
+	principalId: z.uuid(),
+});
+
+/** 话题已转成群聊：落在原话题里，指向新群。 */
+export const TopicMovedPayloadSchema = z.object({
+	conversationId: z.uuid(),
+	title: z.string(),
+});
+
 /** 代理要在本人的设备上做有风险的操作，等本人批准（界面为审批卡片）。 */
 export const ApprovalRequestedPayloadSchema = z.object({
 	workItemId: z.uuid(),
@@ -77,6 +88,8 @@ export const ApprovalRequestedPayloadSchema = z.object({
 	args: z.unknown(),
 	/** 外部助手的权限请求：所属任务、工具调用与可选的选项。 */
 	taskId: z.uuid().optional(),
+	/** 发起请求的那次运行。 */
+	runId: z.uuid().optional(),
 	toolCall: AcpToolCallSchema.optional(),
 	options: z.array(AcpPermissionOptionSchema).optional(),
 });
@@ -114,6 +127,8 @@ const eventBase = {
 	actorId: z.uuid(),
 	onBehalfOfId: z.uuid().nullable(),
 	createdAt: z.iso.datetime(),
+	/** 事件所在的话题（服务端总是给出；旧客户端可忽略）。 */
+	topicId: z.uuid().optional(),
 };
 
 export const EventSchema = z.discriminatedUnion("type", [
@@ -164,6 +179,16 @@ export const EventSchema = z.discriminatedUnion("type", [
 	}),
 	z.object({
 		...eventBase,
+		type: z.literal("member.left"),
+		payload: MemberLeftPayloadSchema,
+	}),
+	z.object({
+		...eventBase,
+		type: z.literal("topic.moved"),
+		payload: TopicMovedPayloadSchema,
+	}),
+	z.object({
+		...eventBase,
 		type: z.literal("approval.requested"),
 		payload: ApprovalRequestedPayloadSchema,
 	}),
@@ -211,6 +236,8 @@ export const EVENT_PAYLOAD_SCHEMAS: { [T in EventType]: z.ZodType } = {
 	"negotiation.ended": NegotiationEndedPayloadSchema,
 	"confirmation.resolved": ConfirmationResolvedPayloadSchema,
 	"member.joined": MemberJoinedPayloadSchema,
+	"member.left": MemberLeftPayloadSchema,
+	"topic.moved": TopicMovedPayloadSchema,
 	"approval.requested": ApprovalRequestedPayloadSchema,
 	"approval.resolved": ApprovalResolvedPayloadSchema,
 	"task.created": TaskCreatedPayloadSchema,

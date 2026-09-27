@@ -2,7 +2,7 @@
 
 /**
  * 浏览器 WS：只收推送。断线按 1s→30s 指数退避（±20% 抖动）重连，永不放弃；
- * 每次连上都补齐（重拉会话列表 + 各已加载会话按最大 seq 拉 events?after=）。
+ * 每次连上都补齐（重拉会话列表与已加载会话的话题 + 各已加载话题按最大 seq 拉 events?after=）。
  * 服务端每 20s 发 ping；超过 45s 没收到任何帧视为假死，主动断开重连。
  */
 import { parseBrowserFrame, WS_CLOSE } from "@orgos/protocol";
@@ -13,6 +13,7 @@ import {
 	applyPresence,
 	applyRunner,
 	applyTask,
+	applyTopic,
 	applyWorkItem,
 	markNotOnboarded,
 	markUnauthorized,
@@ -68,6 +69,7 @@ export function startRealtime(): () => void {
 			else if (data.t === "work_item") applyWorkItem(data.workItem);
 			else if (data.t === "runner") applyRunner(data.runner);
 			else if (data.t === "task") applyTask(data.task);
+			else if (data.t === "topic") applyTopic(data.topic);
 		};
 		ws.onclose = (ev) => {
 			if (silenceTimer) clearTimeout(silenceTimer);

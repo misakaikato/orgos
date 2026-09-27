@@ -18,6 +18,7 @@ import {
 	startNegotiation,
 } from "@/services/negotiations";
 import { createNote } from "@/services/notes";
+import { createTopic, mainTopicOf } from "@/services/topics";
 import { escalateToOwner } from "@/services/work-items";
 
 function seqOf(event: Event): number {
@@ -63,8 +64,20 @@ export async function writeDemoConversations(
 	const t = clockAt(now);
 	const say = (who: PrincipalRow, id: string, text: string, at: Date) =>
 		postMessage(s, who, id, { text }, at);
-	const agentSays = (agent: PrincipalRow, id: string, text: string, at: Date) =>
-		postAgentMessage(s, agent.id, id, text, { at });
+	const agentSays = (
+		agent: PrincipalRow,
+		id: string,
+		text: string,
+		at: Date,
+		topicId?: string,
+	) =>
+		postAgentMessage(
+			s,
+			agent.id,
+			{ conversationId: id, ...(topicId ? { topicId } : {}) },
+			text,
+			{ at },
+		);
 	const readUpTo = (who: PrincipalRow, id: string, seq: number) =>
 		markRead(s, who, id, seq);
 
@@ -73,13 +86,13 @@ export async function writeDemoConversations(
 	const chenan = cast.human("chenan");
 	const xunuo = cast.human("xunuo");
 
-	// ── 群聊"Q4 发布"：林晓、周野、陈安与林晓的分身 ──
-	const q4 = await createGroup(
+	// ── 群聊"Q4 发布"：林晓、周野、陈安（各自的分身随本人在群里） ──
+	const { conversation: q4 } = await createGroup(
 		s,
 		linxiao,
 		"Q4 发布",
-		[zhouye.id, chenan.id, cast.twin("linxiao").id],
-		t.day(3, "09:26"),
+		[zhouye.id, chenan.id],
+		{ at: t.day(3, "09:26") },
 	);
 	await say(
 		linxiao,
@@ -117,7 +130,7 @@ export async function writeDemoConversations(
 	await recordAgentAction(
 		s,
 		twinL.id,
-		q4.id,
+		{ conversationId: q4.id },
 		{
 			tool: "knowledge_search",
 			summary: "查阅了《Q4 路线图》和《9 月 15 日评审会纪要》",
@@ -221,7 +234,7 @@ export async function writeDemoConversations(
 	await recordAgentAction(
 		s,
 		twinL.id,
-		dmLC.id,
+		{ conversationId: dmLC.id },
 		{ tool: "memory_save", summary: "记下：10 月 8–10 日杭州出差", ok: true },
 		t.day(4, "20:10"),
 	);
@@ -244,6 +257,41 @@ export async function writeDemoConversations(
 		t.day(1, "21:05"),
 	);
 	await readUpTo(linxiao, dmLC.id, seqOf(lcLast));
+
+	// ── 林晓 ↔ 执行助手：主线之外另开了一个话题"周五管理层周报" ──
+	const opsL = cast.ops("linxiao");
+	const { conversation: dmLO } = await openDm(s, linxiao, opsL.id);
+	await say(
+		linxiao,
+		dmLO.id,
+		"以后每周一上午帮我把上周的待办过一遍，没关的列出来。",
+		t.day(3, "09:05"),
+	);
+	await agentSays(
+		opsL,
+		dmLO.id,
+		"好的，每周一上午 10 点前我把上周没关的待办整理成清单发给你。",
+		t.day(3, "09:05"),
+	);
+	const weekly = await createTopic(s, linxiao, dmLO.id, "周五管理层周报");
+	await postMessage(
+		s,
+		linxiao,
+		dmLO.id,
+		{
+			text: "周五的管理层周报先按上周的格式起个草稿，重点写切流风险和冻结窗口。",
+			topicId: weekly.id,
+		},
+		t.day(1, "18:40"),
+	);
+	const weeklyLast = await agentSays(
+		opsL,
+		dmLO.id,
+		"草稿起好了：一、Q4 三项进展；二、切流风险（15 日全量对账决定是否按期）；三、10 月 20 日 00:00 至 21 日 12:00 冻结订单相关发布。你看完告诉我要不要加预算口径。",
+		t.day(1, "18:42"),
+		weekly.id,
+	);
+	await readUpTo(linxiao, dmLO.id, seqOf(weeklyLast) - 1);
 
 	// ── 许诺 ↔ 林晓：林晓忙碌，她的分身替她答复并把超出授权的问题转给她 ──
 	const { conversation: dmXL } = await openDm(s, xunuo, linxiao.id);
@@ -268,7 +316,7 @@ export async function writeDemoConversations(
 	await recordAgentAction(
 		s,
 		twinL.id,
-		dmXL.id,
+		{ conversationId: dmXL.id },
 		{ tool: "knowledge_search", summary: "查阅了《Q4 路线图》", ok: true },
 		t.minutesAgo(95),
 	);
@@ -281,6 +329,7 @@ export async function writeDemoConversations(
 	await escalateToOwner(s, {
 		agentId: twinL.id,
 		conversationId: dmXL.id,
+		topicId: (await mainTopicOf(s, dmXL.id)).id,
 		requesterId: xunuo.id,
 		title: "许诺问：大客户 A 的新版结算页能否提前到 10 月 15 日交付",
 		question:
@@ -317,7 +366,7 @@ export async function writeDemoConversations(
 	await recordAgentAction(
 		s,
 		chenanTwin.id,
-		dmCC.id,
+		{ conversationId: dmCC.id },
 		{
 			tool: "negotiate",
 			summary: "已发起与周野的代理协商：约结算页 v2 接口评审",

@@ -89,6 +89,7 @@
 	/* 布局（DESIGN.md §5） */
 	--rail-w: 64px;
 	--list-w: 300px;
+	--topics-w: 200px;
 	--inspector-w: 320px;
 	--thread-max: 800px;
 	--card-w: 360px;

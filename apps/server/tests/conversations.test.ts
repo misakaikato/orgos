@@ -451,7 +451,7 @@ describe("群聊", () => {
 		[foreign] = (await createTeam(["Fred"])) as [TeamMember];
 	});
 
-	it("建群：成员含自己，每位被拉入者一条 member.joined", async () => {
+	it("建群：成员含自己，每个人的分身随本人入群；被拉入的人各一条 member.joined", async () => {
 		const res = await owner.client.request("POST", "/api/conversations", {
 			kind: "group",
 			title: "  Q4 发布  ",
@@ -460,6 +460,7 @@ describe("群聊", () => {
 				twinOf(owner).id,
 				owner.me.principal.id,
 				b.me.principal.id,
+				opsOf(owner).id,
 			],
 		});
 		expect(res.status).toBe(201);
@@ -472,34 +473,38 @@ describe("群聊", () => {
 		expect(conversation.lastSeq).toBe(2);
 
 		const events = await eventsOf(b.client, groupId);
-		expect(events.map((e) => e.type)).toEqual([
-			"member.joined",
-			"member.joined",
-		]);
 		expect(events.map((e) => e.payload)).toEqual([
 			{ principalId: b.me.principal.id },
-			{ principalId: twinOf(owner).id },
+			{ principalId: opsOf(owner).id },
 		]);
 		const item = (await listOf(b.client)).find(
 			(x) => x.conversation.id === groupId,
 		);
 		expect(item?.members.map((m) => m.id).sort()).toEqual(
-			[owner.me.principal.id, b.me.principal.id, twinOf(owner).id].sort(),
+			[
+				owner.me.principal.id,
+				twinOf(owner).id,
+				b.me.principal.id,
+				twinOf(b).id,
+				opsOf(owner).id,
+			].sort(),
 		);
 		// member.joined 不计入未读。
 		expect(item?.unread).toBe(0);
 	});
 
-	it("建群时拉他人助手 → 400 AGENT_NOT_REACHABLE；拉外租户 → 404", async () => {
-		await expectError(
-			await owner.client.request("POST", "/api/conversations", {
-				kind: "group",
-				title: "x",
-				memberIds: [opsOf(b).id],
-			}),
-			400,
-			"AGENT_NOT_REACHABLE",
-		);
+	it("建群时拉他人助手、或只拉别人的分身不拉本人 → 400 AGENT_NOT_REACHABLE；拉外租户 → 404", async () => {
+		for (const memberIds of [[opsOf(b).id], [twinOf(c).id]]) {
+			await expectError(
+				await owner.client.request("POST", "/api/conversations", {
+					kind: "group",
+					title: "x",
+					memberIds,
+				}),
+				400,
+				"AGENT_NOT_REACHABLE",
+			);
+		}
 		await expectError(
 			await owner.client.request("POST", "/api/conversations", {
 				kind: "group",
@@ -511,35 +516,72 @@ describe("群聊", () => {
 		);
 	});
 
-	it("加成员：成员可加人；他人分身可加、他人助手 400；已在群里 409；外租户 404", async () => {
+	it("加人：其分身一起入群；他人助手 400；已在群里 409；外租户 404", async () => {
 		const add = (who: TeamMember, principalId: string) =>
 			who.client.request("POST", `/api/conversations/${groupId}/members`, {
 				principalId,
 			});
 		expect((await add(b, c.me.principal.id)).status).toBe(201);
-		expect((await add(c, twinOf(b).id)).status).toBe(201);
+		const members = (await listOf(c.client)).find(
+			(x) => x.conversation.id === groupId,
+		)?.members;
+		expect(members?.map((m) => m.id)).toEqual(
+			expect.arrayContaining([c.me.principal.id, twinOf(c).id]),
+		);
 		await expectError(
 			await add(owner, opsOf(c).id),
 			400,
 			"AGENT_NOT_REACHABLE",
 		);
-		await expectError(
-			await add(owner, c.me.principal.id),
-			409,
-			"ALREADY_MEMBER",
-		);
+		for (const id of [c.me.principal.id, twinOf(b).id])
+			await expectError(await add(owner, id), 409, "ALREADY_MEMBER");
 		await expectError(
 			await add(owner, foreign.me.principal.id),
 			404,
 			"NOT_FOUND",
 		);
-
 		const events = await eventsOf(c.client, groupId);
 		expect(events.at(-1)).toMatchObject({
 			type: "member.joined",
-			actorId: c.me.principal.id,
-			payload: { principalId: twinOf(b).id },
+			actorId: b.me.principal.id,
+			payload: { principalId: c.me.principal.id },
 		});
+	});
+
+	it("退群：本人退出时分身一起退；分身不能单独移出；只有创建者能移出别人", async () => {
+		const remove = (who: TeamMember, principalId: string) =>
+			who.client.request(
+				"DELETE",
+				`/api/conversations/${groupId}/members/${principalId}`,
+			);
+		await expectError(await remove(c, twinOf(c).id), 400, "BAD_REQUEST");
+		await expectError(await remove(c, b.me.principal.id), 403, "FORBIDDEN");
+		expect((await remove(c, c.me.principal.id)).status).toBe(204);
+		const members = (await listOf(owner.client))
+			.find((x) => x.conversation.id === groupId)
+			?.members.map((m) => m.id);
+		expect(members).not.toContain(c.me.principal.id);
+		expect(members).not.toContain(twinOf(c).id);
+		expect(
+			(await listOf(c.client)).map((x) => x.conversation.id),
+		).not.toContain(groupId);
+		// 创建者移出别人，自己的助手自己移出。
+		expect((await remove(owner, b.me.principal.id)).status).toBe(204);
+		expect((await remove(owner, opsOf(owner).id)).status).toBe(204);
+		const events = await eventsOf(owner.client, groupId);
+		expect(
+			events.filter((e) => e.type === "member.left").map((e) => e.payload),
+		).toEqual([
+			{ principalId: c.me.principal.id },
+			{ principalId: b.me.principal.id },
+			{ principalId: opsOf(owner).id },
+		]);
+		expect(
+			(await listOf(owner.client))
+				.find((x) => x.conversation.id === groupId)
+				?.members.map((m) => m.id)
+				.sort(),
+		).toEqual([owner.me.principal.id, twinOf(owner).id].sort());
 	});
 
 	it("私聊不能加成员 → 400", async () => {

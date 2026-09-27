@@ -177,6 +177,7 @@ function request(text: string, extra: Partial<LlmRequest> = {}): LlmRequest {
 			agentId: AGENT.id,
 			onBehalfOfId: null,
 			conversationId: null,
+			runId: null,
 			model: "deepseek-v4-flash",
 		},
 		trigger: trigger(text),

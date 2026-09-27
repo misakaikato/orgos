@@ -14,9 +14,11 @@ import {
 	NOTE_VISIBILITIES,
 	PRINCIPAL_KINDS,
 	PRINCIPAL_STATUSES,
+	RUN_STATES,
 	RUNNER_STATUSES,
 	TASK_LOG_KINDS,
 	TASK_STATES,
+	TOPIC_KINDS,
 	WORK_ITEM_KINDS,
 	WORK_ITEM_STATUSES,
 } from "@orgos/protocol";
@@ -35,6 +37,7 @@ import {
 	text,
 	timestamp,
 	unique,
+	uniqueIndex,
 	uuid,
 } from "drizzle-orm/pg-core";
 import { user } from "@/db/auth-schema";
@@ -197,6 +200,10 @@ export const events = pgTable(
 		id: bigserial("id", { mode: "number" }).primaryKey(),
 		tenantId: tenantId(),
 		conversationId: uuid("conversation_id").references(() => conversations.id),
+		/** 事件所在的话题：代理运行只读当前话题的事件。 */
+		topicId: uuid("topic_id")
+			.notNull()
+			.references((): PgColumn => topics.id),
 		seq: integer("seq"),
 		type: text("type").notNull(),
 		actorId: uuid("actor_id")
@@ -206,7 +213,11 @@ export const events = pgTable(
 		payload: jsonb("payload").notNull(),
 		createdAt: createdAt(),
 	},
-	(t) => [unique("events_conversation_seq_unique").on(t.conversationId, t.seq)],
+	(t) => [
+		unique("events_conversation_seq_unique").on(t.conversationId, t.seq),
+		index("events_topic_idx").on(t.topicId, t.id),
+		index("events_actor_created_idx").on(t.actorId, t.createdAt),
+	],
 );
 
 export const workItems = pgTable(
@@ -281,6 +292,8 @@ export const llmRequests = pgTable(
 			.references(() => principals.id),
 		onBehalfOfId: uuid("on_behalf_of_id").references(() => principals.id),
 		conversationId: uuid("conversation_id").references(() => conversations.id),
+		/** 这次调用属于哪次运行。 */
+		runId: uuid("run_id").references((): PgColumn => runs.id),
 		provider: text("provider").notNull(),
 		model: text("model").notNull(),
 		inputTokens: integer("input_tokens"),
@@ -295,6 +308,7 @@ export const llmRequests = pgTable(
 	(t) => [
 		index("llm_requests_agent_idx").on(t.agentId),
 		index("llm_requests_conversation_idx").on(t.conversationId),
+		index("llm_requests_run_idx").on(t.runId),
 	],
 );
 
@@ -310,6 +324,10 @@ export const tasks = pgTable(
 		conversationId: uuid("conversation_id")
 			.notNull()
 			.references(() => conversations.id),
+		/** 任务所在的话题（kind=task）：一个任务恰好对应一个话题。 */
+		topicId: uuid("topic_id")
+			.notNull()
+			.references((): PgColumn => topics.id),
 		requesterId: uuid("requester_id")
 			.notNull()
 			.references(() => principals.id),
@@ -342,19 +360,142 @@ export const tasks = pgTable(
 	],
 );
 
-/** 任务的过程记录：只追加。 */
+/** 过程记录：只追加。任务的过程即其运行的记录。 */
 export const taskLogs = pgTable(
 	"task_logs",
 	{
 		id: bigserial("id", { mode: "number" }).primaryKey(),
 		tenantId: tenantId(),
-		taskId: uuid("task_id")
-			.notNull()
-			.references(() => tasks.id),
+		/** 服务于任务的运行记在任务名下（seq 在任务内连续）；否则为空，seq 在运行内连续。 */
+		taskId: uuid("task_id").references(() => tasks.id),
+		runId: uuid("run_id").references((): PgColumn => runs.id),
 		seq: integer("seq").notNull(),
 		kind: text("kind", { enum: TASK_LOG_KINDS }).notNull(),
 		payload: jsonb("payload").notNull(),
 		createdAt: createdAt(),
 	},
-	(t) => [unique("task_logs_task_seq_unique").on(t.taskId, t.seq)],
+	(t) => [
+		unique("task_logs_task_seq_unique").on(t.taskId, t.seq),
+		uniqueIndex("task_logs_run_seq_unique")
+			.on(t.runId, t.seq)
+			.where(sql`${t.taskId} is null`),
+		index("task_logs_run_idx").on(t.runId),
+		check(
+			"task_logs_owner_check",
+			sql`${t.taskId} is not null or ${t.runId} is not null`,
+		),
+	],
 );
+
+/**
+ * 话题：会话内一条独立的上下文。每个会话恰好一个主线（建会话时同一事务建立）；
+ * 任务 = 带状态的话题（kind=task，taskId 指向当前或最近一次的任务）。
+ */
+export const topics = pgTable(
+	"topics",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id),
+		title: text("title").notNull(),
+		kind: text("kind", { enum: TOPIC_KINDS }).notNull().default("chat"),
+		taskId: uuid("task_id").references((): PgColumn => tasks.id),
+		isMain: boolean("is_main").notNull().default(false),
+		createdBy: uuid("created_by")
+			.notNull()
+			.references(() => principals.id),
+		archivedAt: timestamp("archived_at", { withTimezone: true }),
+		/** 转成群聊时：新群主线引用的原话题。 */
+		sourceTopicId: uuid("source_topic_id").references(
+			(): PgColumn => topics.id,
+		),
+		/** 已转成群聊：转去的群。 */
+		movedToConversationId: uuid("moved_to_conversation_id").references(
+			() => conversations.id,
+		),
+		createdAt: createdAt(),
+		lastEventAt: timestamp("last_event_at", { withTimezone: true })
+			.defaultNow()
+			.notNull(),
+	},
+	(t) => [
+		uniqueIndex("topics_one_main_per_conversation")
+			.on(t.conversationId)
+			.where(sql`${t.isMain}`),
+		index("topics_conversation_idx").on(t.conversationId, t.lastEventAt),
+	],
+);
+
+/**
+ * 运行记录：代理的每一次运行（内置循环的一次运行、外部 agent 的一轮）一行。
+ * 写入只经 `@/services/runs`。
+ */
+export const runs = pgTable(
+	"runs",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		agentId: uuid("agent_id")
+			.notNull()
+			.references(() => principals.id),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id),
+		topicId: uuid("topic_id")
+			.notNull()
+			.references(() => topics.id),
+		taskId: uuid("task_id").references(() => tasks.id),
+		trigger: text("trigger").notNull(),
+		actingForId: uuid("acting_for_id")
+			.notNull()
+			.references(() => principals.id),
+		engine: text("engine", { enum: AGENT_ENGINES }).notNull(),
+		state: text("state", { enum: RUN_STATES }).notNull().default("running"),
+		startedAt: timestamp("started_at", { withTimezone: true })
+			.defaultNow()
+			.notNull(),
+		endedAt: timestamp("ended_at", { withTimezone: true }),
+		summary: text("summary"),
+		externalSessionId: text("external_session_id"),
+		/** 不服务于任务的运行：已分配的最大日志 seq。 */
+		lastLogSeq: integer("last_log_seq").notNull().default(0),
+	},
+	(t) => [
+		index("runs_agent_idx").on(t.agentId, t.startedAt),
+		index("runs_topic_idx").on(t.topicId, t.startedAt),
+	],
+);
+
+/** 压缩检查点：某代理在某话题里，afterEventId 及之前的事件由 summary 代替。 */
+export const compactions = pgTable(
+	"compactions",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		topicId: uuid("topic_id")
+			.notNull()
+			.references(() => topics.id),
+		agentId: uuid("agent_id")
+			.notNull()
+			.references(() => principals.id),
+		summary: text("summary").notNull(),
+		afterEventId: bigint("after_event_id", { mode: "number" })
+			.notNull()
+			.references(() => events.id),
+		createdAt: createdAt(),
+	},
+	(t) => [index("compactions_topic_agent_idx").on(t.topicId, t.agentId)],
+);
+
+/** 租户级设置：每租户至多一行，没有行即全部取默认值。 */
+export const tenantSettings = pgTable("tenant_settings", {
+	tenantId: uuid("tenant_id")
+		.primaryKey()
+		.references(() => tenants.id, { onDelete: "cascade" }),
+	allowUnsupervisedAdapters: boolean("allow_unsupervised_adapters")
+		.notNull()
+		.default(false),
+	updatedAt: updatedAt(),
+});

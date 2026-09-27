@@ -18,7 +18,6 @@ import {
 	UnreadDivider,
 } from "@/components/conversation/message-item";
 import { NegotiationCard } from "@/components/conversation/negotiation";
-import { TaskCard } from "@/components/conversation/task-card";
 import { IconArrowDown } from "@/components/icons";
 import type { PrincipalMap } from "@/lib/principals";
 import { buildThreadRows, type ThreadRow } from "@/lib/thread";
@@ -89,8 +88,6 @@ function Row({ row, ctx }: { row: ThreadRow; ctx: RowContext }) {
 			);
 		case "negotiation":
 			return <NegotiationCard event={row.event} map={map} meId={meId} />;
-		case "task":
-			return <TaskCard task={row.task} map={map} meId={meId} />;
 		case "system":
 			return <SystemLine event={row.event} map={map} meId={meId} />;
 	}
@@ -109,6 +106,7 @@ export function MessageList({
 	isGroup,
 	onBottomChange,
 	empty,
+	header,
 	footer,
 }: {
 	events: readonly Event[];
@@ -120,6 +118,8 @@ export function MessageList({
 	onBottomChange: (atBottom: boolean) => void;
 	/** 没有任何事件时显示。 */
 	empty: ReactNode;
+	/** 消息列开头的附加内容（新群引用的原话题）。 */
+	header?: ReactNode;
 	/** 消息列末尾的附加内容（"正在工作"指示）。 */
 	footer?: ReactNode;
 }) {
@@ -195,7 +195,8 @@ export function MessageList({
 				aria-label="消息"
 			>
 				<div className="mx-auto w-full max-w-thread px-4 pt-2 pb-6 md:px-6">
-					{rows.length === 0 ? empty : null}
+					{header}
+					{rows.length === 0 && !header ? empty : null}
 					{rows.map((row) => (
 						<Row key={row.key} row={row} ctx={ctx} />
 					))}

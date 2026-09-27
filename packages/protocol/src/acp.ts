@@ -269,6 +269,16 @@ export function findAdapter(id: string): AcpAdapterDef | undefined {
 	return ACP_ADAPTERS.find((a) => a.id === id);
 }
 
+/**
+ * 不经 orgos 审批、不限工作目录的适配器（读写与命令不交还 Runner：pi、Hermes）。
+ * 默认不可选：须租户 owner 开启 `allowUnsupervisedAdapters`，且本人创建时勾选确认。
+ */
+export function isUnsupervisedAdapter(
+	def: Pick<AcpAdapterDef, "delegatesTools">,
+): boolean {
+	return !def.delegatesTools;
+}
+
 /** Runner 在 hello 里上报的适配器探测结果。 */
 export const AcpAdapterStatusSchema = z.object({
 	id: z.string().min(1).max(64),
@@ -315,9 +325,9 @@ export type AcpToolCall = z.infer<typeof AcpToolCallSchema>;
  */
 export const ACP_PERMISSION_SOURCES = ["agent", "terminal"] as const;
 
-/** terminal 审批卡片上的三个选项：允许、本任务内始终允许、拒绝。 */
+/** terminal 审批卡片上的三个选项：允许、本话题内始终允许、拒绝。 */
 export const TERMINAL_PERMISSION_OPTIONS: readonly AcpPermissionOption[] = [
 	{ optionId: "allow_once", name: "允许", kind: "allow_once" },
-	{ optionId: "allow_task", name: "本任务内始终允许", kind: "allow_always" },
+	{ optionId: "allow_task", name: "本话题内始终允许", kind: "allow_always" },
 	{ optionId: "reject", name: "拒绝", kind: "reject_once" },
 ];

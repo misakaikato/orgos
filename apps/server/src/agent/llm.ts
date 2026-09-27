@@ -184,6 +184,7 @@ export function createDeepSeekClient(opts: DeepSeekOptions = {}): LlmClient {
 					agentId: req.meta.agentId,
 					onBehalfOfId: req.meta.onBehalfOfId,
 					conversationId: req.meta.conversationId,
+					runId: req.meta.runId,
 					provider: provider.id,
 					model: req.meta.model,
 					inputTokens: usage.inputTokens,

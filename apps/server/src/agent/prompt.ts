@@ -12,6 +12,8 @@ export type PromptInput = {
 	requesterName: string | null;
 	/** 群聊标题。 */
 	conversationTitle: string | null;
+	/** 当前话题（主线为 null）。 */
+	topicTitle: string | null;
 	/** 被同组代理转交时的转交者。 */
 	delegatedBy: Agent | null;
 	/** 上报后本人处理了、恢复运行。 */
@@ -100,7 +102,12 @@ export function buildSystemPrompt(input: PromptInput): string {
 		`你是${ownerName}的${AGENT_ROLE_LABEL[agent.role]}“${agent.principal.displayName}”（@${agent.principal.handle}）。你是 AI，不是${ownerName}本人，不要冒充${ownerName}说话。`,
 	];
 	if (agent.description.trim()) lines.push(`你的职责：${agent.description}`);
-	lines.push(whereLine(input, ownerName), ...actingLines(input, ownerName));
+	lines.push(whereLine(input, ownerName));
+	if (input.topicTitle && !input.delegatedBy)
+		lines.push(
+			`这里是话题“${input.topicTitle}”：你只看得到这个话题里的对话，其他话题的事以近期工作简报为准。`,
+		);
+	lines.push(...actingLines(input, ownerName));
 	if (scope.conversation.kind === "group" && !input.delegatedBy) {
 		lines.push(
 			"群聊规则：只有消息明确是对你说的（@ 了你、叫到你的名字，或问题正属于你的职责），并且你有别人还没说过的有用信息时才发言；否则必须调用 pass 工具保持安静，不要输出任何文字。",
@@ -123,8 +130,8 @@ export function buildSystemPrompt(input: PromptInput): string {
 }
 
 /**
- * 会话历史 → 模型消息：本代理自己的消息为 assistant，其余带“【显示名】”前缀为 user；
- * 上报与本人的答复以“【系统】”消息进入上下文。代理动作与协商卡片不进上下文。
+ * 话题历史 → 模型消息：本代理自己的消息为 assistant，其余带“【显示名】”前缀为 user；
+ * 上报与本人的答复以“【系统】”消息进入上下文。代理动作、任务与协商卡片不进上下文。
  */
 export function historyMessages(
 	events: readonly Event[],

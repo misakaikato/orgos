@@ -282,20 +282,69 @@ describe("群聊一轮的发言顺序", () => {
 		],
 	};
 
-	it("被 @ 的按 @ 的先后在前，其余按入群顺序；各自为发消息的人办事", () => {
-		expect(groupRound(group, say(BOB, { mentions: [A_OPS, B_TWIN] }))).toEqual([
-			{
-				agentId: A_OPS,
-				actingFor: { kind: "other", principalId: BOB },
-				reason: "mentioned",
-			},
-			{ agentId: B_TWIN, actingFor: { kind: "owner" }, reason: "mentioned" },
-			{
-				agentId: A_TWIN,
-				actingFor: { kind: "other", principalId: BOB },
-				reason: "round",
-			},
+	const other = (principalId: string) => ({ kind: "other", principalId });
+	const withStatus = (id: string, status: PrincipalStatus) => ({
+		...group,
+		members: group.members.map((m) => (m.id === id ? { ...m, status } : m)),
+	});
+
+	it("被点到的按 @ 的先后在前，其余非分身代理按入群顺序；各自为发消息的人办事", () => {
+		expect(groupRound(group, say(BOB, { mentions: [A_TWIN, A_OPS] }))).toEqual([
+			{ agentId: A_TWIN, actingFor: other(BOB), reason: "mentioned" },
+			{ agentId: A_OPS, actingFor: other(BOB), reason: "mentioned" },
 		]);
+		expect(groupRound(group, say(BOB)).map((t) => t.agentId)).toEqual([A_OPS]);
+	});
+
+	it("分身三种触发：@ 了分身；@ 了本人且问分身；@ 了本人且本人忙碌 / 离开——都为发言者办事", () => {
+		expect(groupRound(group, say(BOB, { mentions: [A_TWIN] }))[0]).toEqual({
+			agentId: A_TWIN,
+			actingFor: other(BOB),
+			reason: "mentioned",
+		});
+		expect(
+			groupRound(group, say(BOB, { mentions: [ALICE], askTwin: true }))[0],
+		).toEqual({ agentId: A_TWIN, actingFor: other(BOB), reason: "ask_twin" });
+		for (const status of ["busy", "away"] as const)
+			expect(
+				groupRound(
+					withStatus(ALICE, status),
+					say(BOB, { mentions: [ALICE] }),
+				)[0],
+			).toEqual({
+				agentId: A_TWIN,
+				actingFor: other(BOB),
+				reason: "owner_unavailable",
+			});
+		// 本人在线、只 @ 本人不问分身：分身不开口。
+		expect(
+			groupRound(group, say(BOB, { mentions: [ALICE] })).map((t) => t.agentId),
+		).toEqual([A_OPS]);
+	});
+
+	it("本人 @ 自己的分身：为本人办事", () => {
+		expect(groupRound(group, say(ALICE, { mentions: [A_TWIN] }))[0]).toEqual({
+			agentId: A_TWIN,
+			actingFor: { kind: "owner" },
+			reason: "mentioned",
+		});
+	});
+
+	it("本人忙碌但没被点名：分身不开口；本人没 @ 自己的分身时不触发它", () => {
+		const busy = withStatus(ALICE, "busy");
+		expect(groupRound(busy, say(BOB)).map((t) => t.agentId)).toEqual([A_OPS]);
+		expect(groupRound(busy, say(ALICE)).map((t) => t.agentId)).toEqual([A_OPS]);
+		expect(
+			groupRound(busy, say(ALICE, { mentions: [BOB] })).map((t) => t.agentId),
+		).toEqual([A_OPS]);
+		expect(
+			agentsToTrigger(busy, say(BOB, { askTwin: true })).map((t) => t.agentId),
+		).toEqual([]);
+		expect(
+			agentsToTrigger(busy, say(BOB, { mentions: [ALICE] })).map(
+				(t) => t.agentId,
+			),
+		).toEqual([A_TWIN]);
 	});
 
 	it("代理发的消息、私聊不开启一轮", () => {
@@ -309,9 +358,7 @@ describe("群聊一轮的发言顺序", () => {
 			members: [...group.members, { ...ops(B_OPS, BOB), role: "observer" }],
 		};
 		expect(groupRound(withObserver, say(ALICE)).map((t) => t.agentId)).toEqual([
-			A_TWIN,
 			A_OPS,
-			B_TWIN,
 		]);
 	});
 });

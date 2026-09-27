@@ -29,6 +29,8 @@ export type LlmMeta = {
 	agentId: string;
 	onBehalfOfId: string | null;
 	conversationId: string | null;
+	/** 这次调用属于哪次运行。 */
+	runId: string | null;
 	model: string;
 };
 
@@ -45,6 +47,8 @@ export type RunTrigger = {
 	conversationKind: (typeof CONVERSATION_KINDS)[number];
 	/** 上报后本人答复（或暂不答复）、恢复运行；answer 为答复原文（暂不答复时可为空）。 */
 	resume?: { answer: string; declined?: boolean };
+	/** 生成压缩检查点（不是一次回复）。 */
+	checkpoint?: true;
 	/** 协商中的一步。 */
 	negotiation?: {
 		role: "initiator" | "responder";

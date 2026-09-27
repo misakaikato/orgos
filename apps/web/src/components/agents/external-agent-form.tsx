@@ -5,18 +5,79 @@ import {
 	type Agent,
 	findAdapter,
 	HANDLE_RE,
+	isUnsupervisedAdapter,
 	type Runner,
 } from "@orgos/protocol";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/input";
+import { Field, Switch } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { useStore } from "@/lib/store";
+import {
+	loadTenantSettings,
+	setAllowUnsupervisedAdapters,
+	useStore,
+} from "@/lib/store";
 
 /** 设备上报的、当前可用的适配器。 */
 export function availableAdapters(runner: Runner | undefined): string[] {
 	const acp = runner?.capabilities.find((c) => c.name === AGENT_ACP_CAPABILITY);
 	return (acp?.adapters ?? []).filter((a) => a.available).map((a) => a.id);
+}
+
+function unsupervised(id: string): boolean {
+	const def = findAdapter(id);
+	return def ? isUnsupervisedAdapter(def) : false;
+}
+
+/**
+ * 不经审批、不限工作目录的适配器（pi、Hermes）默认不可选：组织的创建者可以在这里开启。
+ */
+function UnsupervisedSetting({
+	allowed,
+	isOwner,
+	offered,
+}: {
+	allowed: boolean;
+	isOwner: boolean;
+	offered: string[];
+}) {
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	if (offered.length === 0) return null;
+	const names = offered.map(adapterLabel).join("、");
+	return (
+		<div className="flex flex-col gap-1 rounded-row bg-surface-2 px-3 py-2">
+			<div className="flex items-center gap-3">
+				<p className="min-w-0 flex-1 text-13 text-ink">
+					{allowed
+						? `组织已允许使用${names}（不经审批、不限工作目录）。`
+						: `这台设备上还有${names}：它们不经审批、不限工作目录，组织默认不允许使用。`}
+				</p>
+				{isOwner ? (
+					<Switch
+						label={`允许使用${names}`}
+						checked={allowed}
+						disabled={busy}
+						onChange={async (next) => {
+							setBusy(true);
+							setError(null);
+							try {
+								await setAllowUnsupervisedAdapters(next);
+							} catch (e) {
+								setError(e instanceof Error ? e.message : "没改成");
+							} finally {
+								setBusy(false);
+							}
+						}}
+					/>
+				) : null}
+			</div>
+			{!isOwner && !allowed ? (
+				<p className="text-12 text-muted">需要组织的创建者开启。</p>
+			) : null}
+			{error ? <p className="text-12 text-danger">{error}</p> : null}
+		</div>
+	);
 }
 
 function adapterLabel(id: string): string {
@@ -45,12 +106,22 @@ export function ExternalAgentForm({
 }) {
 	const ids = useId();
 	const runners = useStore((s) => s.runners);
+	const settings = useStore((s) => s.tenantSettings);
+	const isOwner = useStore((s) => Boolean(s.me?.tenant.inviteCode));
+	const allowUnsupervised = settings?.allowUnsupervisedAdapters ?? false;
+	const selectable = (r: Runner | undefined) =>
+		availableAdapters(r).filter((id) => allowUnsupervised || !unsupervised(id));
 	const usable = (runners ?? []).filter(
 		(r) => r.status === "online" && availableAdapters(r).length > 0,
 	);
 	const [runnerId, setRunnerId] = useState(usable[0]?.id ?? "");
 	const runner = usable.find((r) => r.id === runnerId) ?? usable[0];
-	const adapters = availableAdapters(runner);
+	const adapters = selectable(runner);
+	const offeredUnsupervised = availableAdapters(runner).filter(unsupervised);
+	const [acknowledged, setAcknowledged] = useState(false);
+	useEffect(() => {
+		if (!settings) void loadTenantSettings().catch(() => {});
+	}, [settings]);
 	const [adapter, setAdapter] = useState(adapters[0] ?? "");
 	const chosen = adapters.includes(adapter) ? adapter : (adapters[0] ?? "");
 	const [workspace, setWorkspace] = useState(runner?.workspace ?? "");
@@ -64,16 +135,18 @@ export function ExternalAgentForm({
 	const [error, setError] = useState<string | null>(null);
 	const handleOk = HANDLE_RE.test(handle);
 	const note = chosen ? findAdapter(chosen)?.note : undefined;
+	const needsAck = chosen ? unsupervised(chosen) : false;
 
 	const pickRunner = (id: string) => {
 		setRunnerId(id);
 		const next = usable.find((r) => r.id === id);
 		setWorkspace(next?.workspace ?? "");
-		const first = availableAdapters(next)[0] ?? "";
+		const first = selectable(next)[0] ?? "";
 		pickAdapter(first);
 	};
 	const pickAdapter = (id: string) => {
 		setAdapter(id);
+		setAcknowledged(false);
 		if (!id) return;
 		setDisplayName(adapterLabel(id));
 		setHandle(defaultHandle(ownerHandle, id));
@@ -98,6 +171,7 @@ export function ExternalAgentForm({
 				adapter: chosen,
 				runnerId: runner.id,
 				workspace,
+				...(needsAck ? { acknowledgeUnsupervised: acknowledged } : {}),
 			});
 			onCreated(agent);
 		} catch (err) {
@@ -165,7 +239,23 @@ export function ExternalAgentForm({
 							))}
 						</select>
 						{note ? <p className="text-12 text-muted">{note}</p> : null}
+						{needsAck ? (
+							<label className="mt-1 flex items-start gap-2 text-13 text-ink">
+								<input
+									type="checkbox"
+									checked={acknowledged}
+									onChange={(e) => setAcknowledged(e.target.checked)}
+									className="mt-1 accent-accent"
+								/>
+								我知道它不经审批、不限工作目录
+							</label>
+						) : null}
 					</div>
+					<UnsupervisedSetting
+						allowed={allowUnsupervised}
+						isOwner={isOwner}
+						offered={offeredUnsupervised}
+					/>
 					<Field
 						label="工作目录"
 						value={workspace}
@@ -209,7 +299,8 @@ export function ExternalAgentForm({
 						!chosen ||
 						!handleOk ||
 						!displayName.trim() ||
-						!workspace.trim()
+						!workspace.trim() ||
+						(needsAck && !acknowledged)
 					}
 				>
 					{saving ? "接入中…" : "接入"}

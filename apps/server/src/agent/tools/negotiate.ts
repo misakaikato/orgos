@@ -73,6 +73,7 @@ export const negotiateTool = makeTool({
 			goal,
 			title: `${chars.slice(0, TITLE_CHARS).join("")}${chars.length > TITLE_CHARS ? "…" : ""}`,
 			originConversationId: scope.conversation.id,
+			originTopicId: scope.conversation.topicId,
 		});
 		scope.startNegotiation(negotiation.id);
 		return {

@@ -10,13 +10,15 @@
 					"id": "deepseek-v4-flash",
 					"inputPerMtok": 0.139,
 					"outputPerMtok": 0.278,
-					"cacheReadPerMtok": 0.0028
+					"cacheReadPerMtok": 0.0028,
+					"contextWindow": 128000
 				},
 				{
 					"id": "deepseek-v4-pro",
 					"inputPerMtok": 0.417,
 					"outputPerMtok": 0.833,
-					"cacheReadPerMtok": 0.0035
+					"cacheReadPerMtok": 0.0035,
+					"contextWindow": 128000
 				}
 			]
 		}

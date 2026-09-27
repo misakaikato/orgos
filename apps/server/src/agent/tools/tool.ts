@@ -16,7 +16,14 @@ export type ToolScope = {
 	s: Scoped;
 	agent: Agent;
 	owner: PrincipalRow;
-	conversation: { id: string; kind: (typeof CONVERSATION_KINDS)[number] };
+	/** 本次运行所在的会话与话题（卡片、动作都落在这个话题里）。 */
+	conversation: {
+		id: string;
+		kind: (typeof CONVERSATION_KINDS)[number];
+		topicId: string;
+	};
+	/** 本次运行的运行记录。 */
+	runId: string;
 	actingFor: ActingFor;
 	/** 转交深度：直接被触发的运行为 0。 */
 	depth: number;
@@ -25,10 +32,14 @@ export type ToolScope = {
 	session: RunSession;
 	/** 本次可以交办的同事（见 delegate 工具的 `delegatableTeammates`）。 */
 	teammates: readonly Agent[];
-	/** 同步运行一位同组的内置代理一次，返回它的结局与最终文本。 */
+	/**
+	 * 同步运行一位同组的内置代理一次：它在任务话题里干活（结果也发在那里），
+	 * 返回它的结局与最终文本；任务的结局随这次运行落定。
+	 */
 	delegate(
 		target: Agent,
 		task: string,
+		where: { conversationId: string; topicId: string; taskId: string },
 	): Promise<{ outcome: DelegatedOutcome; text?: string }>;
 	/** 协商会话已建好：交给调度器驱动两个分身轮流回应（不等待）。 */
 	startNegotiation(negotiationConversationId: string): void;

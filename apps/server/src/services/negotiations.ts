@@ -37,6 +37,7 @@ import {
 } from "@/services/agent-events";
 import { openDm } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
+import { insertConversation, mainTopicOf } from "@/services/topics";
 import {
 	createWorkItem,
 	escalateToOwner,
@@ -199,8 +200,9 @@ export async function startNegotiation(
 		responderAgentId: string;
 		goal: string;
 		title: string;
-		/** 发起方本人让分身去协商的会话。 */
+		/** 发起方本人让分身去协商的会话与话题。 */
 		originConversationId?: string;
+		originTopicId?: string;
 		at?: Date;
 	},
 ): Promise<ConversationRow> {
@@ -209,6 +211,12 @@ export async function startNegotiation(
 	if (initiator.ownerId === responder.ownerId) {
 		throw badRequest("协商双方必须属于不同的人");
 	}
+	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
+	// 协商卡片：发起在两人私聊的某个话题里就落在那里，否则落在私聊主线。
+	const cardTopicId =
+		input.originConversationId === dmId && input.originTopicId
+			? input.originTopicId
+			: (await mainTopicOf(s, dmId)).id;
 	const state: NegotiationState = {
 		initiatorAgentId: initiator.id,
 		responderAgentId: responder.id,
@@ -216,13 +224,14 @@ export async function startNegotiation(
 		step: 0,
 		maxSteps: NEGOTIATION_MAX_STEPS,
 		state: "running",
+		cardTopicId,
 		...(input.originConversationId
 			? { originConversationId: input.originConversationId }
 			: {}),
+		...(input.originTopicId ? { originTopicId: input.originTopicId } : {}),
 	};
-	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
 	return transactWithEvents(s, async (tx, append) => {
-		const row = await tx.insert(conversations, {
+		const { conversation: row } = await insertConversation(tx, {
 			kind: "negotiation",
 			title: input.title,
 			createdBy: initiator.id,
@@ -240,6 +249,7 @@ export async function startNegotiation(
 		}
 		await append({
 			conversationId: dmId,
+			topicId: cardTopicId,
 			actorId: initiator.id,
 			onBehalfOfId: initiator.ownerId,
 			type: "negotiation.started",
@@ -272,9 +282,11 @@ export async function appendNegotiationStep(
 		throw notFound("协商不存在");
 	}
 	const { next, outcome } = judgeStep(state, agent.id, reply);
+	const main = await mainTopicOf(s, conversationId);
 	const event = await transactWithEvents(s, async (tx, append) => {
 		const event = await append({
 			conversationId,
+			topicId: main.id,
 			actorId: agent.id,
 			onBehalfOfId: agent.ownerId,
 			type: "negotiation.step",
@@ -366,9 +378,11 @@ export async function endNegotiation(
 	const responder = await requireAgentPrincipal(s, state.responderAgentId);
 	const proposal = state.lastProposal;
 	const dmId = await ownersDm(s, initiator.ownerId, responder.ownerId);
+	const main = await mainTopicOf(s, conversationId);
 	const items = await transactWithEvents(s, async (tx, append) => {
 		await append({
 			conversationId,
+			topicId: main.id,
 			actorId: initiator.id,
 			onBehalfOfId: initiator.ownerId,
 			type: "negotiation.ended",
@@ -418,7 +432,10 @@ export async function endNegotiation(
 		await postAgentMessage(
 			s,
 			initiator.id,
-			state.originConversationId,
+			{
+				conversationId: state.originConversationId,
+				...(state.originTopicId ? { topicId: state.originTopicId } : {}),
+			},
 			summaryOf(outcome, state, other.displayName, last),
 		);
 	}
@@ -454,6 +471,7 @@ export async function recordNegotiationReply(
 		await escalateToOwner(s, {
 			agentId,
 			conversationId: dmId,
+			topicId: state.cardTopicId ?? (await mainTopicOf(s, dmId)).id,
 			requesterId: other.id,
 			question: [
 				`和${other.displayName}协商时需要你定：${reply.message}`,
@@ -507,7 +525,12 @@ export async function negotiationContext(
 	const role = agentId === state.initiatorAgentId ? "initiator" : "responder";
 	const request =
 		role === "initiator" && state.originConversationId
-			? await originMessages(s, state.originConversationId, row.createdAt)
+			? await originMessages(
+					s,
+					state.originConversationId,
+					state.originTopicId ?? null,
+					row.createdAt,
+				)
 			: [];
 	const answers = await s.executor
 		.select()
@@ -550,12 +573,13 @@ export async function negotiationContext(
 type MessageEvent = Extract<Event, { type: "message.posted" }>;
 
 /**
- * 发起方本人让分身去协商时的那段对话：协商开始前原会话里最近的消息，
+ * 发起方本人让分身去协商时的那段对话：协商开始前原话题里最近的消息，
  * 但不越过上一次从这里发起的协商（那是另一件事）。
  */
 async function originMessages(
 	s: Scoped,
 	conversationId: string,
+	topicId: string | null,
 	until: Date,
 ): Promise<MessageEvent[]> {
 	const [previous] = await s.executor
@@ -565,6 +589,7 @@ async function originMessages(
 			s.where(
 				events,
 				eq(events.conversationId, conversationId),
+				topicId ? eq(events.topicId, topicId) : undefined,
 				eq(events.type, "agent.action"),
 				sql`${events.payload}->>'tool' = 'negotiate'`,
 				sql`(${events.payload}->>'ok')::boolean`,
@@ -580,6 +605,7 @@ async function originMessages(
 			s.where(
 				events,
 				eq(events.conversationId, conversationId),
+				topicId ? eq(events.topicId, topicId) : undefined,
 				eq(events.type, "message.posted"),
 				lte(events.createdAt, until),
 				previous?.seq ? gt(events.seq, previous.seq) : undefined,

@@ -13,7 +13,10 @@ import { registerMeRoutes } from "@/routes/me";
 import { registerNoteRoutes } from "@/routes/notes";
 import { registerOnboardingRoutes } from "@/routes/onboarding";
 import { registerRunnerRoutes } from "@/routes/runners";
+import { registerRunRoutes } from "@/routes/runs";
 import { registerTaskRoutes } from "@/routes/tasks";
+import { registerTenantRoutes } from "@/routes/tenant";
+import { registerTopicRoutes } from "@/routes/topics";
 import { registerWorkItemRoutes } from "@/routes/work-items";
 import { registerWsRoutes } from "@/routes/ws";
 
@@ -31,6 +34,9 @@ export function createApp(): Hono<AppEnv> {
 	registerNoteRoutes(app);
 	registerRunnerRoutes(app);
 	registerTaskRoutes(app);
+	registerTopicRoutes(app);
+	registerRunRoutes(app);
+	registerTenantRoutes(app);
 	registerWsRoutes(app);
 	registerDevRoutes(app);
 

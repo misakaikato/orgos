@@ -6,6 +6,8 @@ import {
 	CreateConversationResponseSchema,
 	type Event,
 	EventsResponseSchema,
+	type Topic,
+	TopicListResponseSchema,
 } from "@orgos/protocol";
 import { expect } from "vitest";
 import { scheduler } from "@/agent/scheduler";
@@ -66,6 +68,44 @@ export async function eventsOf(
 	);
 	expect(res.status).toBe(200);
 	return EventsResponseSchema.parse(await res.json()).items;
+}
+
+/** 会话的话题（主线在前，其余按最近活动倒序）。 */
+export async function topicsOf(
+	client: Client,
+	conversationId: string,
+): Promise<Topic[]> {
+	const res = await client.request(
+		"GET",
+		`/api/conversations/${conversationId}/topics`,
+	);
+	expect(res.status).toBe(200);
+	return TopicListResponseSchema.parse(await res.json()).items;
+}
+
+/** 某个话题的事件。 */
+export async function topicEventsOf(
+	client: Client,
+	conversationId: string,
+	topicId: string,
+): Promise<Event[]> {
+	const res = await client.request(
+		"GET",
+		`/api/conversations/${conversationId}/events?limit=200&topicId=${topicId}`,
+	);
+	expect(res.status).toBe(200);
+	return EventsResponseSchema.parse(await res.json()).items;
+}
+
+/** 会话全部话题的事件，按 seq。 */
+export async function allEventsOf(
+	client: Client,
+	conversationId: string,
+): Promise<Event[]> {
+	const all: Event[] = [];
+	for (const t of await topicsOf(client, conversationId))
+		all.push(...(await topicEventsOf(client, conversationId, t.id)));
+	return all.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
 }
 
 export type MessageEvent = Extract<Event, { type: "message.posted" }>;

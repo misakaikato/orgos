@@ -113,6 +113,11 @@ export const RUNNER_WS_CLOSE = {
 
 // ─────────────────────────── 帧 ───────────────────────────
 
+/*
+ * 外部 agent 的 acp_* 帧以 `taskId` 标识设备上的一个 ACP 会话槽：服务端每个话题开一个槽，
+ * 填的是话题 id（一个话题一个 ACP 会话，主线也是）。Runner 只把它当作不透明的会话键。
+ */
+
 /** Runner → 服务端。 */
 export const RunnerUpSchema = z.discriminatedUnion("t", [
 	z.object({
@@ -123,7 +128,7 @@ export const RunnerUpSchema = z.discriminatedUnion("t", [
 		hostname: z.string().max(255),
 		workspace: z.string().max(4096),
 		capabilities: z.array(CapabilitySchema).max(64),
-		/** 本机仍在运行的外部任务：服务端据此让已结束的任务收尾。 */
+		/** 本机仍在运行的外部 agent 会话槽：服务端据此接回或让它收尾。 */
 		acpTasks: z.array(z.uuid()).max(256).optional(),
 	}),
 	z.object({ t: z.literal("ping") }),

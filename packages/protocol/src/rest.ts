@@ -10,10 +10,15 @@ import {
 	NoteSchema,
 	PRINCIPAL_STATUSES,
 	PrincipalSchema,
+	RunLogSchema,
+	RunSchema,
 	TASK_STATES,
 	TaskLogSchema,
 	TaskSchema,
 	TenantSchema,
+	TenantSettingsSchema,
+	TOPIC_TITLE_MAX_LENGTH,
+	TopicSchema,
 	UserSchema,
 	WORK_ITEM_STATUSES,
 	type WorkItem,
@@ -48,6 +53,7 @@ export const ERROR_CODES = {
 	PAIRING_CODE_INVALID: "PAIRING_CODE_INVALID",
 	ADAPTER_UNAVAILABLE: "ADAPTER_UNAVAILABLE",
 	TASK_ENDED: "TASK_ENDED",
+	TASK_IN_PROGRESS: "TASK_IN_PROGRESS",
 	INTERNAL: "INTERNAL",
 } as const;
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -115,6 +121,10 @@ export const ConversationSummarySchema = z.object({
 	unread: z.number().int(),
 	/** 我在该会话里已读到的 seq。 */
 	lastReadSeq: z.number().int().optional(),
+	/** 最近有活动的话题（会话列表的一行里显示它的名字）。 */
+	lastTopic: z
+		.object({ id: z.uuid(), title: z.string(), isMain: z.boolean() })
+		.optional(),
 });
 export type ConversationSummary = z.infer<typeof ConversationSummarySchema>;
 
@@ -155,6 +165,8 @@ export const EVENTS_PAGE_MAX = 200;
 export const EventsQuerySchema = z.object({
 	after: z.coerce.number().int().min(0).default(0),
 	limit: z.coerce.number().int().min(1).max(EVENTS_PAGE_MAX).default(100),
+	/** 只取某个话题的事件；缺省为主线。 */
+	topicId: z.uuid().optional(),
 });
 export type EventsQuery = z.infer<typeof EventsQuerySchema>;
 
@@ -169,8 +181,13 @@ export const PostMessageRequestSchema = z.object({
 		.max(MESSAGE_MAX_LENGTH)
 		.refine((t) => t.trim().length > 0, "消息不能为空"),
 	mentions: z.array(z.uuid()).max(50).optional(),
-	/** 仅在两个真人的私聊中有效：这条消息请对方的分身回答。 */
+	/**
+	 * 这条消息请分身回答：两个真人的私聊里指向对方的分身；群聊里指向被 @ 的人的分身
+	 * （群聊里没有 @ 任何人时 400）。
+	 */
 	askTwin: z.boolean().optional(),
+	/** 发在哪个话题；缺省为主线。 */
+	topicId: z.uuid().optional(),
 });
 export type PostMessageRequest = z.infer<typeof PostMessageRequestSchema>;
 
@@ -183,6 +200,12 @@ export const AddMemberRequestSchema = z.object({
 	principalId: z.uuid(),
 });
 export type AddMemberRequest = z.infer<typeof AddMemberRequestSchema>;
+
+/** `POST /api/conversations/:id/stop` 的查询参数：只停某个话题；缺省停整个会话。 */
+export const StopQuerySchema = z.object({
+	topicId: z.uuid().optional(),
+});
+export type StopQuery = z.infer<typeof StopQuerySchema>;
 
 export const MarkReadRequestSchema = z.object({
 	seq: z.number().int().min(0),
@@ -275,6 +298,8 @@ export const CreateExternalAgentRequestSchema = z.object({
 	/** 绝对路径，或相对设备工作目录的路径；必须在设备工作目录之内。 */
 	workspace: z.string().trim().min(1).max(WORKSPACE_PATH_MAX_LENGTH),
 	description: z.string().trim().max(AGENT_DESCRIPTION_MAX_LENGTH).optional(),
+	/** 选用不经审批、不限工作目录的适配器（pi、Hermes）时，本人须勾选确认。 */
+	acknowledgeUnsupervised: z.boolean().optional(),
 });
 
 export const CreateAgentRequestSchema = z.union([
@@ -339,7 +364,7 @@ export const TaskLogResponseSchema = z.object({
 });
 export type TaskLogResponse = z.infer<typeof TaskLogResponseSchema>;
 
-/** "新任务"：在与外部助手的私聊里强制开一个新任务（当前未结束的任务随之完成）。 */
+/** "新任务"：在与自己代理的私聊里开一个任务话题，目标作为本人的第一条消息发出。 */
 export const CreateTaskRequestSchema = z.object({
 	conversationId: z.uuid(),
 	goal: z
@@ -348,6 +373,89 @@ export const CreateTaskRequestSchema = z.object({
 		.refine((t) => t.trim().length > 0, "任务不能为空"),
 });
 export type CreateTaskRequest = z.infer<typeof CreateTaskRequestSchema>;
+
+// ─────────────────────────── 话题 ───────────────────────────
+
+const TopicTitleSchema = z.string().trim().min(1).max(TOPIC_TITLE_MAX_LENGTH);
+
+export const TopicListResponseSchema = z.object({
+	items: z.array(TopicSchema),
+});
+export type TopicListResponse = z.infer<typeof TopicListResponseSchema>;
+
+export const CreateTopicRequestSchema = z.object({ title: TopicTitleSchema });
+export type CreateTopicRequest = z.infer<typeof CreateTopicRequestSchema>;
+
+export const UpdateTopicRequestSchema = z.object({
+	title: TopicTitleSchema.optional(),
+	archived: z.boolean().optional(),
+});
+export type UpdateTopicRequest = z.infer<typeof UpdateTopicRequestSchema>;
+
+export const TopicResponseSchema = z.object({ topic: TopicSchema });
+export type TopicResponse = z.infer<typeof TopicResponseSchema>;
+
+/** "转为任务"：目标缺省取该话题里本人最后一条消息；给了目标则作为本人的消息发出。 */
+export const TopicToTaskRequestSchema = z.object({
+	goal: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH).optional(),
+});
+export type TopicToTaskRequest = z.infer<typeof TopicToTaskRequestSchema>;
+
+/** "转成群聊"：以该话题为起点建新群（标题缺省为话题名）。 */
+export const TopicToGroupRequestSchema = z.object({
+	title: z.string().trim().min(1).max(GROUP_TITLE_MAX_LENGTH).optional(),
+	memberIds: z.array(z.uuid()).max(100),
+});
+export type TopicToGroupRequest = z.infer<typeof TopicToGroupRequestSchema>;
+
+/** 新群主线引用的原话题：只读的前置历史。 */
+export const TopicSourceResponseSchema = z.object({
+	topic: TopicSchema,
+	/** 原话题所在会话的称呼（群名，或"某某与某某的私聊"）。 */
+	conversationLabel: z.string(),
+	members: z.array(PrincipalSchema),
+	events: z.array(EventSchema),
+});
+export type TopicSourceResponse = z.infer<typeof TopicSourceResponseSchema>;
+
+// ─────────────────────────── 运行记录 ───────────────────────────
+
+export const RunsQuerySchema = z.object({
+	agentId: z.uuid().optional(),
+	topicId: z.uuid().optional(),
+});
+export type RunsQuery = z.infer<typeof RunsQuerySchema>;
+
+export const RunListResponseSchema = z.object({ items: z.array(RunSchema) });
+export type RunListResponse = z.infer<typeof RunListResponseSchema>;
+
+export const RunResponseSchema = z.object({
+	run: RunSchema,
+	logs: z.array(RunLogSchema),
+	usage: z.object({
+		requests: z.number().int(),
+		inputTokens: z.number().int(),
+		outputTokens: z.number().int(),
+		costMicroUsd: z.number().int(),
+	}),
+});
+export type RunResponse = z.infer<typeof RunResponseSchema>;
+
+// ─────────────────────────── 租户设置 ───────────────────────────
+
+export const TenantSettingsResponseSchema = z.object({
+	settings: TenantSettingsSchema,
+});
+export type TenantSettingsResponse = z.infer<
+	typeof TenantSettingsResponseSchema
+>;
+
+export const UpdateTenantSettingsRequestSchema = z.object({
+	allowUnsupervisedAdapters: z.boolean().optional(),
+});
+export type UpdateTenantSettingsRequest = z.infer<
+	typeof UpdateTenantSettingsRequestSchema
+>;
 
 // ─────────────────────────── 设备 ───────────────────────────
 

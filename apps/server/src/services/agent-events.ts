@@ -9,6 +9,7 @@ import type { PrincipalRow, Scoped } from "@/db/scope";
 import { notFound } from "@/lib/errors";
 import { postAs, requireConversation } from "@/services/conversations";
 import { transactWithEvents } from "@/services/events";
+import { topicIn } from "@/services/topics";
 
 /** 取代理主体；不存在、跨租户或不是代理 → 404。 */
 export async function requireAgentPrincipal(
@@ -24,11 +25,14 @@ export async function requireAgentPrincipal(
 	return { ...row, ownerId: row.ownerId };
 }
 
+/** 代理留痕的位置：会话与其中的话题（缺省为主线）。 */
+export type Place = { conversationId: string; topicId?: string };
+
 /** 代理发一条消息（代理须是会话成员）。 */
 export async function postAgentMessage(
 	s: Scoped,
 	agentId: string,
-	conversationId: string,
+	place: Place,
 	text: string,
 	opts: { mentions?: string[]; at?: Date } = {},
 ): Promise<Event> {
@@ -36,8 +40,12 @@ export async function postAgentMessage(
 	return postAs(
 		s,
 		agent,
-		conversationId,
-		{ text, mentions: opts.mentions ?? [] },
+		place.conversationId,
+		{
+			text,
+			mentions: opts.mentions ?? [],
+			...(place.topicId ? { topicId: place.topicId } : {}),
+		},
 		{ onBehalfOfId: agent.ownerId, at: opts.at },
 	);
 }
@@ -46,15 +54,17 @@ export async function postAgentMessage(
 export async function recordAgentAction(
 	s: Scoped,
 	agentId: string,
-	conversationId: string,
+	place: Place,
 	action: { tool: string; summary: string; ok: boolean },
 	at?: Date,
 ): Promise<Event> {
 	const agent = await requireAgentPrincipal(s, agentId);
-	await requireConversation(s, conversationId, agent.id);
+	await requireConversation(s, place.conversationId, agent.id);
+	const topic = await topicIn(s, place.conversationId, place.topicId);
 	return transactWithEvents(s, (_tx, append) =>
 		append({
-			conversationId,
+			conversationId: place.conversationId,
+			topicId: topic.id,
 			actorId: agent.id,
 			onBehalfOfId: agent.ownerId,
 			type: "agent.action",

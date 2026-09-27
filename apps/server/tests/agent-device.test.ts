@@ -3,6 +3,7 @@
  * 先建审批待办，批准后执行、拒绝 / 超时 / 被新消息打断则不执行；设备离线立即失败；
  * 为他人办事时设备工具不可用（编造调用得到"无权限"且不建待办）。设备以假连接接入并自动应答。
  */
+import { randomUUID } from "node:crypto";
 import {
 	CreatePairingCodeResponseSchema,
 	type Event,
@@ -16,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { scheduler } from "@/agent/scheduler";
 import { runners, workItems } from "@/db/schema";
 import { scoped } from "@/db/scope";
+import { mainTopicOf } from "@/services/topics";
 import { requestApproval } from "@/services/work-items";
 import {
 	actions,
@@ -267,9 +269,12 @@ describe("为本人：写与执行先审批", () => {
 	});
 
 	it("10 分钟无人处理 → 过期（此处以短超时验证），待办作废并落 approval.resolved", async () => {
-		const { outcome } = await requestApproval(scoped(alice.me.tenant.id), {
+		const s = scoped(alice.me.tenant.id);
+		const { outcome } = await requestApproval(s, {
 			agentId: ops,
 			conversationId: dm,
+			topicId: (await mainTopicOf(s, dm)).id,
+			runId: randomUUID(),
 			runnerId,
 			runnerName: "Alice 的 Mac",
 			capability: "shell.exec",

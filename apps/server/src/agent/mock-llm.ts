@@ -1,6 +1,8 @@
 /**
  * 确定性的假模型（MOCK_LLM=1）：e2e 与测试依赖它，不出网。
  *
+ * 生成压缩检查点时：按固定格式列出被压缩的第一句、最后一句与条数（同样确定性）。
+ *
  * 按本次运行的触发文本决定行为，优先级：
  * 1. 本次运行已有工具结果 → `完成：<工具结果前 60 字>`，不再调工具；
  * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具；
@@ -152,11 +154,30 @@ function negotiationStep(n: NonNullable<RunTrigger["negotiation"]>) {
 	return { status: "agree", message: "同意", proposal: n.lastProposal };
 }
 
+const head = (text: string, n = 40) => Array.from(text).slice(0, n).join("");
+
+/** 检查点：被压缩的对话是最后一条 user 消息里以“【”开头的各行。 */
+function mockCheckpoint(messages: readonly ChatMessage[]): string {
+	const last = messages.findLast((m) => m.role === "user");
+	const lines = (last?.content ?? "")
+		.split("\n")
+		.filter((l) => l.startsWith("【"));
+	return [
+		`目标：${head(lines[0] ?? "（无）")}`,
+		`进展：压缩了 ${lines.length} 条，最后一条是 ${head(lines.at(-1) ?? "（无）")}`,
+		"决定：（无）",
+		"下一步：（无）",
+		"涉及文件：（无）",
+	].join("\n");
+}
+
 /** 纯函数：按优先级决定这一步说什么或调什么工具。 */
 export function mockDecide(
 	trigger: RunTrigger,
 	messages: readonly ChatMessage[],
 ): MockDecision {
+	if (trigger.checkpoint)
+		return { kind: "text", text: mockCheckpoint(messages) };
 	const lastTool = messages.findLast((m) => m.role === "tool");
 	if (lastTool) {
 		return {
@@ -237,6 +258,7 @@ export function createMockLlm(opts: MockOptions = {}): LlmClient {
 					agentId: req.meta.agentId,
 					onBehalfOfId: req.meta.onBehalfOfId,
 					conversationId: req.meta.conversationId,
+					runId: req.meta.runId,
 					provider: "mock",
 					model: "mock",
 					inputTokens: charCount(req.messages),

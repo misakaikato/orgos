@@ -29,14 +29,23 @@ import {
 	PostMessageResponseSchema,
 	ResetDemoResponseSchema,
 	type ResolveWorkItemRequest,
+	RunListResponseSchema,
 	RunnerListResponseSchema,
+	RunResponseSchema,
 	TaskListResponseSchema,
 	TaskLogResponseSchema,
 	TaskResponseSchema,
+	TenantSettingsResponseSchema,
+	TopicListResponseSchema,
+	TopicResponseSchema,
+	TopicSourceResponseSchema,
+	type TopicToGroupRequest,
 	type UpdateAgentRequest,
 	type UpdateNoteRequest,
 	type UpdateStatusRequest,
 	UpdateStatusResponseSchema,
+	type UpdateTenantSettingsRequest,
+	type UpdateTopicRequest,
 	UsageResponseSchema,
 	type WORK_ITEM_STATUSES,
 	WorkItemListResponseSchema,
@@ -142,11 +151,17 @@ export const api = {
 				.post("/api/conversations", { json: req })
 				.json(CreateConversationResponseSchema),
 		),
-	events: (id: string, after: number, limit = EVENTS_PAGE_MAX) =>
+	/** 某话题的事件；不给话题即主线。 */
+	events: (
+		id: string,
+		topicId: string | undefined,
+		after: number,
+		limit = EVENTS_PAGE_MAX,
+	) =>
 		run(() =>
 			http
 				.get(`/api/conversations/${id}/events`, {
-					searchParams: { after, limit },
+					searchParams: { after, limit, ...(topicId ? { topicId } : {}) },
 				})
 				.json(EventsResponseSchema),
 		),
@@ -160,8 +175,65 @@ export const api = {
 		noContent(http.post(`/api/conversations/${id}/members`, { json: req })),
 	markRead: (id: string, seq: number) =>
 		noContent(http.post(`/api/conversations/${id}/read`, { json: { seq } })),
-	/** 中止该会话里正在运行的代理。 */
-	stop: (id: string) => noContent(http.post(`/api/conversations/${id}/stop`)),
+	/** 退群或移出成员（人的分身随之一起退）。 */
+	removeMember: (id: string, principalId: string) =>
+		noContent(http.delete(`/api/conversations/${id}/members/${principalId}`)),
+	/** 中止会话里某个话题正在运行的代理。 */
+	stop: (id: string, topicId: string) =>
+		noContent(
+			http.post(`/api/conversations/${id}/stop`, { searchParams: { topicId } }),
+		),
+
+	topics: (id: string) =>
+		run(() =>
+			http.get(`/api/conversations/${id}/topics`).json(TopicListResponseSchema),
+		),
+	createTopic: (id: string, title: string) =>
+		run(() =>
+			http
+				.post(`/api/conversations/${id}/topics`, { json: { title } })
+				.json(TopicResponseSchema),
+		),
+	updateTopic: (id: string, req: UpdateTopicRequest) =>
+		run(() =>
+			http.patch(`/api/topics/${id}`, { json: req }).json(TopicResponseSchema),
+		),
+	topicToTask: (id: string, goal?: string) =>
+		run(() =>
+			http
+				.post(`/api/topics/${id}/to-task`, { json: goal ? { goal } : {} })
+				.json(TaskResponseSchema),
+		),
+	topicToGroup: (id: string, req: TopicToGroupRequest) =>
+		run(() =>
+			http
+				.post(`/api/topics/${id}/to-group`, { json: req })
+				.json(CreateConversationResponseSchema),
+		),
+	topicSource: (id: string) =>
+		run(() =>
+			http.get(`/api/topics/${id}/source`).json(TopicSourceResponseSchema),
+		),
+
+	runs: (query: { topicId?: string; agentId?: string }) =>
+		run(() =>
+			http
+				.get("/api/runs", { searchParams: query })
+				.json(RunListResponseSchema),
+		),
+	run: (id: string) =>
+		run(() => http.get(`/api/runs/${id}`).json(RunResponseSchema)),
+
+	tenantSettings: () =>
+		run(() =>
+			http.get("/api/tenant/settings").json(TenantSettingsResponseSchema),
+		),
+	updateTenantSettings: (req: UpdateTenantSettingsRequest) =>
+		run(() =>
+			http
+				.patch("/api/tenant/settings", { json: req })
+				.json(TenantSettingsResponseSchema),
+		),
 
 	agents: () =>
 		run(() => http.get("/api/agents").json(AgentListResponseSchema)),
@@ -228,7 +300,7 @@ export const api = {
 		run(() => http.post(`/api/tasks/${id}/complete`).json(TaskResponseSchema)),
 	cancelTask: (id: string) =>
 		run(() => http.post(`/api/tasks/${id}/cancel`).json(TaskResponseSchema)),
-	/** "新任务"：在与外部助手的私聊里强制开一个新任务。 */
+	/** "新任务"：在与自己代理的私聊里新开一个任务话题。 */
 	createTask: (req: CreateTaskRequest) =>
 		run(() => http.post("/api/tasks", { json: req }).json(TaskResponseSchema)),
 
@@ -259,15 +331,16 @@ export const devApi = {
 		),
 };
 
-/** 拉取 `after` 之后的全部事件（按页取到不足一页为止）。 */
+/** 拉取某话题（不给即主线）`after` 之后的全部事件（按页取到不足一页为止）。 */
 export async function fetchEventsAfter(
 	id: string,
+	topicId: string | undefined,
 	after: number,
 ): Promise<Event[]> {
 	const all: Event[] = [];
 	let cursor = after;
 	for (;;) {
-		const { items } = await api.events(id, cursor);
+		const { items } = await api.events(id, topicId, cursor);
 		all.push(...items);
 		const last = items.at(-1);
 		if (items.length < EVENTS_PAGE_MAX || !last?.seq) return all;

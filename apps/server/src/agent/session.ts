@@ -9,7 +9,6 @@ export const MAX_MODEL_CALLS = 8;
 export const MAX_ROUNDS = 4;
 export const MAX_HANDOFFS = 8;
 export const MAX_DELEGATE_DEPTH = 2;
-export const HISTORY_LIMIT = 40;
 
 export const LIMIT_SUMMARY = {
 	modelCalls: `单次运行的模型调用达到上限（${MAX_MODEL_CALLS} 次），已停止`,

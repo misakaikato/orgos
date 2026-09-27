@@ -461,3 +461,83 @@ describe("上报进入代理的上下文", () => {
 		]);
 	});
 });
+
+describe("群聊里问分身", () => {
+	let group: string;
+	const post = (body: Record<string, unknown>) =>
+		bob.client.request("POST", `/api/conversations/${group}/messages`, body);
+	const twinReplies = async () =>
+		messagesBy(await eventsOf(bob.client, group), aliceTwin).length;
+
+	beforeAll(async () => {
+		await setStatus(alice, "available");
+		const res = await bob.client.request("POST", "/api/conversations", {
+			kind: "group",
+			title: "问分身群",
+			memberIds: [alice.me.principal.id],
+		});
+		expect(res.status).toBe(201);
+		group = ((await res.json()) as { conversation: { id: string } })
+			.conversation.id;
+	});
+
+	it("本人忙碌但没被点名：分身不开口", async () => {
+		await setStatus(alice, "busy");
+		await say(bob.client, group, "#note 预算");
+		expect(await twinReplies()).toBe(0);
+	});
+
+	it("@ 了本人且本人忙碌：分身为发言者回答", async () => {
+		await say(bob.client, group, "@alice #note 预算", {
+			mentions: [alice.me.principal.id],
+		});
+		const [reply] = messagesBy(await eventsOf(bob.client, group), aliceTwin);
+		expect(reply?.payload.text).toContain("不含税");
+		expect(reply?.payload.text).not.toContain("请假");
+		await setStatus(alice, "available");
+	});
+
+	it("@ 了本人且切到问分身：分身回答；只 @ 本人不问分身：不开口", async () => {
+		const before = await twinReplies();
+		await say(bob.client, group, "@alice #note 预算", {
+			mentions: [alice.me.principal.id],
+		});
+		expect(await twinReplies()).toBe(before);
+		await say(bob.client, group, "@alice #note 预算", {
+			mentions: [alice.me.principal.id],
+			askTwin: true,
+		});
+		expect(await twinReplies()).toBe(before + 1);
+	});
+
+	it("直接 @ 分身：分身为发言者回答", async () => {
+		const before = await twinReplies();
+		await say(bob.client, group, "#note 预算", { mentions: [aliceTwin] });
+		expect(await twinReplies()).toBe(before + 1);
+	});
+
+	it("本人在群里 @ 自己的分身：为本人回答（可检索私有记忆）；不 @ 时不触发", async () => {
+		const before = await twinReplies();
+		await say(alice.client, group, "#note 看牙", {
+			mentions: [bob.me.principal.id],
+		});
+		expect(await twinReplies()).toBe(before);
+		await say(alice.client, group, "#note 看牙", { mentions: [aliceTwin] });
+		const replies = messagesBy(await eventsOf(bob.client, group), aliceTwin);
+		expect(replies).toHaveLength(before + 1);
+		expect(replies.at(-1)?.payload.text).toContain("请假");
+	});
+
+	it("群里没有 @ 任何人（或只 @ 了代理）时问分身 → 400", async () => {
+		for (const body of [
+			{ text: "问一下", askTwin: true },
+			{ text: "问一下", askTwin: true, mentions: [aliceTwin] },
+		]) {
+			const res = await post(body);
+			expect(res.status).toBe(400);
+			expect(ErrorBodySchema.parse(await res.json()).error.code).toBe(
+				"BAD_REQUEST",
+			);
+		}
+	});
+});

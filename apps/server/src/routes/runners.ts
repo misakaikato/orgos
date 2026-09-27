@@ -11,13 +11,14 @@ import { parseJson } from "@/lib/http";
 import { upgradeWs } from "@/lib/ws-upgrade";
 import { type AppEnv, requireAuth, requireMember } from "@/middleware/auth";
 import { authenticateRunner, runnerWsEvents } from "@/realtime/runner-ws";
-import { externalTasks } from "@/services/external-tasks";
+import { externalSessions } from "@/services/external-sessions";
 import {
 	createPairingCode,
 	listRunners,
 	pairRunner,
 	revokeRunner,
 } from "@/services/runners";
+import { openTasksOnRunner } from "@/services/tasks";
 
 /**
  * 设备：配对码、配对（凭码，无需登录）、我的设备、吊销，以及 Runner 的 WS 入口。
@@ -53,7 +54,11 @@ export function registerRunnerRoutes(app: Hono<AppEnv>): void {
 		const s = c.get("scope");
 		const runnerId = c.req.param("id");
 		await revokeRunner(s, c.get("principal"), runnerId);
-		await externalTasks.onRunnerRevoked(s, runnerId);
+		await externalSessions.onRunnerRevoked(
+			s,
+			runnerId,
+			await openTasksOnRunner(s, runnerId),
+		);
 		return c.body(null, 204);
 	});
 

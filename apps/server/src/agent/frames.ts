@@ -16,7 +16,12 @@ export const silentFrames: RunFrames = {
 
 export function framesFor(
 	recipients: readonly string[],
-	ids: { conversationId: string; agentId: string; runId: string },
+	ids: {
+		conversationId: string;
+		topicId: string;
+		agentId: string;
+		runId: string;
+	},
 ): RunFrames {
 	return {
 		draft(delta) {

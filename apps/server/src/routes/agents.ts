@@ -20,15 +20,17 @@ import {
 	updateAgentProfile,
 } from "@/services/agents";
 import { openDm } from "@/services/conversations";
-import { externalTasks } from "@/services/external-tasks";
+import { externalSessions } from "@/services/external-sessions";
 import { usageByAgent } from "@/services/llm-requests";
 import { requireOwnRunner, toRunner } from "@/services/runners";
 import { openTasksOfAssignee } from "@/services/tasks";
+import { getTenantSettings } from "@/services/tenant-settings";
 
 /**
  * 我的代理组与用量。只能管理自己的代理：别人的 403，跨租户或不存在 404。
  * 助手只能绑定本人未吊销的设备（别人的、不存在的 404）。
  * 外部助手（kind=external）同样只能用本人未吊销的设备，适配器须是该设备上报可用的；
+ * 不经审批、不限工作目录的适配器（pi、Hermes）须租户开启且本人勾选确认；
  * 建好后随即建立本人与它的私聊，使它出现在会话列表里。
  */
 export function registerAgentRoutes(app: Hono<AppEnv>): void {
@@ -57,6 +59,7 @@ export function registerAgentRoutes(app: Hono<AppEnv>): void {
 		const agent = await createExternalAgent(s, me, runner, req, {
 			devMode: isDevMode(),
 			capabilities: toRunner(runner).capabilities,
+			settings: await getTenantSettings(s),
 		});
 		await openDm(s, me, agent.principal.id);
 		const body: AgentResponse = { agent };
@@ -94,8 +97,9 @@ export function registerAgentRoutes(app: Hono<AppEnv>): void {
 		const agent = await requireOwnAgent(s, me, c.req.param("id"));
 		await retireAgent(s, me, agent.principal.id);
 		if (isExternalAgent(agent))
-			await externalTasks.onAgentRetired(
+			await externalSessions.onAgentRetired(
 				s,
+				agent.principal.id,
 				await openTasksOfAssignee(s, agent.principal.id),
 			);
 		return c.body(null, 204);

@@ -8,7 +8,9 @@ import {
 	type CreateSpecialistRequest,
 	ERROR_CODES,
 	findAdapter,
+	isUnsupervisedAdapter,
 	type Principal,
+	type TenantSettings,
 } from "@orgos/protocol";
 import { and, eq, inArray } from "drizzle-orm";
 import { agents, principals } from "@/db/schema";
@@ -274,7 +276,8 @@ function adapterUnavailable(message: string): AppError {
 /**
  * 接入一位外部助手（role=specialist、engine=acp）：设备须是本人未吊销的（调用方已校验），
  * 适配器须在该设备 hello 上报的可用列表里（测试适配器另须开发模式），工作目录须在设备工作目录内。
- * handle 冲突 → 409。
+ * 不经审批、不限工作目录的适配器（pi、Hermes）：租户未开启 → 400 ADAPTER_UNAVAILABLE；
+ * 本人没有勾选确认 → 400。handle 冲突 → 409。
  */
 export async function createExternalAgent(
 	s: Scoped,
@@ -287,11 +290,20 @@ export async function createExternalAgent(
 			name: string;
 			adapters?: { id: string; available: boolean }[];
 		}[];
+		settings: TenantSettings;
 	},
 ): Promise<Agent> {
 	const def = findAdapter(req.adapter);
 	if (!def || (def.devOnly && !opts.devMode))
 		throw adapterUnavailable(`没有叫 ${req.adapter} 的适配器`);
+	if (isUnsupervisedAdapter(def)) {
+		if (!opts.settings.allowUnsupervisedAdapters)
+			throw adapterUnavailable(
+				`${def.label} 不经审批、不限工作目录，组织尚未允许使用`,
+			);
+		if (!req.acknowledgeUnsupervised)
+			throw badRequest(`请先确认：${def.label} 不经审批、不限工作目录`);
+	}
 	const acp = opts.capabilities.find((c) => c.name === AGENT_ACP_CAPABILITY);
 	if (!acp?.adapters?.some((a) => a.id === def.id && a.available))
 		throw adapterUnavailable(`“${runner.name}”上没有可用的 ${def.label}`);

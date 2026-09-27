@@ -96,6 +96,7 @@ function request(extra: Partial<LlmRequest> = {}): LlmRequest {
 			agentId,
 			onBehalfOfId: alice.me.principal.id,
 			conversationId: null,
+			runId: null,
 			model: "deepseek-v4-flash",
 		},
 		trigger: {

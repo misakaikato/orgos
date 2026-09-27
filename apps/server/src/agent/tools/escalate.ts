@@ -45,6 +45,7 @@ export const escalateTool = makeTool({
 		await escalateToOwner(scope.s, {
 			agentId: scope.agent.principal.id,
 			conversationId: scope.conversation.id,
+			topicId: scope.conversation.topicId,
 			requesterId: scope.actingFor.principalId,
 			question,
 			title: titleOf(requesterName, question),

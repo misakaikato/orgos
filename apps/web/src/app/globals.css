@@ -71,6 +71,7 @@
 
 	--spacing-rail: var(--rail-w);
 	--spacing-list: var(--list-w);
+	--spacing-topics: var(--topics-w);
 	--spacing-inspector: var(--inspector-w);
 	--spacing-card: var(--card-w);
 	--spacing-row: var(--row-h);

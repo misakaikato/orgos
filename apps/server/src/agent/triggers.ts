@@ -4,8 +4,9 @@
  * - 本人与自己某个代理的私聊：本人发言时该代理总是回应，为本人办事。
  * - 两个真人的私聊（含双方分身）：对方 @ 了我的分身、切到"问分身"发送、或我忙碌 / 离开时，
  *   我的分身为对方办事；我自己的消息永远不触发我的分身；否则谁也不触发。
- * - 群聊：`agentsToTrigger` 只返回被 @ 的代理；`groupRound` 给出一轮的完整发言顺序
- *   （被 @ 的在前，其余按入群顺序），轮次的推进由调度器实现。
+ * - 群聊：`agentsToTrigger` 只返回被点到的代理（被 @ 的代理；某人的分身在被 @、或本人被 @ 且
+ *   切到"问分身"或忙碌 / 离开时开口；本人 @ 自己的分身时为本人办事，其余为发言者办事）；`groupRound` 给出一轮的完整发言顺序
+ *   （被点到的在前，其余非分身代理按入群顺序），轮次的推进由调度器实现。
  * - 代理发的消息、协商会话：不触发任何代理（协商由协商流程自己驱动）。
  */
 import type {
@@ -157,18 +158,57 @@ export function agentsToTrigger(
 				: [];
 		}
 		case "group":
-			return members
-				.filter((m) => m.kind === "agent" && msg.mentions.includes(m.id))
-				.map((agent) => ({
-					agentId: agent.id,
-					actingFor: actingFor(agent, actor.id),
-					reason: "mentioned",
-				}));
+			return groupTriggers(conv, members, msg).map(({ agent, reason }) => ({
+				agentId: agent.id,
+				actingFor: actingFor(agent, actor.id),
+				reason,
+			}));
 	}
 }
 
 /**
- * 群聊一轮的发言顺序（假设 5）：被 @ 的代理按 @ 的先后在前，其余代理按成员顺序（入群顺序）。
+ * 群聊里某人 P 的分身 T 何时开口：消息 @ 了 T（P 自己 @ 时为本人办事，否则为发言者）；
+ * 或 @ 了 P 本人且切到"问分身"；或 @ 了 P 本人且 P 忙碌 / 离开（后两种为发言者办事）。
+ * P 没被点名时 T 不开口；P 自己没 @ T 的消息不触发 T。
+ */
+function twinTrigger(
+	conv: TriggerConversation,
+	twin: TriggerMember,
+	msg: TriggerMessage,
+): TriggerReason | null {
+	if (msg.mentions.includes(twin.id)) return "mentioned";
+	if (twin.ownerId === msg.actorId) return null;
+	if (!twin.ownerId || !msg.mentions.includes(twin.ownerId)) return null;
+	if (msg.askTwin) return "ask_twin";
+	const owner = conv.members.find((m) => m.id === twin.ownerId);
+	return owner?.status && UNAVAILABLE.has(owner.status)
+		? "owner_unavailable"
+		: null;
+}
+
+/** 群聊里被点到的代理：被 @ 的代理与按 `twinTrigger` 开口的分身，按 @ 的先后。 */
+function groupTriggers(
+	conv: TriggerConversation,
+	members: readonly TriggerMember[],
+	msg: TriggerMessage,
+): { agent: TriggerMember; reason: TriggerReason }[] {
+	const out: { agent: TriggerMember; reason: TriggerReason }[] = [];
+	for (const id of msg.mentions) {
+		for (const agent of members) {
+			if (agent.kind !== "agent" || out.some((x) => x.agent.id === agent.id))
+				continue;
+			const front = agent.agentRole === "front";
+			if (agent.id !== id && !(front && agent.ownerId === id)) continue;
+			const reason = front ? twinTrigger(conv, agent, msg) : "mentioned";
+			if (reason) out.push({ agent, reason });
+		}
+	}
+	return out;
+}
+
+/**
+ * 群聊一轮的发言顺序（假设 5）：被点到的代理（被 @ 的代理、按 `twinTrigger` 开口的分身）按 @ 的先后在前，
+ * 其余非分身代理按成员顺序（入群顺序）；分身只在被点到时参与。
  * 只有人发的消息开启一轮；每个代理为发消息的人办事（是自己的本人则为本人）。
  */
 export function groupRound(
@@ -179,16 +219,18 @@ export function groupRound(
 	const members = participants(conv);
 	const actor = members.find((m) => m.id === msg.actorId);
 	if (actor?.kind !== "human") return [];
-	const agents = members.filter((m) => m.kind === "agent");
-	const mentioned = msg.mentions.flatMap((id) =>
-		agents.filter((a) => a.id === id),
+	const called = groupTriggers(conv, members, msg);
+	const others = members.filter(
+		(m) =>
+			m.kind === "agent" &&
+			m.agentRole !== "front" &&
+			!called.some((c) => c.agent.id === m.id),
 	);
-	const others = agents.filter((a) => !msg.mentions.includes(a.id));
 	return [
-		...mentioned.map((a) => ({
-			agentId: a.id,
-			actingFor: actingFor(a, actor.id),
-			reason: "mentioned" as const,
+		...called.map(({ agent, reason }) => ({
+			agentId: agent.id,
+			actingFor: actingFor(agent, actor.id),
+			reason,
 		})),
 		...others.map((a) => ({
 			agentId: a.id,

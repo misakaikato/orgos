@@ -1,7 +1,7 @@
 import {
 	CreateTaskRequestSchema,
-	isExternalAgent,
 	TASK_LOG_PAGE_MAX,
+	type Task,
 	type TaskListResponse,
 	TaskLogQuerySchema,
 	type TaskLogResponse,
@@ -9,36 +9,31 @@ import {
 	TasksQuerySchema,
 } from "@orgos/protocol";
 import type { Hono } from "hono";
+import { scheduler } from "@/agent/scheduler";
 import type { Scoped } from "@/db/scope";
-import { badRequest } from "@/lib/errors";
 import { parseJson, parseQuery } from "@/lib/http";
 import { type AppEnv, requireAuth, requireMember } from "@/middleware/auth";
-import { findAgent } from "@/services/agents";
-import {
-	memberPrincipals,
-	postMessage,
-	requireConversation,
-} from "@/services/conversations";
-import { externalTasks } from "@/services/external-tasks";
+import { requireConversation } from "@/services/conversations";
+import { externalSessions } from "@/services/external-sessions";
 import {
 	listTaskLogs,
 	listTasks,
-	requireOwnExternalTask,
+	requireOwnOpenTask,
+	requireTask,
 	requireVisibleTask,
 	taskAssignee,
+	transitionTask,
 } from "@/services/tasks";
+import { newTaskTopic } from "@/services/topic-moves";
 
-async function taskBody(
-	s: Scoped,
-	task: TaskResponse["task"],
-): Promise<TaskResponse> {
+async function taskBody(s: Scoped, task: Task): Promise<TaskResponse> {
 	const assignee = await taskAssignee(s, task);
 	return { task, ...(assignee ? { assignee } : {}) };
 }
 
 /**
- * 任务：交办所在会话的成员可以查看任务与过程；外部助手的任务只有它的本人能完成或停止；
- * "新任务"只在本人与自己外部助手的私聊里可用。看不到的一律 404。
+ * 任务：任务所在会话的成员与委托人可以查看任务与过程；只有执行者的本人能完成或停止；
+ * "新任务"只在本人与自己代理的私聊里可用（新开一个任务话题）。看不到的一律 404。
  */
 export function registerTaskRoutes(app: Hono<AppEnv>): void {
 	app.use("/api/tasks", requireAuth, requireMember);
@@ -61,29 +56,9 @@ export function registerTaskRoutes(app: Hono<AppEnv>): void {
 			req.conversationId,
 			me.id,
 		);
-		const others = [
-			...(await memberPrincipals(s, conversation.id)).values(),
-		].filter((p) => p.id !== me.id);
-		const [only] = others;
-		const agent =
-			conversation.kind === "dm" && others.length === 1 && only
-				? await findAgent(s, { id: only.id })
-				: null;
-		if (
-			!agent ||
-			!isExternalAgent(agent) ||
-			agent.principal.ownerId !== me.id
-		) {
-			throw badRequest("只能在与自己外部助手的私聊里开新任务");
-		}
-		await postMessage(s, me, conversation.id, { text: req.goal });
-		const task = await externalTasks.startNew(
-			s,
-			agent,
-			conversation.id,
-			me.id,
-			req.goal,
-		);
+		const { task, posted } = await newTaskTopic(s, me, conversation, req.goal);
+		if (posted.type === "message.posted")
+			void scheduler.onHumanMessage(s, posted);
 		return c.json(await taskBody(s, task), 201);
 	});
 
@@ -111,23 +86,33 @@ export function registerTaskRoutes(app: Hono<AppEnv>): void {
 		return c.json(body);
 	});
 
+	/** 完成：任务结束，话题保留、可以接着聊。 */
 	app.post("/api/tasks/:id/complete", async (c) => {
 		const s = c.get("scope");
-		const task = await requireOwnExternalTask(
+		const task = await requireOwnOpenTask(
 			s,
 			c.get("principal"),
 			c.req.param("id"),
 		);
-		return c.json(await taskBody(s, await externalTasks.complete(s, task)));
+		const done =
+			(await transitionTask(s, task.id, "completed")) ??
+			(await requireTask(s, task.id));
+		return c.json(await taskBody(s, done));
 	});
 
+	/** 停止：任务取消，并打断任务话题里正在进行的这一轮。 */
 	app.post("/api/tasks/:id/cancel", async (c) => {
 		const s = c.get("scope");
-		const task = await requireOwnExternalTask(
+		const task = await requireOwnOpenTask(
 			s,
 			c.get("principal"),
 			c.req.param("id"),
 		);
-		return c.json(await taskBody(s, await externalTasks.cancel(s, task)));
+		const done =
+			(await transitionTask(s, task.id, "canceled", { summary: "已停止" })) ??
+			(await requireTask(s, task.id));
+		scheduler.stop(task.conversationId, task.topicId);
+		externalSessions.interrupt(task.conversationId, task.topicId);
+		return c.json(await taskBody(s, done));
 	});
 }

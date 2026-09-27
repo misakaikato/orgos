@@ -16,6 +16,9 @@ import type {
 	ResolveWorkItemRequest,
 	Runner,
 	Task,
+	TenantSettings,
+	Topic,
+	TopicToGroupRequest,
 	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
@@ -32,6 +35,7 @@ import {
 	mergeEvents,
 	reconcileRead,
 } from "@/lib/events";
+import { maxSeqIn, upsertTopic, withTaskState } from "@/lib/topics";
 
 export type SessionStatus =
 	| "loading"
@@ -51,8 +55,15 @@ export type State = {
 	me: MeResponse | null;
 	directory: Person[];
 	conversations: ConversationSummary[];
+	/** 已加载的事件，按会话（含该会话已加载的各话题），按 seq 升序。 */
 	events: Record<string, Event[]>;
+	/** 各话题事件的加载状态，按话题 id。 */
 	eventsStatus: Record<string, LoadStatus>;
+	/** 会话的话题（主线在前），按会话。 */
+	topics: Record<string, Topic[]>;
+	topicsStatus: Record<string, LoadStatus>;
+	/** 各话题我已看到的最大 seq（话题栏的未读点）。 */
+	topicSeen: Record<string, number>;
 	/** 已上报给服务端的已读位置。 */
 	reportedRead: Record<string, number>;
 	/** 正在查看且停在底部的会话：新消息直接算已读。 */
@@ -69,6 +80,8 @@ export type State = {
 	/** 已加载的任务（卡片与输入框上方的任务条读取），按任务 id。 */
 	tasks: Record<string, TaskView>;
 	tasksStatus: Record<string, LoadStatus>;
+	/** 租户设置（null = 还没加载过）。 */
+	tenantSettings: TenantSettings | null;
 };
 
 const initialState: State = {
@@ -79,6 +92,9 @@ const initialState: State = {
 	conversations: [],
 	events: {},
 	eventsStatus: {},
+	topics: {},
+	topicsStatus: {},
+	topicSeen: {},
 	reportedRead: {},
 	activeId: null,
 	connection: "connecting",
@@ -89,6 +105,7 @@ const initialState: State = {
 	runnersStatus: null,
 	tasks: {},
 	tasksStatus: {},
+	tenantSettings: null,
 };
 
 let state = initialState;
@@ -193,33 +210,138 @@ export async function refreshConversations(): Promise<void> {
 	applyConversationList(list.items);
 }
 
-// ─────────────────────────── 事件 ───────────────────────────
+// ─────────────────────────── 话题 ───────────────────────────
 
-export async function loadEvents(conversationId: string): Promise<void> {
+export async function loadTopics(conversationId: string): Promise<void> {
 	set((s) => ({
-		eventsStatus: { ...s.eventsStatus, [conversationId]: "loading" },
+		topicsStatus: {
+			...s.topicsStatus,
+			[conversationId]: s.topics[conversationId] ? "ready" : "loading",
+		},
 	}));
 	try {
-		const items = await fetchEventsAfter(conversationId, 0);
+		const { items } = await api.topics(conversationId);
+		set((s) => ({
+			topics: { ...s.topics, [conversationId]: items },
+			topicsStatus: { ...s.topicsStatus, [conversationId]: "ready" },
+		}));
+	} catch {
+		set((s) => ({
+			topicsStatus: {
+				...s.topicsStatus,
+				[conversationId]: s.topics[conversationId] ? "ready" : "error",
+			},
+		}));
+	}
+}
+
+/** 首次进入会话时加载话题；已加载或正在加载则跳过。 */
+export function ensureTopics(conversationId: string): void {
+	const status = state.topicsStatus[conversationId];
+	if (status === "ready" || status === "loading") return;
+	void loadTopics(conversationId);
+}
+
+/** 话题新建或变化（WS 推送或操作的返回）：并入已加载的话题列表。 */
+export function applyTopic(topic: Topic): void {
+	set((s) => {
+		const list = s.topics[topic.conversationId];
+		if (!list) return {};
+		return {
+			topics: { ...s.topics, [topic.conversationId]: upsertTopic(list, topic) },
+		};
+	});
+}
+
+export async function createTopic(
+	conversationId: string,
+	title: string,
+): Promise<Topic> {
+	const { topic } = await api.createTopic(conversationId, title);
+	applyTopic(topic);
+	return topic;
+}
+
+export async function renameTopic(id: string, title: string): Promise<void> {
+	const { topic } = await api.updateTopic(id, { title });
+	applyTopic(topic);
+}
+
+export async function archiveTopic(id: string): Promise<void> {
+	const { topic } = await api.updateTopic(id, { archived: true });
+	applyTopic(topic);
+}
+
+/** "转为任务"：给了目标时它作为我的消息发出，代理随即开始。 */
+export async function topicToTask(
+	conversationId: string,
+	topicId: string,
+	goal?: string,
+): Promise<void> {
+	const { task, assignee } = await api.topicToTask(topicId, goal);
+	applyTask(task, assignee);
+	await Promise.all([
+		loadTopics(conversationId),
+		catchUp(conversationId, topicId),
+	]);
+}
+
+/** "转成群聊"：返回新群的 id。 */
+export async function topicToGroup(
+	conversationId: string,
+	topicId: string,
+	req: TopicToGroupRequest,
+): Promise<string> {
+	const { conversation } = await api.topicToGroup(topicId, req);
+	await Promise.all([
+		refreshConversations(),
+		loadTopics(conversationId),
+		catchUp(conversationId, topicId),
+	]);
+	return conversation.id;
+}
+
+/** 记下我在某话题已看到的位置（只前进）。 */
+export function markTopicSeen(topicId: string, seq: number): void {
+	if (seq <= (state.topicSeen[topicId] ?? 0)) return;
+	set((s) => ({ topicSeen: { ...s.topicSeen, [topicId]: seq } }));
+}
+
+// ─────────────────────────── 事件 ───────────────────────────
+
+/**
+ * 加载某话题的事件（并入该会话已加载的事件）。不给话题即主线——协商会话只有主线，
+ * 协商卡片按会话 id 读取它的全部事件。加载状态按话题 id（不给时按会话 id）记。
+ */
+export async function loadEvents(
+	conversationId: string,
+	topicId?: string,
+): Promise<void> {
+	const key = topicId ?? conversationId;
+	set((s) => ({
+		eventsStatus: { ...s.eventsStatus, [key]: "loading" },
+	}));
+	try {
+		const items = await fetchEventsAfter(conversationId, topicId, 0);
 		set((s) => ({
 			events: {
 				...s.events,
 				[conversationId]: mergeEvents(s.events[conversationId] ?? [], items),
 			},
-			eventsStatus: { ...s.eventsStatus, [conversationId]: "ready" },
+			eventsStatus: { ...s.eventsStatus, [key]: "ready" },
 		}));
 	} catch {
 		set((s) => ({
-			eventsStatus: { ...s.eventsStatus, [conversationId]: "error" },
+			eventsStatus: { ...s.eventsStatus, [key]: "error" },
 		}));
 	}
 }
 
-/** 首次进入会话时加载；已加载或正在加载则跳过。 */
-export function ensureEvents(conversationId: string): void {
-	const status = state.eventsStatus[conversationId];
+/** 首次打开话题（或协商卡片）时加载事件；已加载或正在加载则跳过。 */
+export function ensureEvents(conversationId: string, topicId?: string): void {
+	const status = state.eventsStatus[topicId ?? conversationId];
 	if (status === "ready" || status === "loading") return;
-	void loadEvents(conversationId);
+	void loadEvents(conversationId, topicId);
 }
 
 function mergeInto(conversationId: string, incoming: Event[]): void {
@@ -231,6 +353,16 @@ function mergeInto(conversationId: string, incoming: Event[]): void {
 			? {}
 			: { events: { ...s.events, [conversationId]: merged } };
 	});
+}
+
+/** 补读某个已加载话题在已知位置之后的事件。 */
+async function catchUp(conversationId: string, topicId: string): Promise<void> {
+	if (state.eventsStatus[topicId] !== "ready") return;
+	const after = maxSeqIn(state.events[conversationId] ?? [], topicId);
+	mergeInto(
+		conversationId,
+		await fetchEventsAfter(conversationId, topicId, after),
+	);
 }
 
 // ─────────────────────────── 待办 ───────────────────────────
@@ -280,15 +412,42 @@ export function applyEvent(event: Event): void {
 	const meId = state.me?.principal.id;
 	if (!cid || !meId) return;
 	mergeInto(cid, [event]);
+	const topicId = event.topicId;
+	if (topicId) {
+		set((s) => {
+			const list = s.topics[cid];
+			const topic = list?.find((t) => t.id === topicId);
+			if (!list) return {};
+			if (!topic) {
+				void loadTopics(cid);
+				return {};
+			}
+			return {
+				topics: {
+					...s.topics,
+					[cid]: upsertTopic(list, { ...topic, lastEventAt: event.createdAt }),
+				},
+			};
+		});
+	}
 	if (event.type === "message.posted" && event.onBehalfOfId) {
-		const activity = clearAgentActivity(state.activity, cid, event.actorId);
+		const activity = clearAgentActivity(
+			state.activity,
+			cid,
+			event.actorId,
+			event.topicId,
+		);
 		if (activity !== state.activity) set({ activity });
 	}
 	if (WORK_ITEM_EVENTS.has(event.type)) void loadWorkItems();
 	if (NEGOTIATION_EVENTS.has(event.type)) return;
 	const read = state.activeId === cid;
 	const next = applyEventToSummaries(state.conversations, event, meId, read);
-	if (next === null || event.type === "member.joined") {
+	if (
+		next === null ||
+		event.type === "member.joined" ||
+		event.type === "member.left"
+	) {
 		void refreshConversations();
 		return;
 	}
@@ -337,13 +496,23 @@ export async function resync(): Promise<void> {
 	void loadWorkItems();
 	if (state.runners) void loadRunners();
 	for (const id of Object.keys(state.tasks)) void loadTask(id);
-	const loaded = Object.entries(state.events);
-	await Promise.all(
-		loaded.map(async ([cid, list]) => {
-			const items = await fetchEventsAfter(cid, maxSeq(list));
-			mergeInto(cid, items);
-		}),
+	const loadedConversations = Object.keys(state.topics);
+	await Promise.all(loadedConversations.map((cid) => loadTopics(cid)));
+	// 按会话 id 加载的（协商会话）：补读主线。
+	const byConversation = Object.keys(state.events).filter(
+		(cid) => !state.topics[cid] && state.eventsStatus[cid] === "ready",
 	);
+	await Promise.all([
+		...loadedConversations.flatMap((cid) =>
+			(state.topics[cid] ?? []).map((t) => catchUp(cid, t.id)),
+		),
+		...byConversation.map(async (cid) =>
+			mergeInto(
+				cid,
+				await fetchEventsAfter(cid, undefined, maxSeq(state.events[cid] ?? [])),
+			),
+		),
+	]);
 }
 
 // ─────────────────────────── 任务 ───────────────────────────
@@ -375,17 +544,26 @@ export function ensureTask(id: string): void {
 	void loadTask(id);
 }
 
-/** 任务有变化（WS 推送或操作的返回）：并入已知的任务，保留执行者。 */
+/** 任务有变化（WS 推送或操作的返回）：并入已知的任务（保留执行者），并更新其话题的状态点。 */
 export function applyTask(task: Task, assignee?: Principal): void {
 	set((s) => {
 		const known = s.tasks[task.id];
 		if (known && known.task.updatedAt > task.updatedAt) return {};
+		const list = s.topics[task.conversationId];
 		return {
 			tasks: {
 				...s.tasks,
 				[task.id]: { task, assignee: assignee ?? known?.assignee },
 			},
 			tasksStatus: { ...s.tasksStatus, [task.id]: "ready" },
+			...(list
+				? {
+						topics: {
+							...s.topics,
+							[task.conversationId]: withTaskState(list, task),
+						},
+					}
+				: {}),
 		};
 	});
 }
@@ -400,18 +578,31 @@ export async function cancelTask(id: string): Promise<void> {
 	applyTask(task, assignee);
 }
 
-/** "新任务"：强制开一个新任务（这段话同时作为消息出现在会话里）。 */
+/** "新任务"：新开一个任务话题（目标作为我的第一条消息）；返回话题 id。 */
 export async function startNewTask(
 	conversationId: string,
 	goal: string,
-): Promise<void> {
+): Promise<string> {
 	const { task, assignee } = await api.createTask({ conversationId, goal });
+	await loadTopics(conversationId);
 	applyTask(task, assignee);
-	const items = await fetchEventsAfter(
-		conversationId,
-		maxSeq(state.events[conversationId] ?? []),
-	);
-	mergeInto(conversationId, items);
+	return task.topicId ?? "";
+}
+
+// ─────────────────────────── 租户设置 ───────────────────────────
+
+export async function loadTenantSettings(): Promise<void> {
+	const { settings } = await api.tenantSettings();
+	set({ tenantSettings: settings });
+}
+
+export async function setAllowUnsupervisedAdapters(
+	allow: boolean,
+): Promise<void> {
+	const { settings } = await api.updateTenantSettings({
+		allowUnsupervisedAdapters: allow,
+	});
+	set({ tenantSettings: settings });
 }
 
 // ─────────────────────────── 设备 ───────────────────────────
@@ -465,6 +656,7 @@ export async function revokeRunner(id: string): Promise<void> {
 
 export async function sendMessage(
 	conversationId: string,
+	topicId: string,
 	text: string,
 	mentions: string[],
 	askTwin = false,
@@ -472,6 +664,7 @@ export async function sendMessage(
 	const { event } = await api.postMessage(conversationId, {
 		text,
 		mentions,
+		topicId,
 		...(askTwin ? { askTwin } : {}),
 	});
 	applyEvent(event);
@@ -504,9 +697,12 @@ export async function resolveWorkItem(
 	applyWorkItem(workItem);
 }
 
-/** 中止会话里正在运行的代理。 */
-export async function stopAgents(conversationId: string): Promise<void> {
-	await api.stop(conversationId);
+/** 中止话题里正在运行的代理。 */
+export async function stopAgents(
+	conversationId: string,
+	topicId: string,
+): Promise<void> {
+	await api.stop(conversationId, topicId);
 }
 
 /** 代理组有变化（新建、改资料、删除）后刷新本人的代理列表。 */
@@ -571,5 +767,14 @@ export async function addMember(
 	principalId: string,
 ): Promise<void> {
 	await api.addMember(conversationId, { principalId });
+	await refreshConversations();
+}
+
+/** 退群，或移出我的助手 / （创建者）移出别人。 */
+export async function removeMember(
+	conversationId: string,
+	principalId: string,
+): Promise<void> {
+	await api.removeMember(conversationId, principalId);
 	await refreshConversations();
 }

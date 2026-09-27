@@ -2,7 +2,12 @@
  * 浏览器 WS 帧（仅服务端 → 浏览器）。发送一律走 REST。
  */
 import { z } from "zod";
-import { PRINCIPAL_STATUSES, TaskSchema, WorkItemSchema } from "./entities";
+import {
+	PRINCIPAL_STATUSES,
+	TaskSchema,
+	TopicSchema,
+	WorkItemSchema,
+} from "./entities";
 import { EventSchema } from "./events";
 import { RunnerSchema } from "./runner";
 
@@ -33,6 +38,8 @@ export const BrowserFrameSchema = z.discriminatedUnion("t", [
 		agentId: z.uuid(),
 		runId: z.string(),
 		delta: z.string(),
+		/** 运行所在的话题。 */
+		topicId: z.uuid().optional(),
 	}),
 	/** 代理的运行状态：thinking 时新一步开始（草稿清空），tool 时 label 说明在做什么，idle 表示本次运行结束。 */
 	z.object({
@@ -42,6 +49,8 @@ export const BrowserFrameSchema = z.discriminatedUnion("t", [
 		runId: z.string(),
 		state: z.enum(AGENT_RUN_STATES),
 		label: z.string().optional(),
+		/** 运行所在的话题。 */
+		topicId: z.uuid().optional(),
 	}),
 	/** 我的待办新增或变化。 */
 	z.object({ t: z.literal("work_item"), workItem: WorkItemSchema }),
@@ -49,6 +58,8 @@ export const BrowserFrameSchema = z.discriminatedUnion("t", [
 	z.object({ t: z.literal("runner"), runner: RunnerSchema }),
 	/** 任务有变化（进度、产出、状态）：推给交办所在会话的成员，不落库。 */
 	z.object({ t: z.literal("task"), task: TaskSchema }),
+	/** 我所在会话里的话题新建或变化（改名、归档、转为任务、转出）。 */
+	z.object({ t: z.literal("topic"), topic: TopicSchema }),
 ]);
 export type BrowserFrame = z.infer<typeof BrowserFrameSchema>;
 

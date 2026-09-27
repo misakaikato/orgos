@@ -8,7 +8,6 @@ import {
 	type TaskState,
 } from "@orgos/protocol";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { CardRow, MessageCard } from "@/components/conversation/cards";
 import {
 	AgentName,
 	fallbackPrincipal,
@@ -22,7 +21,7 @@ import { LoadingRows } from "@/components/ui/states";
 import { api } from "@/lib/api";
 import { cx } from "@/lib/cx";
 import { nameOf, TASK_STATE_LABEL } from "@/lib/describe";
-import { formatClock, formatStamp } from "@/lib/format";
+import { formatStamp } from "@/lib/format";
 import type { PrincipalMap } from "@/lib/principals";
 import {
 	cancelTask,
@@ -31,7 +30,6 @@ import {
 	loadTask,
 	useStore,
 } from "@/lib/store";
-import type { TaskRef } from "@/lib/thread";
 
 const STATE_TONE: Record<TaskState, "neutral" | "pending" | "good" | "danger"> =
 	{
@@ -53,7 +51,7 @@ function errorText(e: unknown): string {
 	return e instanceof Error ? e.message : "操作失败，请重试。";
 }
 
-/** 结束外部任务的两个按钮：完成（主）与停止（危险）。 */
+/** 结束任务的两个按钮：完成（主）与停止（危险）。 */
 function EndActions({ task }: { task: Task }) {
 	const [pending, setPending] = useState<"complete" | "cancel" | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -95,19 +93,18 @@ function EndActions({ task }: { task: Task }) {
 }
 
 /**
- * 任务卡片：执行者的团子（进行中 working）与名字、标题、状态胶囊、最新进度摘要、产出列表；
- * 外部任务的本人看到"完成 / 停止"；所有人都能"查看过程"（右侧抽屉按日志时间线展示）。
+ * 任务状态条（任务话题的消息区顶部）：执行者的团子（进行中 working）、任务名、状态胶囊、
+ * 最新进度或结果、产出；执行者的本人看到"完成 / 停止"；所有人都能"查看过程"（右侧抽屉按日志时间线展示）。
  */
-export function TaskCard({
-	task: ref,
+export function TaskStatusBar({
+	taskId,
 	map,
 	meId,
 }: {
-	task: TaskRef;
+	taskId: string;
 	map: PrincipalMap;
 	meId: string;
 }) {
-	const { taskId } = ref;
 	const view = useStore((s) => s.tasks[taskId]);
 	const status = useStore((s) => s.tasksStatus[taskId]);
 	const [drawer, setDrawer] = useState(false);
@@ -116,88 +113,71 @@ export function TaskCard({
 	}, [taskId]);
 
 	const task = view?.task;
+	if (!task)
+		return (
+			<div className="border-b border-line bg-bg px-4 py-3 text-13 text-muted md:px-5">
+				{status === "error" ? "任务读取失败。" : "正在读取任务…"}
+			</div>
+		);
 	const assignee: Pick<
 		Principal,
 		"id" | "kind" | "handle" | "displayName" | "ownerId"
 	> =
 		view?.assignee ??
-		map.get(ref.actorId) ??
-		fallbackPrincipal(ref.actorId, "agent");
-	const mine =
-		task?.engine === "acp" &&
-		assignee.ownerId === meId &&
-		!isTaskEnded(task.state);
-	const waitingMe =
-		task?.state === "awaiting_approval" && assignee.ownerId === meId;
-	const openDrawer = <Button onClick={() => setDrawer(true)}>查看过程</Button>;
+		map.get(task.assigneeId) ??
+		fallbackPrincipal(task.assigneeId, "agent");
+	const mine = assignee.ownerId === meId && !isTaskEnded(task.state);
 	return (
-		<CardRow actorId={ref.actorId} map={map}>
-			<MessageCard
-				pending={waitingMe}
-				title={task?.title ?? ref.title}
-				meta={formatClock(task?.updatedAt ?? ref.createdAt)}
-				actions={
-					task ? (
-						<>
-							{mine ? <EndActions task={task} /> : null}
-							{openDrawer}
-						</>
-					) : null
-				}
-			>
-				<div className="flex items-center gap-2">
+		<section
+			aria-label="任务状态"
+			className="shrink-0 border-b border-line bg-bg px-4 py-3 md:px-5"
+		>
+			<div className="mx-auto flex w-full max-w-thread flex-col gap-2">
+				<div className="flex min-w-0 items-center gap-2">
 					<Mascot
 						id={assignee.id}
 						size={24}
-						state={task?.state === "working" ? "working" : "idle"}
+						state={task.state === "working" ? "working" : "idle"}
 					/>
-					<span className="min-w-0 flex-1">
-						<AgentName agent={assignee} map={map} meId={meId} />
+					<span className="min-w-0 flex-1 truncate text-14 font-semibold text-ink">
+						{task.title}
 					</span>
-					{task ? <TaskStateTag state={task.state} /> : null}
+					<TaskStateTag state={task.state} />
 				</div>
-				{!task ? (
-					status === "error" ? (
-						<p className="mt-2 text-13 text-danger">任务读取失败。</p>
-					) : (
-						<p className="mt-2 text-13 text-muted">正在读取任务…</p>
-					)
-				) : (
-					<>
-						<p
-							className={cx(
-								"mt-2 line-clamp-6 text-14 whitespace-pre-wrap break-words",
-								task.resultSummary ? "text-ink" : "text-muted",
-							)}
-						>
-							{task.resultSummary ||
-								(task.state === "working" ? "正在处理…" : "还没有进展。")}
-						</p>
-						{waitingMe ? (
-							<p className="mt-2 text-12 text-muted">
-								它在等你批准，审批卡片在下面。
-							</p>
-						) : null}
-						{task.artifacts.length > 0 ? (
-							<div className="mt-3">
-								<p className="text-12 text-muted">产出</p>
-								<ul className="mt-1 flex flex-col gap-1">
-									{task.artifacts.map((a) => (
-										<li
-											key={`${a.kind}:${a.ref}`}
-											className="truncate text-13 text-ink"
-											title={a.ref}
-										>
-											{a.ref}
-										</li>
-									))}
-								</ul>
-							</div>
-						) : null}
-					</>
-				)}
-			</MessageCard>
-			{drawer && task ? (
+				<p
+					className={cx(
+						"line-clamp-3 text-13 whitespace-pre-wrap break-words",
+						task.resultSummary ? "text-ink" : "text-muted",
+					)}
+				>
+					{task.resultSummary ||
+						(task.state === "working" ? "正在处理…" : "还没有进展。")}
+				</p>
+				{task.state === "awaiting_approval" && assignee.ownerId === meId ? (
+					<p className="text-12 text-pending-ink">
+						它在等你批准，审批卡片在下面的消息里。
+					</p>
+				) : null}
+				{task.artifacts.length > 0 ? (
+					<p className="truncate text-12 text-muted">
+						产出：
+						{task.artifacts.map((a) => a.ref).join("、")}
+					</p>
+				) : null}
+				<div className="flex flex-wrap items-center gap-2">
+					<span className="flex min-w-0 flex-1 items-center gap-1.5 text-12 text-muted">
+						<span className="min-w-0 truncate">
+							<AgentName agent={assignee} map={map} meId={meId} />
+						</span>
+						<span className="shrink-0">
+							· {formatStamp(task.createdAt)} 交办
+						</span>
+					</span>
+					{mine ? <EndActions task={task} /> : null}
+					<Button onClick={() => setDrawer(true)}>查看过程</Button>
+				</div>
+			</div>
+			{drawer ? (
 				<TaskDrawer
 					task={task}
 					assignee={assignee}
@@ -206,7 +186,7 @@ export function TaskCard({
 					onClose={() => setDrawer(false)}
 				/>
 			) : null}
-		</CardRow>
+		</section>
 	);
 }
 
@@ -317,7 +297,7 @@ function LogEntry({
 				<div className="flex flex-col gap-1">
 					<p className="text-12 text-muted">
 						{by ? nameOf(by, map, meId) : "交办人"}
-						{log.seq === 1 ? "交办" : "追问"}
+						{log.seq === 1 ? "交办" : "说"}
 					</p>
 					<p className="rounded-row bg-accent-soft px-3 py-2 text-14 whitespace-pre-wrap break-words text-ink">
 						{str(p, "text")}

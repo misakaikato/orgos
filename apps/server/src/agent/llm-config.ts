@@ -14,6 +14,8 @@ const ModelSchema = z.object({
 	outputPerMtok: z.number().nonnegative().optional(),
 	cacheReadPerMtok: z.number().nonnegative().optional(),
 	cacheWritePerMtok: z.number().nonnegative().optional(),
+	/** 上下文窗口（token）；缺省按 DEFAULT_CONTEXT_WINDOW。 */
+	contextWindow: z.number().int().positive().optional(),
 });
 
 const ProviderSchema = z.object({
@@ -64,6 +66,16 @@ export function pricingFor(
 ): ModelPricing | null {
 	const m = provider.models.find((x) => x.id === modelId);
 	if (!m) return null;
-	const { id: _, ...pricing } = m;
+	const { id: _, contextWindow: __, ...pricing } = m;
 	return Object.values(pricing).some((v) => v !== undefined) ? pricing : null;
+}
+
+export const DEFAULT_CONTEXT_WINDOW = 128_000;
+
+/** 默认供应商下某模型的上下文窗口（token）。 */
+export function contextWindowFor(modelId: string): number {
+	return (
+		defaultProvider().models.find((m) => m.id === modelId)?.contextWindow ??
+		DEFAULT_CONTEXT_WINDOW
+	);
 }

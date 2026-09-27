@@ -1,12 +1,14 @@
 "use client";
 
 import type { ConversationSummary, Principal } from "@orgos/protocol";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AgentName } from "@/components/conversation/message-item";
 import { IconClose, IconPlus } from "@/components/icons";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, IconButton } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/states";
+import { appHref } from "@/lib/auth-mode";
 import {
 	agentRoleLine,
 	conversationAvatar,
@@ -15,7 +17,7 @@ import {
 	type PrincipalMap,
 	STATUS_LABEL,
 } from "@/lib/principals";
-import { addMember, useStore } from "@/lib/store";
+import { addMember, removeMember, useStore } from "@/lib/store";
 
 function useFronts(): ReadonlySet<string> {
 	const me = useStore((s) => s.me);
@@ -45,13 +47,18 @@ function MemberRow({
 	map,
 	meId,
 	fronts,
+	onRemove,
 }: {
 	p: Principal;
 	map: PrincipalMap;
 	meId: string;
 	fronts: ReadonlySet<string>;
+	/** 给了则行尾有"移出"（自己是"退出"）。 */
+	onRemove?: () => Promise<void>;
 }) {
 	const current = map.get(p.id) ?? p;
+	const [busy, setBusy] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 	return (
 		<li className="flex items-center gap-3 px-4 py-2">
 			<Avatar principal={current} size={40} showStatus />
@@ -67,11 +74,30 @@ function MemberRow({
 					</span>
 				)}
 				<span className="truncate text-12 text-muted">
-					{p.kind === "agent"
-						? agentRoleLine(p, map, meId, fronts)
-						: personLine(current)}
+					{error ??
+						(p.kind === "agent"
+							? agentRoleLine(p, map, meId, fronts)
+							: personLine(current))}
 				</span>
 			</span>
+			{onRemove ? (
+				<Button
+					variant="danger"
+					disabled={busy}
+					onClick={async () => {
+						setBusy(true);
+						setError(null);
+						try {
+							await onRemove();
+						} catch (e) {
+							setError(e instanceof Error ? e.message : "操作失败");
+							setBusy(false);
+						}
+					}}
+				>
+					{p.id === meId ? "退出" : "移出"}
+				</Button>
+			) : null}
 		</li>
 	);
 }
@@ -102,17 +128,16 @@ function Profile({
 	);
 }
 
-/** 可拉进群的人：同事、同事的分身、我自己的代理（他人的助手不可达）。 */
+/** 可拉进群的：同事（分身随本人入群）与我自己的内置助手（我的分身随我在群里、外部助手不进群）。 */
 function useCandidates(exclude: ReadonlySet<string>): Principal[] {
 	const me = useStore((s) => s.me);
 	const directory = useStore((s) => s.directory);
 	if (!me) return [];
 	const list: Principal[] = [];
-	for (const person of directory) {
-		if (person.principal.id !== me.principal.id)
-			list.push(person.principal, person.front);
-	}
-	for (const a of me.agents) list.push(a.principal);
+	for (const person of directory)
+		if (person.principal.id !== me.principal.id) list.push(person.principal);
+	for (const a of me.agents)
+		if (a.role !== "front" && a.engine !== "acp") list.push(a.principal);
 	return list.filter((p) => !exclude.has(p.id));
 }
 
@@ -175,7 +200,10 @@ function AddMemberPanel({
 	);
 }
 
-/** 检查器：私聊对象的名片、会话成员（真人私聊里双方分身单列一栏）；群聊可以加人。 */
+/**
+ * 检查器：私聊对象的名片、会话成员（只列人）、群里的助手与分身各一栏；
+ * 群聊可以加人（分身随本人入群）、退群与移出。
+ */
 export function Inspector({
 	item,
 	map,
@@ -188,18 +216,35 @@ export function Inspector({
 	onClose: () => void;
 }) {
 	const [adding, setAdding] = useState(false);
+	const router = useRouter();
 	const fronts = useFronts();
 	const profile =
 		item.conversation.kind === "dm" ? conversationAvatar(item, meId) : null;
 	const memberIds = new Set(item.members.map((m) => m.id));
 	const isGroup = item.conversation.kind === "group";
 	const pair = humanPair(item, meId);
-	const people = pair
-		? item.members.filter((p) => p.kind === "human")
-		: item.members;
+	const people =
+		pair || isGroup
+			? item.members.filter((p) => p.kind === "human")
+			: item.members;
 	const twins = pair
 		? [pair.peerTwin, pair.myTwin].filter((p): p is Principal => p !== null)
+		: isGroup
+			? item.members.filter((p) => p.kind === "agent" && fronts.has(p.id))
+			: [];
+	const helpers = isGroup
+		? item.members.filter((p) => p.kind === "agent" && !fronts.has(p.id))
 		: [];
+	const creator = item.conversation.createdBy === meId;
+	const removable = (p: Principal) =>
+		isGroup &&
+		(p.id === meId ||
+			(p.kind === "agent" && p.ownerId === meId) ||
+			(creator && p.kind === "human"));
+	const remove = (p: Principal) => async () => {
+		await removeMember(item.conversation.id, p.id);
+		if (p.id === meId) router.push(appHref("/"));
+	};
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<header className="flex h-header shrink-0 items-center justify-between gap-2 border-b border-line px-4">
@@ -217,9 +262,36 @@ export function Inspector({
 				</h3>
 				<ul className="pb-2">
 					{sortMembers(people, meId).map((p) => (
-						<MemberRow key={p.id} p={p} map={map} meId={meId} fronts={fronts} />
+						<MemberRow
+							key={p.id}
+							p={p}
+							map={map}
+							meId={meId}
+							fronts={fronts}
+							onRemove={removable(p) ? remove(p) : undefined}
+						/>
 					))}
 				</ul>
+				{helpers.length > 0 ? (
+					<>
+						<h3 className="px-4 pt-2 pb-1 text-13 font-semibold text-ink">
+							助手{" "}
+							<span className="font-normal text-muted">{helpers.length}</span>
+						</h3>
+						<ul className="pb-2">
+							{helpers.map((p) => (
+								<MemberRow
+									key={p.id}
+									p={p}
+									map={map}
+									meId={meId}
+									fronts={fronts}
+									onRemove={removable(p) ? remove(p) : undefined}
+								/>
+							))}
+						</ul>
+					</>
+				) : null}
 				{twins.length > 0 ? (
 					<>
 						<h3 className="px-4 pt-2 pb-1 text-13 font-semibold text-ink">
@@ -227,7 +299,9 @@ export function Inspector({
 							<span className="font-normal text-muted">{twins.length}</span>
 						</h3>
 						<p className="px-4 pb-1 text-12 text-muted">
-							平时不开口；被点名、切到“问分身”或本人忙碌时替本人回答。
+							{isGroup
+								? "随本人入群、退群；平时不开口，被点名或本人忙碌时替本人回答。"
+								: "平时不开口；被点名、切到“问分身”或本人忙碌时替本人回答。"}
 						</p>
 						<ul className="pb-2">
 							{twins.map((p) => (
