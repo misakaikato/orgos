@@ -5,7 +5,8 @@
  *   serve --workspace <目录> [--adapters …]         连上服务端，在工作目录里执行代理的请求
  *
  * Runner 执行服务端下发的四项设备能力，并以 ACP 驱动本机的外部助手（Claude Code、Codex 等）；
- * 它自己不调用任何模型、不持有任何模型密钥，外部助手用的是本人在这台设备上的登录。
+ * 它自己不调用任何模型、不持有任何厂商密钥。企业模式下外部助手经服务端的网关调用模型，
+ * 只在任务期间持有服务端签发的任务令牌；个人模式下用本人在这台设备上的登录。
  */
 import { arch, hostname, platform } from "node:os";
 import {
@@ -113,6 +114,7 @@ async function serve(workspaceArg: string, only?: string): Promise<void> {
 	};
 	const acp = new AcpManager({
 		runnerWorkspace: workspace,
+		server: config.server,
 		adapters,
 		send: sendAcp,
 	});

@@ -4,6 +4,7 @@
 export * from "./acp";
 export * from "./entities";
 export * from "./events";
+export * from "./models";
 export * from "./naming";
 export * from "./rest";
 export * from "./runner";

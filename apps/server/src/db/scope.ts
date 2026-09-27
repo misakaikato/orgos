@@ -5,7 +5,7 @@
  * 必须用 `where(table, ...)` 为涉及的每张业务表拼条件。路由与服务里不写不带租户条件的业务查询。
  *
  * 文件末尾的"身份解析"一节是仅有的例外：租户根表本身、登录后"我属于哪个租户"的查找，
- * 以及设备凭配对码或 token 认出自己属于哪个租户，天然发生在知道租户之前；
+ * 以及设备凭配对码或 token、外部 agent 凭任务令牌认出自己属于哪个租户，天然发生在知道租户之前；
  * 另有进程级的维护（启动时设备置离线、找出有未结束任务或进行中运行的租户），只返回租户 id，
  * 具体处理仍经 `scoped(tenantId)`。
  */
@@ -14,6 +14,7 @@ import { and, eq, gt, isNull, notInArray, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { db, type Executor } from "@/db";
 import {
+	gatewayTokens,
 	members,
 	pairingCodes,
 	principals,
@@ -254,4 +255,24 @@ export async function tenantsWithRunningRuns(
 		.from(runs)
 		.where(eq(runs.state, "running"));
 	return rows.map((r) => r.tenantId);
+}
+
+export type GatewayTokenRow = typeof gatewayTokens.$inferSelect;
+
+/** 按哈希找未吊销的任务令牌。 */
+export async function findActiveGatewayToken(
+	tokenHash: string,
+	executor: Executor = db,
+): Promise<GatewayTokenRow | undefined> {
+	const rows = await executor
+		.select()
+		.from(gatewayTokens)
+		.where(
+			and(
+				eq(gatewayTokens.tokenHash, tokenHash),
+				isNull(gatewayTokens.revokedAt),
+			),
+		)
+		.limit(1);
+	return rows[0];
 }

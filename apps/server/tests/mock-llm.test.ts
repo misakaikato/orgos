@@ -178,6 +178,7 @@ function request(text: string, extra: Partial<LlmRequest> = {}): LlmRequest {
 			onBehalfOfId: null,
 			conversationId: null,
 			runId: null,
+			taskId: null,
 			model: "deepseek-v4-flash",
 		},
 		trigger: trigger(text),

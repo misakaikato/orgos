@@ -12,7 +12,10 @@
  *   本人所选选项原样回给 agent，10 分钟未处理视为拒绝；运行结束时仍未处理的审批随之取消；
  * - 代理为本人交办：在本人与它的私聊里新开任务话题，在那里的 ACP 会话里交办，等这一轮结束；
  * - 话题归档、外部助手删除、设备吊销、闲置 24 小时：让 Runner 终止该话题的 agent 进程；
- *   Runner 重连时上报仍在跑的会话槽：认得的接回，认不得的让它终止。
+ *   Runner 重连时上报仍在跑的会话槽：认得的接回，认不得的让它终止；
+ * - 企业模式（租户默认）：起会话时为这个话题的外部会话签发任务令牌，随 acp_start 下发，agent 经网关
+ *   调用模型；令牌与会话同生命周期（会话关闭即吊销），话题里的任务开始或结束都不影响它，
+ *   调用记在请求发生时话题当前的任务名下。个人模式（组织允许时）不注入，agent 用设备上自己的登录。
  *
  * 进程内只保存会话槽（是否已在设备上起了会话、排队的消息、这一轮的文字与审批）；其余都在库里。
  */
@@ -21,6 +24,8 @@ import {
 	AGENT_ACP_CAPABILITY,
 	type Agent,
 	APPROVAL_TIMEOUT_MS,
+	effectiveExternalMode,
+	findAdapter,
 	isExternalAgent,
 	isTaskEnded,
 	type Task,
@@ -39,6 +44,10 @@ import { type RunnerHub, runnerHub } from "@/realtime/runner-hub";
 import { postAgentMessage } from "@/services/agent-events";
 import { findAgent } from "@/services/agents";
 import { memberPrincipals, openDm } from "@/services/conversations";
+import {
+	issueGatewayToken,
+	revokeTopicTokens,
+} from "@/services/gateway-tokens";
 import {
 	failDanglingRuns,
 	finishRun,
@@ -61,6 +70,7 @@ import {
 	waitForTask,
 	withArtifact,
 } from "@/services/tasks";
+import { getTenantSettings } from "@/services/tenant-settings";
 import { findTopic } from "@/services/topics";
 import {
 	type ApprovalDecision,
@@ -97,6 +107,7 @@ type Turn = {
 type Pending = { text: string; triggerRef: string; requesterId: string };
 
 type Slot = {
+	tenantId: string;
 	topicId: string;
 	conversationId: string;
 	agentId: string;
@@ -104,6 +115,8 @@ type Slot = {
 	runnerId: string;
 	adapter: string;
 	workspace: string;
+	/** 外部助手配置的模型引用（企业模式下注入给 agent）。 */
+	model: string;
 	/** 设备上已为这个话题起了 ACP 会话。 */
 	started: boolean;
 	queue: Pending[];
@@ -139,17 +152,19 @@ export class ExternalSessions {
 	}
 
 	/** 该话题的会话槽（没有则按外部助手的绑定建一个，尚未在设备上起会话）。 */
-	private slotFor(agent: Agent, place: Place): Slot | null {
+	private slotFor(s: Scoped, agent: Agent, place: Place): Slot | null {
 		const existing = this.slots.get(place.topicId);
 		if (existing) return existing;
 		if (!agent.runnerId || !agent.adapter || !agent.workspace) return null;
 		const slot: Slot = {
+			tenantId: s.tenantId,
 			...place,
 			agentId: agent.principal.id,
 			ownerId: agent.principal.ownerId ?? "",
 			runnerId: agent.runnerId,
 			adapter: agent.adapter,
 			workspace: agent.workspace,
+			model: agent.model,
 			started: false,
 			queue: [],
 			turn: null,
@@ -215,7 +230,7 @@ export class ExternalSessions {
 					isNull(runners.revokedAt),
 				)
 			: undefined;
-		const slot = runner ? this.slotFor(agent, place) : null;
+		const slot = runner ? this.slotFor(s, agent, place) : null;
 		if (slot) return slot;
 		const run = await startRun(s, {
 			agentId: agent.principal.id,
@@ -266,6 +281,23 @@ export class ExternalSessions {
 				text: pending.text,
 				byId: pending.requesterId,
 			});
+		let llm: { token: string; model: string } | undefined;
+		if (!slot.started) {
+			const gateway = await this.gatewayFor(s, slot);
+			if (typeof gateway === "string") {
+				await appendTaskLog(s, this.logOwner(turn), "error", {
+					message: gateway,
+				});
+				await finishRun(s, run.id, {
+					state: "failed",
+					summary: gateway,
+					taskSummary: gateway,
+				});
+				await postAgentMessage(s, slot.agentId, slot, gateway);
+				return;
+			}
+			llm = gateway ?? undefined;
+		}
 		const sent = slot.started
 			? this.hub.send(slot.runnerId, {
 					t: "acp_prompt",
@@ -278,8 +310,10 @@ export class ExternalSessions {
 					adapter: slot.adapter,
 					workspace: slot.workspace,
 					prompt: pending.text,
+					...(llm ? { llm } : {}),
 				});
 		if (!sent) {
+			if (llm) await revokeTopicTokens(s, slot.topicId);
 			await appendTaskLog(s, this.logOwner(turn), "error", {
 				message: OFFLINE_SUMMARY,
 			});
@@ -294,6 +328,50 @@ export class ExternalSessions {
 		slot.started = true;
 		slot.turn = turn;
 		turn.frames.status("tool", WORKING_LABEL);
+	}
+
+	/**
+	 * 起会话前决定注入什么：企业模式为这个外部会话签发任务令牌（适配器不支持企业模式 → 返回原因）；
+	 * 个人模式返回 null（不注入）。
+	 */
+	private async gatewayFor(
+		s: Scoped,
+		slot: Slot,
+	): Promise<{ token: string; model: string } | null | string> {
+		const mode = effectiveExternalMode(await getTenantSettings(s));
+		if (mode === "personal") return null;
+		const def = findAdapter(slot.adapter);
+		if (!def?.enterprise)
+			return `${def?.label ?? slot.adapter} 只支持个人模式，组织当前要求外部助手经企业模型网关（${def?.enterpriseNote ?? ""}）`;
+		const token = await issueGatewayToken(s, {
+			agentId: slot.agentId,
+			onBehalfOfId: slot.ownerId,
+			conversationId: slot.conversationId,
+			topicId: slot.topicId,
+			runnerId: slot.runnerId,
+		});
+		return { token, model: slot.model };
+	}
+
+	/** 设备上的会话已不在：下一段话起新会话，本会话的令牌吊销。 */
+	private async stopped(s: Scoped, slot: Slot): Promise<void> {
+		slot.started = false;
+		await revokeTopicTokens(s, slot.topicId);
+	}
+
+	/**
+	 * 网关给外部调用记账：该话题外部会话当前这一轮的运行（不在一轮里则空），
+	 * 与请求发生时话题当前未结束的任务（没有则空）。
+	 */
+	async attributionOf(
+		s: Scoped,
+		topicId: string,
+	): Promise<{ runId: string | null; taskId: string | null }> {
+		const turn = this.slots.get(topicId)?.turn;
+		return {
+			runId: turn?.runId ?? null,
+			taskId: (await this.topicTask(s, topicId))?.id ?? null,
+		};
 	}
 
 	/** 这一轮结束：运行结束、文字（或失败原因）作为消息发出、未处理的审批取消，然后发出排队的下一段。 */
@@ -401,7 +479,7 @@ export class ExternalSessions {
 			slot.queue.length = 0;
 			if (slot.started)
 				this.hub.send(slot.runnerId, { t: "acp_cancel", taskId: topicId });
-			slot.started = false;
+			await this.stopped(s, slot);
 			await this.endTurn(s, slot, end);
 			this.slots.delete(topicId);
 		});
@@ -510,7 +588,7 @@ export class ExternalSessions {
 			await this.recordSession(s, turn, payload.sessionId);
 		} else if (kind === "error" && "fatal" in payload && payload.fatal) {
 			// 设备已收掉这个会话：下一段话会起一个新会话。
-			slot.started = false;
+			await this.stopped(s, slot);
 			await this.endTurn(
 				s,
 				slot,
@@ -678,7 +756,7 @@ export class ExternalSessions {
 			if (slot.runnerId !== runner.id || !slot.started) continue;
 			if (reported.has(slot.topicId)) continue;
 			await this.serial(slot.topicId, async () => {
-				slot.started = false;
+				await this.stopped(s, slot);
 				await this.endTurn(
 					s,
 					slot,
@@ -703,7 +781,7 @@ export class ExternalSessions {
 			const agent = await findAgent(s, { id: p.id });
 			if (!agent || !isExternalAgent(agent) || agent.runnerId !== runner.id)
 				continue;
-			const slot = this.slotFor(agent, {
+			const slot = this.slotFor(s, agent, {
 				conversationId: topic.conversationId,
 				topicId,
 			});
@@ -737,6 +815,7 @@ export class ExternalSessions {
 				continue;
 			if (slot.started)
 				this.hub.send(slot.runnerId, { t: "acp_cancel", taskId: slot.topicId });
+			await this.stopped(scoped(slot.tenantId), slot);
 			this.slots.delete(slot.topicId);
 		}
 		return n;

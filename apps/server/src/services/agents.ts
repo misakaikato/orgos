@@ -24,10 +24,11 @@ import {
 } from "@/lib/errors";
 import { toAgent, toPrincipal } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
+import { getTenantSettings } from "@/services/tenant-settings";
 
 type AgentRole = (typeof AGENT_ROLES)[number];
 
-/** 建一个代理：agent 主体 + agents 行。调用方负责事务。 */
+/** 建一个代理：agent 主体 + agents 行，模型取租户默认模型。调用方负责事务。 */
 export async function createAgent(
 	s: Scoped,
 	input: {
@@ -52,6 +53,7 @@ export async function createAgent(
 		principalId: principal.id,
 		role: input.role,
 		description: input.description,
+		model: (await getTenantSettings(s)).defaultModel,
 		engine,
 		...(input.external ?? {}),
 	});
@@ -144,7 +146,7 @@ export async function listDirectory(
 		.sort((x, y) => x.principal.handle.localeCompare(y.principal.handle));
 }
 
-/** 改代理的资料、对外政策与绑定的设备；不存在或跨租户 → 404。调用方负责"只能改自己的代理"与设备归属。 */
+/** 改代理的资料、对外政策、绑定的设备与模型；不存在或跨租户 → 404。调用方负责"只能改自己的代理"、设备归属与模型可用。 */
 export async function updateAgentProfile(
 	s: Scoped,
 	principalId: string,
@@ -153,6 +155,7 @@ export async function updateAgentProfile(
 		description?: string;
 		delegationPolicy?: string;
 		runnerId?: string | null;
+		model?: string;
 	},
 ): Promise<Agent> {
 	const principal = await s.first(principals, eq(principals.id, principalId));

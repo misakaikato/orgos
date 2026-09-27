@@ -3,6 +3,7 @@
  */
 import { z } from "zod";
 import { AcpPermissionOptionSchema, AcpToolCallSchema } from "./acp";
+import { EXTERNAL_AGENT_MODES } from "./models";
 
 export const MEMBER_ROLES = ["owner", "member"] as const;
 export const PRINCIPAL_KINDS = ["human", "agent"] as const;
@@ -26,7 +27,8 @@ export const RUNNER_STATUSES = ["online", "offline"] as const;
 export const PRINCIPAL_STATUSES = ["available", "busy", "away"] as const;
 export type PrincipalStatus = (typeof PRINCIPAL_STATUSES)[number];
 
-export const DEFAULT_AGENT_MODEL = "deepseek-v4-flash";
+/** 新租户的默认模型（模型引用：`厂商/模型` 或 `group/<id>`）。 */
+export const DEFAULT_AGENT_MODEL = "deepseek/deepseek-v4-flash";
 
 /** 人的 handle：小写字母开头，2–31 位小写字母、数字、连字符。 */
 export const HANDLE_RE = /^[a-z][a-z0-9-]{1,30}$/;
@@ -522,5 +524,11 @@ export type Run = z.infer<typeof RunSchema>;
 export const TenantSettingsSchema = z.object({
 	/** 允许选用不经 orgos 审批、不限工作目录的外部适配器（pi、Hermes）。仅租户 owner 可改。 */
 	allowUnsupervisedAdapters: z.boolean(),
+	/** 新代理的默认模型。 */
+	defaultModel: z.string().optional(),
+	/** 外部助手的模式：enterprise 经网关、用任务令牌；personal 用设备上自己的登录。 */
+	externalAgentMode: z.enum(EXTERNAL_AGENT_MODES).optional(),
+	/** 允许外部助手使用个人模式。 */
+	allowPersonalExternal: z.boolean().optional(),
 });
 export type TenantSettings = z.infer<typeof TenantSettingsSchema>;

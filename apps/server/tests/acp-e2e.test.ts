@@ -3,7 +3,9 @@
  * 走完"任务与外部助手""话题与运行记录"的验收条：建外部助手 → 主线里交办（外部助手在主线回复，
  * 运行记录带外部会话 id）→ 子进程环境里没有 runner token 与服务器地址 → 另一个话题另起一个外部会话、
  * 同话题复用 → 权限请求走审批（卡片在该话题）、批准后文件落在工作目录 → 话题转为任务、再完成，
- * 日志 seq 连续；内置助手的交办生成 engine=builtin 任务；他人经分身交办时外部助手不可用。
+ * 日志 seq 连续；内置助手的交办生成 engine=builtin 任务；他人经分身交办时外部助手不可用；
+ * 企业模式（默认）下 agent 子进程拿到网关地址与任务令牌、经网关调用的账记在这一轮的运行与任务名下，
+ * 任务结束后同一话题沿用同一外部会话与令牌、话题归档即吊销；个人模式下不注入。
  */
 import { type ChildProcess, spawn } from "node:child_process";
 import {
@@ -35,8 +37,16 @@ import {
 	TopicResponseSchema,
 	WorkItemListResponseSchema,
 } from "@orgos/protocol";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { gatewayTokens, llmRequests } from "@/db/schema";
+import { scoped } from "@/db/scope";
 import { TEST_DATABASE_URL } from "../vitest.config";
+import {
+	FAKE_TEXT,
+	type FakeUpstream,
+	startFakeUpstream,
+} from "./fake-upstream";
 
 const PORT = 8935;
 const BASE = `http://localhost:${PORT}`;
@@ -47,6 +57,8 @@ const NO_PROXY = "localhost,127.0.0.1";
 let server: ChildProcess;
 let runner: ChildProcess | null = null;
 let runnerLog = "";
+let fakeLlm: FakeUpstream | null = null;
+const FAKE_KEY = "sk-fake-e2e-upstream-3d9a";
 let tmp: string;
 let home: string;
 let workspace: string;
@@ -162,6 +174,7 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
+	await fakeLlm?.close();
 	runner?.kill("SIGTERM");
 	server?.kill("SIGTERM");
 	await Promise.all(
@@ -468,5 +481,158 @@ describe("外部助手（fake 适配器）全链路", () => {
 		expect(
 			(await myTasks()).filter((k) => k.goal.includes("帮我看看代码")),
 		).toHaveLength(0);
+	}, 30_000);
+
+	function envKeysOf(text: string): string[] {
+		const line = text.split("\n").find((l) => l.startsWith("环境变量："));
+		return (line ?? "").slice("环境变量：".length).split(",");
+	}
+
+	async function lastReply(topicId?: string): Promise<string> {
+		const texts = (await events(alice.client, dm, topicId)).flatMap((e) =>
+			e.type === "message.posted" && e.actorId === ext.id
+				? [e.payload.text]
+				: [],
+		);
+		return texts.at(-1) ?? "";
+	}
+
+	it("企业模式（默认）：agent 子进程拿到网关地址、任务令牌与模型；#llm 经网关，记在这一轮的运行名下", async () => {
+		const res = await alice.client.request("GET", `/api/runs/${mainRun.id}`);
+		const { logs } = RunResponseSchema.parse(await res.json());
+		const keys = envKeysOf(
+			logs
+				.flatMap((l) =>
+					l.kind === "agent_text" ? [(l.payload as { text: string }).text] : [],
+				)
+				.join(""),
+		);
+		expect(keys).toEqual(
+			expect.arrayContaining([
+				"OPENAI_BASE_URL",
+				"OPENAI_API_KEY",
+				"OPENAI_MODEL",
+			]),
+		);
+		fakeLlm = await startFakeUpstream({
+			openai: FAKE_KEY,
+			anthropic: "unused",
+		});
+		const created = await alice.client.request("POST", "/api/model-providers", {
+			name: "deepseek",
+			preset: "deepseek",
+			endpoints: { openai: `${fakeLlm.url}/openai` },
+			apiKey: FAKE_KEY,
+			exposedModels: ["deepseek-v4-flash"],
+		});
+		expect(created.status).toBe(201);
+		const before = (await runsIn(main)).length;
+		await post("#llm 你好");
+		const run = await until("主线这一轮结束", async () => {
+			const runs = await runsIn(main);
+			return runs.length > before && runs[0]?.state === "completed"
+				? runs[0]
+				: null;
+		});
+		expect(await lastReply()).toContain(`模型说：${FAKE_TEXT.join("")}`);
+		expect(fakeLlm.requests.at(-1)?.body.model).toBe("deepseek-v4-flash");
+		const rows = await scoped(alice.me.tenant.id).select(
+			llmRequests,
+			eq(llmRequests.runId, run.id),
+		);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({
+			agentId: ext.id,
+			onBehalfOfId: alice.me.principal.id,
+			conversationId: dm,
+			protocolIn: "openai",
+			protocolOut: "openai",
+			provider: "deepseek",
+			httpStatus: 200,
+		});
+		expect(rows[0]?.costMicroUsd).toBeGreaterThan(0);
+	}, 30_000);
+
+	it("任务话题：调用记在任务名下；任务结束后同一话题沿用同一外部会话与令牌，调用不再记在该任务名下；话题归档即吊销", async () => {
+		const res = await alice.client.request("POST", "/api/tasks", {
+			conversationId: dm,
+			goal: "#llm 总结一下",
+		});
+		expect(res.status).toBe(201);
+		const { task } = TaskResponseSchema.parse(await res.json());
+		const topicId = task.topicId ?? "";
+		const waiting = await until("任务这一轮结束", async () => {
+			const t = await taskById(task.id);
+			return t.state === "input_required" ? t : null;
+		});
+		expect(waiting.resultSummary).toContain("模型说：");
+		const rows = await scoped(alice.me.tenant.id).select(
+			llmRequests,
+			eq(llmRequests.taskId, task.id),
+		);
+		expect(rows.map((r) => r.agentId)).toEqual([ext.id]);
+		const [first] = await runsIn(topicId);
+		await alice.client.request("POST", `/api/tasks/${task.id}/complete`);
+		await post("#llm 再来一次", topicId);
+		const second = await until("任务结束后的一轮", async () => {
+			const [r] = await runsIn(topicId);
+			return r && r.id !== first?.id && r.state === "completed" ? r : null;
+		});
+		expect(await lastReply(topicId)).toContain("模型说：");
+		expect(second.externalSessionId).toBe(first?.externalSessionId);
+		const s = scoped(alice.me.tenant.id);
+		const secondRows = await s.select(
+			llmRequests,
+			eq(llmRequests.runId, second.id),
+		);
+		expect(secondRows).toHaveLength(1);
+		expect(secondRows[0]?.taskId).toBeNull();
+		const tokens = await s.select(
+			gatewayTokens,
+			eq(gatewayTokens.topicId, topicId),
+		);
+		expect(tokens).toHaveLength(1);
+		expect(tokens[0]?.revokedAt).toBeNull();
+		const archived = await alice.client.request(
+			"PATCH",
+			`/api/topics/${topicId}`,
+			{ archived: true },
+		);
+		expect(archived.status).toBe(200);
+		const [revoked] = await s.select(
+			gatewayTokens,
+			eq(gatewayTokens.topicId, topicId),
+		);
+		expect(revoked?.revokedAt).not.toBeNull();
+	}, 30_000);
+
+	it("个人模式（组织允许时）：不注入，agent 子进程看不到网关地址与令牌", async () => {
+		const set = await alice.client.request("PATCH", "/api/tenant/settings", {
+			allowPersonalExternal: true,
+			externalAgentMode: "personal",
+		});
+		expect(set.status).toBe(200);
+		try {
+			const res = await alice.client.request(
+				"POST",
+				`/api/conversations/${dm}/topics`,
+				{ title: "个人模式" },
+			);
+			const topicC = TopicResponseSchema.parse(await res.json()).topic.id;
+			await post("#llm 你好", topicC);
+			await until("个人模式这一轮结束", async () => {
+				const [r] = await runsIn(topicC);
+				return r?.state === "completed";
+			});
+			const reply = await lastReply(topicC);
+			expect(reply).toContain("没有注入网关");
+			const keys = envKeysOf(reply);
+			expect(keys).toContain("PATH");
+			expect(keys).not.toContain("OPENAI_BASE_URL");
+		} finally {
+			await alice.client.request("PATCH", "/api/tenant/settings", {
+				allowPersonalExternal: false,
+			});
+		}
 	}, 30_000);
 });

@@ -31,6 +31,9 @@ export type LlmMeta = {
 	conversationId: string | null;
 	/** 这次调用属于哪次运行。 */
 	runId: string | null;
+	/** 这次运行服务的任务。 */
+	taskId: string | null;
+	/** 模型引用：`厂商/模型` 或 `group/<id>`。 */
 	model: string;
 };
 
@@ -99,10 +102,6 @@ export class LlmAbortedError extends Error {
 }
 
 export const MAX_TOKENS = 4000;
-/** 没有 HTTP 响应（网络错误、超时）时记的状态码。 */
-export const HTTP_STATUS_NO_RESPONSE = 0;
-/** 被本方中止时记的状态码（沿用 nginx 的 499 client closed request）。 */
-export const HTTP_STATUS_ABORTED = 499;
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {

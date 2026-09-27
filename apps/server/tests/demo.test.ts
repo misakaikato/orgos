@@ -258,22 +258,19 @@ describe("/api/dev/*、/sim 与 /dev/*", () => {
 		);
 	});
 
-	it("info：有 key 且未设 MOCK_LLM 为 real，否则 mock", async () => {
+	it("info：MOCK_LLM=1 为 mock，否则经网关用真实模型", async () => {
 		vi.stubEnv("ORGOS_DEV", "1");
 		const info = async () =>
 			DevInfoResponseSchema.parse(
 				await (await anonymous.request("GET", "/api/dev/info")).json(),
 			);
-		vi.stubEnv("DEEPSEEK_API_KEY", "");
-		vi.stubEnv("MOCK_LLM", "");
+		vi.stubEnv("MOCK_LLM", "1");
 		expect(await info()).toEqual({ modelMode: "mock", model: "mock" });
-		vi.stubEnv("DEEPSEEK_API_KEY", "sk-placeholder");
+		vi.stubEnv("MOCK_LLM", "");
 		expect(await info()).toEqual({
 			modelMode: "real",
-			model: "deepseek-v4-flash",
+			model: "deepseek/deepseek-v4-flash",
 		});
-		vi.stubEnv("MOCK_LLM", "1");
-		expect((await info()).modelMode).toBe("mock");
 	});
 
 	it("people：只列星河科技四人", async () => {

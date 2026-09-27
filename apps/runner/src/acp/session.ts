@@ -16,6 +16,7 @@ import {
 	type AcpPermissionOption,
 	type AcpToolCall,
 	type AcpUp,
+	gatewayBaseUrl,
 	isAllowOption,
 	type TaskLogKind,
 	type TaskLogPayload,
@@ -70,6 +71,8 @@ export class AcpTaskSession {
 		readonly taskId: string,
 		private readonly opts: {
 			config: AcpConfig;
+			/** 企业模式下另外从子进程环境里去掉的键。 */
+			unset: readonly string[];
 			/** 设备工作目录与外部助手的工作目录（后者必须在前者之内）。 */
 			runnerWorkspace: string;
 			workspace: string;
@@ -110,6 +113,7 @@ export class AcpTaskSession {
 		if (this.disposed) return false;
 		const client = createAcpClient({
 			config: this.opts.config,
+			unset: this.opts.unset,
 			workspace,
 			emit: (kind, payload) => this.emit(kind, payload),
 			requestPermission: (params) => this.onAgentPermission(params),
@@ -283,6 +287,8 @@ export class AcpManager {
 		private readonly deps: {
 			/** 设备工作目录（外部助手的工作目录必须在它之内）。 */
 			runnerWorkspace: string;
+			/** Runner 连的服务端：企业模式下 agent 的网关地址由它得出。 */
+			server: string;
 			adapters: AdapterRegistry;
 			send: SendUp;
 		},
@@ -332,7 +338,16 @@ export class AcpManager {
 	private async start(
 		frame: Extract<AcpDown, { t: "acp_start" }>,
 	): Promise<void> {
-		const launch = this.deps.adapters.launch(frame.adapter);
+		const launch = this.deps.adapters.launch(
+			frame.adapter,
+			frame.llm
+				? {
+						baseUrl: gatewayBaseUrl(this.deps.server),
+						token: frame.llm.token,
+						model: frame.llm.model,
+					}
+				: undefined,
+		);
 		if (!launch.ok) {
 			this.deps.send({
 				t: "acp_event",
@@ -344,6 +359,7 @@ export class AcpManager {
 		}
 		const session = new AcpTaskSession(frame.taskId, {
 			config: launch.config,
+			unset: launch.unset,
 			runnerWorkspace: this.deps.runnerWorkspace,
 			workspace: frame.workspace,
 			send: this.deps.send,

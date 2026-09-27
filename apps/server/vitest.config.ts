@@ -20,6 +20,8 @@ export default defineConfig({
 			DATABASE_URL: TEST_DATABASE_URL,
 			// 测试一律用确定性的假模型，不出网。
 			MOCK_LLM: "1",
+			// 厂商 key 的加密密钥（测试库专用）。
+			ORGOS_SECRET: "orgos-test-secret",
 		},
 		globalSetup: ["./tests/global-setup.ts"],
 		include: ["tests/**/*.test.ts"],

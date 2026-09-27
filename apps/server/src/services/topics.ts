@@ -48,7 +48,10 @@ export async function insertConversation(
 	return { conversation, main };
 }
 
-/** 在会话里建一个非主线话题（不校验成员身份，调用方负责）。 */
+/**
+ * 在会话里建一个非主线话题（不校验成员身份，调用方负责）。时间取应用时钟，与事件的发生时间
+ * （`appendEvent`）同一个钟，最近活动的先后才可比。
+ */
 export async function insertTopic(
 	tx: Scoped,
 	values: {
@@ -59,7 +62,13 @@ export async function insertTopic(
 		sourceTopicId?: string | null;
 	},
 ): Promise<TopicRow> {
-	return tx.insert(topics, { ...values, isMain: false });
+	const now = new Date();
+	return tx.insert(topics, {
+		...values,
+		isMain: false,
+		createdAt: now,
+		lastEventAt: now,
+	});
 }
 
 export async function mainTopicOf(

@@ -217,3 +217,13 @@ export function IconStop(p: IconProps) {
 		</Icon>
 	);
 }
+
+/** 模型：芯片。 */
+export function IconModel(p: IconProps) {
+	return (
+		<Icon {...p}>
+			<rect x="6.5" y="6.5" width="11" height="11" rx="2.5" />
+			<path d="M10 3.5v3M14 3.5v3M10 17.5v3M14 17.5v3M3.5 10h3M3.5 14h3M17.5 10h3M17.5 14h3" />
+		</Icon>
+	);
+}

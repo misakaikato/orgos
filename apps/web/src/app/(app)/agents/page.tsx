@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, AgentUsage } from "@orgos/protocol";
+import type { Agent, AgentUsage, ModelOption } from "@orgos/protocol";
 import { useEffect, useState } from "react";
 import { AgentCard } from "@/components/agents/agent-card";
 import { ExternalAgentForm } from "@/components/agents/external-agent-form";
@@ -12,6 +12,7 @@ import { api } from "@/lib/api";
 import { cx } from "@/lib/cx";
 import {
 	loadRunners,
+	loadTenantSettings,
 	refreshConversations,
 	refreshMyAgents,
 	setMyAgents,
@@ -61,6 +62,7 @@ function AgentsPanel({
 	ownerHandle: string;
 }) {
 	const [usage, setUsage] = useState<Map<string, AgentUsage>>(new Map());
+	const [options, setOptions] = useState<ModelOption[] | null>(null);
 	const [creating, setCreating] = useState<"specialist" | "external" | null>(
 		null,
 	);
@@ -68,6 +70,11 @@ function AgentsPanel({
 	useEffect(() => {
 		void refreshMyAgents().catch(() => {});
 		void loadRunners();
+		void loadTenantSettings().catch(() => {});
+		void api
+			.modelOptions()
+			.then((r) => setOptions(r.options))
+			.catch(() => setOptions([]));
 		void api
 			.usage()
 			.then(({ byAgent }) =>
@@ -83,6 +90,7 @@ function AgentsPanel({
 					key={agent.principal.id}
 					agent={agent}
 					usage={usage.get(agent.principal.id)}
+					modelOptions={options}
 					onChanged={(next) =>
 						setMyAgents(
 							agents.map((a) =>

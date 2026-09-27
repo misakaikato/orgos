@@ -25,6 +25,16 @@ import {
 	WorkItemSchema,
 } from "./entities";
 import { EventSchema, MESSAGE_MAX_LENGTH } from "./events";
+import {
+	EXTERNAL_AGENT_MODES,
+	GATEWAY_PROTOCOLS,
+	GROUP_ROUTINGS,
+	ModelGroupSchema,
+	ModelProviderSchema,
+	ModelRefSchema,
+	ProviderEndpointsSchema,
+	ProviderNameSchema,
+} from "./models";
 import { DEVICE_NAME_MAX_LENGTH, RunnerSchema } from "./runner";
 
 /** 统一错误体：`{ error: { code, message } }`。 */
@@ -54,6 +64,8 @@ export const ERROR_CODES = {
 	ADAPTER_UNAVAILABLE: "ADAPTER_UNAVAILABLE",
 	TASK_ENDED: "TASK_ENDED",
 	TASK_IN_PROGRESS: "TASK_IN_PROGRESS",
+	MODEL_UNAVAILABLE: "MODEL_UNAVAILABLE",
+	NAME_TAKEN: "NAME_TAKEN",
 	INTERNAL: "INTERNAL",
 } as const;
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -325,6 +337,8 @@ export const UpdateAgentRequestSchema = z.object({
 		.optional(),
 	/** 仅助手：绑定到本人的一台设备（null 解绑）。 */
 	runnerId: z.uuid().nullable().optional(),
+	/** 模型：本租户开放的 `厂商/模型` 或 `group/<id>`。 */
+	model: ModelRefSchema.optional(),
 });
 export type UpdateAgentRequest = z.infer<typeof UpdateAgentRequestSchema>;
 
@@ -452,10 +466,119 @@ export type TenantSettingsResponse = z.infer<
 
 export const UpdateTenantSettingsRequestSchema = z.object({
 	allowUnsupervisedAdapters: z.boolean().optional(),
+	defaultModel: ModelRefSchema.optional(),
+	externalAgentMode: z.enum(EXTERNAL_AGENT_MODES).optional(),
+	allowPersonalExternal: z.boolean().optional(),
 });
 export type UpdateTenantSettingsRequest = z.infer<
 	typeof UpdateTenantSettingsRequestSchema
 >;
+
+// ─────────────────────────── 模型与厂商 ───────────────────────────
+
+const ExposedModelsSchema = z.array(z.string().trim().min(1).max(200)).max(200);
+/** key 只写不读：给了就替换，空串表示清除。 */
+const ApiKeyInputSchema = z.string().trim().max(1000);
+
+export const CreateModelProviderRequestSchema = z.object({
+	name: ProviderNameSchema,
+	preset: z.string().max(40).optional(),
+	endpoints: ProviderEndpointsSchema,
+	apiKey: ApiKeyInputSchema.optional(),
+	exposedModels: ExposedModelsSchema.default([]),
+});
+export type CreateModelProviderRequest = z.input<
+	typeof CreateModelProviderRequestSchema
+>;
+
+export const UpdateModelProviderRequestSchema = z.object({
+	endpoints: ProviderEndpointsSchema.optional(),
+	apiKey: ApiKeyInputSchema.optional(),
+	exposedModels: ExposedModelsSchema.optional(),
+});
+export type UpdateModelProviderRequest = z.infer<
+	typeof UpdateModelProviderRequestSchema
+>;
+
+export const ModelProviderResponseSchema = z.object({
+	provider: ModelProviderSchema,
+});
+export type ModelProviderResponse = z.infer<typeof ModelProviderResponseSchema>;
+
+/** 模型页：厂商、路由组与相关的租户设置（仅租户 owner）。 */
+export const ModelAdminResponseSchema = z.object({
+	providers: z.array(ModelProviderSchema),
+	groups: z.array(ModelGroupSchema),
+	settings: TenantSettingsSchema,
+});
+export type ModelAdminResponse = z.infer<typeof ModelAdminResponseSchema>;
+
+/** 从厂商的 /models 拉到的模型 id；拉不到时 error 说明原因（界面改为手填）。 */
+export const ProviderModelsResponseSchema = z.object({
+	models: z.array(z.string()),
+	error: z.string().optional(),
+});
+export type ProviderModelsResponse = z.infer<
+	typeof ProviderModelsResponseSchema
+>;
+
+export const ProviderTestRequestSchema = z.object({
+	/** 用哪个模型发最小请求；缺省取开放的第一个。 */
+	model: z.string().trim().min(1).max(200).optional(),
+});
+export type ProviderTestRequest = z.infer<typeof ProviderTestRequestSchema>;
+
+export const ProviderTestResultSchema = z.object({
+	protocol: z.enum(GATEWAY_PROTOCOLS),
+	ok: z.boolean(),
+	latencyMs: z.number().int(),
+	httpStatus: z.number().int(),
+	/** 成功时是模型的回复，失败时是原因。 */
+	message: z.string(),
+});
+export type ProviderTestResult = z.infer<typeof ProviderTestResultSchema>;
+
+export const ProviderTestResponseSchema = z.object({
+	results: z.array(ProviderTestResultSchema),
+});
+export type ProviderTestResponse = z.infer<typeof ProviderTestResponseSchema>;
+
+const GroupMembersSchema = z.array(ModelRefSchema).min(1).max(20);
+
+export const CreateModelGroupRequestSchema = z.object({
+	name: z.string().trim().min(1).max(40),
+	members: GroupMembersSchema,
+	routing: z.enum(GROUP_ROUTINGS),
+});
+export type CreateModelGroupRequest = z.infer<
+	typeof CreateModelGroupRequestSchema
+>;
+
+export const UpdateModelGroupRequestSchema = z.object({
+	name: z.string().trim().min(1).max(40).optional(),
+	members: GroupMembersSchema.optional(),
+	routing: z.enum(GROUP_ROUTINGS).optional(),
+});
+export type UpdateModelGroupRequest = z.infer<
+	typeof UpdateModelGroupRequestSchema
+>;
+
+export const ModelGroupResponseSchema = z.object({ group: ModelGroupSchema });
+export type ModelGroupResponse = z.infer<typeof ModelGroupResponseSchema>;
+
+/** 代理可选的模型（本租户开放的模型与路由组）。 */
+export const ModelOptionSchema = z.object({
+	ref: z.string(),
+	label: z.string(),
+	kind: z.enum(["model", "group"]),
+});
+export type ModelOption = z.infer<typeof ModelOptionSchema>;
+
+export const ModelOptionsResponseSchema = z.object({
+	options: z.array(ModelOptionSchema),
+	defaultModel: z.string(),
+});
+export type ModelOptionsResponse = z.infer<typeof ModelOptionsResponseSchema>;
 
 // ─────────────────────────── 设备 ───────────────────────────
 

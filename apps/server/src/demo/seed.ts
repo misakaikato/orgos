@@ -10,6 +10,7 @@ import {
 	type DemoPerson,
 	type DevSessionResponse,
 	defaultAssistantHandle,
+	findPreset,
 	twinHandle,
 } from "@orgos/protocol";
 import { APIError } from "better-auth/api";
@@ -42,6 +43,7 @@ import {
 import { notFound } from "@/lib/errors";
 import { toPrincipal } from "@/lib/serialize";
 import { updateAgentProfile } from "@/services/agents";
+import { createProvider, listProviders } from "@/services/model-providers";
 import { createNote } from "@/services/notes";
 import { onboard } from "@/services/onboarding";
 import { setStatus } from "@/services/presence";
@@ -208,11 +210,42 @@ export function resetDemo(now = new Date()): Promise<DemoCounts> {
 		const [main] = casts;
 		if (!main) throw new Error("缺少演示主租户");
 		await writeDemoConversations(main, now);
+		await ensureDemoProvider();
 		return demoCounts(main.s);
 	})().finally(() => {
 		running = null;
 	});
 	return running;
+}
+
+/** 演示主租户（星河科技）的作用域；还没有生成演示数据时 null。 */
+async function demoMainScope(): Promise<Scoped | null> {
+	const main = DEMO_TENANTS.find((t) => t.simulated);
+	const first = main?.people[0];
+	if (!first) return null;
+	const userId = await findUserIdByEmail(demoEmail(first.handle));
+	const found = userId ? await findMembership(userId) : null;
+	return found ? scoped(found.tenant.id) : null;
+}
+
+/**
+ * 开发环境开箱即用：环境里有 DEEPSEEK_API_KEY（`scripts/dev.ts` 注入）且演示主租户还没有任何厂商时，
+ * 为它建一个 DeepSeek 厂商（key 加密入库，开放预设表里的模型）。返回是否新建了。
+ */
+export async function ensureDemoProvider(): Promise<boolean> {
+	const apiKey = process.env.DEEPSEEK_API_KEY;
+	const preset = findPreset("deepseek");
+	if (!apiKey || !preset) return false;
+	const s = await demoMainScope();
+	if (!s || (await listProviders(s)).length > 0) return false;
+	await createProvider(s, {
+		name: preset.id,
+		preset: preset.id,
+		endpoints: preset.endpoints,
+		apiKey,
+		exposedModels: preset.models.map((m) => m.id),
+	});
+	return true;
 }
 
 /** 以演示密码代某位演示人物登录，返回 better-auth 会话 token（作 Bearer 使用）。 */

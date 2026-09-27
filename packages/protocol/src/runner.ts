@@ -196,6 +196,16 @@ export const RunnerDownSchema = z.discriminatedUnion("t", [
 		adapter: z.string().min(1).max(64),
 		workspace: z.string().min(1).max(4096),
 		prompt: z.string().min(1),
+		/**
+		 * 企业模式：本会话的任务令牌与模型引用。Runner 以自己连的服务端地址拼出网关地址，
+		 * 按适配器表的注入规则交给 agent 进程；缺省为个人模式（不注入）。
+		 */
+		llm: z
+			.object({
+				token: z.string().min(1).max(200),
+				model: z.string().min(1).max(300),
+			})
+			.optional(),
 	}),
 	/** 同一任务的追问：继续同一 ACP 会话。 */
 	z.object({

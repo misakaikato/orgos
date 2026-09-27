@@ -8,7 +8,9 @@
  *     `#perm <文件>|<内容>`（或 `#perm 写入 <文件>`）先 session/request_permission，允许后经 fs/write_text_file 写入；
  *     `#read <路径>` 经 fs/read_text_file 读；
  *     `#sh <命令>` 经 terminal/create 执行并取输出；
- *     `#wait <毫秒>` 等一会儿（可被 session/cancel 打断）。
+ *     `#wait <毫秒>` 等一会儿（可被 session/cancel 打断）；
+ *     `#llm <话>` 用企业模式注入的 OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL 调一次网关（非流式），
+ *     回显模型的回复或网关的 HTTP 状态（没有注入时说明没有）。
  */
 import path from "node:path";
 
@@ -139,6 +141,32 @@ async function sh(command: string): Promise<string> {
 	}
 }
 
+async function llm(text: string): Promise<string> {
+	const base = process.env.OPENAI_BASE_URL;
+	const key = process.env.OPENAI_API_KEY;
+	if (!base || !key) return "没有注入网关";
+	try {
+		const res = await fetch(`${base}/chat/completions`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				authorization: `Bearer ${key}`,
+			},
+			body: JSON.stringify({
+				model: process.env.OPENAI_MODEL,
+				messages: [{ role: "user", content: text.trim() }],
+			}),
+		});
+		if (!res.ok) return `网关返回 HTTP ${res.status}`;
+		const body = (await res.json()) as {
+			choices?: { message?: { content?: string } }[];
+		};
+		return `模型说：${body.choices?.[0]?.message?.content ?? ""}`;
+	} catch (e) {
+		return `连不上网关：${e instanceof Error ? e.message : String(e)}`;
+	}
+}
+
 async function wait(ms: number): Promise<string> {
 	const until = Date.now() + ms;
 	while (Date.now() < until && !cancelled) await Bun.sleep(20);
@@ -153,12 +181,13 @@ async function prompt(params: Record<string, unknown>): Promise<unknown> {
 		firstTurn = false;
 		say(`环境变量：${Object.keys(process.env).sort().join(",")}\n`);
 	}
-	const m = /#(perm|read|sh|wait)\s+([\s\S]*)$/.exec(text);
+	const m = /#(perm|read|sh|wait|llm)\s+([\s\S]*)$/.exec(text);
 	let result = "";
 	if (m?.[1] === "perm") result = await perm(m[2] ?? "");
 	else if (m?.[1] === "read") result = await read(m[2] ?? "");
 	else if (m?.[1] === "sh") result = await sh(m[2] ?? "");
 	else if (m?.[1] === "wait") result = await wait(Number(m[2]) || 0);
+	else if (m?.[1] === "llm") result = await llm(m[2] ?? "");
 	say(`收到：${text}。`);
 	say("我是测试用的假助手。");
 	if (result) say(`\n${result}`);

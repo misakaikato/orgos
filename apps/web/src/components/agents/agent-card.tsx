@@ -5,14 +5,20 @@ import {
 	AGENT_ROLE_LABEL,
 	type Agent,
 	type AgentUsage,
+	effectiveExternalMode,
 	findAdapter,
 	isExternalAgent,
+	type ModelOption,
 } from "@orgos/protocol";
 import { type FormEvent, useState } from "react";
 import { Mascot } from "@/components/mascot";
 import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Field, TextAreaField } from "@/components/ui/input";
+import {
+	Field,
+	selectOnSurfaceClass,
+	TextAreaField,
+} from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { cx } from "@/lib/cx";
 import { formatTokens, formatUsd } from "@/lib/format";
@@ -192,6 +198,84 @@ function DeviceBinding({
 	);
 }
 
+/** 代理用的模型：本组织开放的模型或路由组。 */
+function ModelSelect({
+	agent,
+	options,
+	onChanged,
+}: {
+	agent: Agent;
+	options: ModelOption[] | null;
+	onChanged: (next: Agent) => void;
+}) {
+	const [saving, setSaving] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const id = `model-${agent.principal.id}`;
+	const known = options?.some((o) => o.ref === agent.model) ?? true;
+
+	const change = async (model: string) => {
+		setSaving(true);
+		setError(null);
+		try {
+			const { agent: next } = await api.updateAgent(agent.principal.id, {
+				model,
+			});
+			onChanged(next);
+		} catch (e) {
+			setError(errorText(e));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<div className="mt-3 flex flex-col gap-1.5 rounded-row bg-surface-2 px-3 py-2">
+			<label htmlFor={id} className="text-12 font-medium text-muted">
+				模型
+			</label>
+			{options === null ? (
+				<p className="text-14 text-muted">正在读取可选模型…</p>
+			) : (
+				<select
+					id={id}
+					value={agent.model}
+					disabled={saving}
+					onChange={(e) => void change(e.target.value)}
+					className={selectOnSurfaceClass}
+				>
+					{known ? null : (
+						<option value={agent.model}>{agent.model}（未开放）</option>
+					)}
+					{options.map((o) => (
+						<option key={o.ref} value={o.ref}>
+							{o.label}
+						</option>
+					))}
+				</select>
+			)}
+			{error ? (
+				<p role="alert" className="text-12 text-danger">
+					{error}
+				</p>
+			) : null}
+		</div>
+	);
+}
+
+/** 外部助手在当前组织设置下用的是谁的模型、算不算用量。 */
+function externalUsageLine(
+	agent: Agent,
+	usage: AgentUsage | undefined,
+	mode: "enterprise" | "personal",
+): string {
+	if (mode === "personal")
+		return "个人模式：用的是你自己在那台设备上的登录，不计入 orgos 的模型用量";
+	const def = agent.adapter ? findAdapter(agent.adapter) : undefined;
+	if (def && !def.enterprise)
+		return `${def.label} 只支持个人模式，组织当前要求企业模式，它暂时不能接活`;
+	return `企业模式：经组织的模型网关 · ${usageLine(usage)}`;
+}
+
 /** 外部助手的接入信息：哪个助手、在哪台设备的哪个目录。 */
 function ExternalBinding({ agent }: { agent: Agent }) {
 	const runners = useStore((s) => s.runners);
@@ -212,20 +296,24 @@ function ExternalBinding({ agent }: { agent: Agent }) {
 }
 
 /**
- * 代理组页的一张代理卡：团子、名字与角色、职责、（分身的）对外政策或（助手的）设备、用量；
+ * 代理组页的一张代理卡：团子、名字与角色、职责、（分身的）对外政策或（助手的）设备、模型、用量；
  * 可编辑、开聊；助手可删除（分身不可删）。
  */
 export function AgentCard({
 	agent,
 	usage,
+	modelOptions,
 	onChanged,
 	onDeleted,
 }: {
 	agent: Agent;
 	usage: AgentUsage | undefined;
+	/** 本组织开放的模型与路由组（读取中为 null）。 */
+	modelOptions: ModelOption[] | null;
 	onChanged: (next: Agent) => void;
 	onDeleted: (id: string) => void;
 }) {
+	const settings = useStore((s) => s.tenantSettings);
 	const [editing, setEditing] = useState(false);
 	const [confirming, setConfirming] = useState(false);
 	const [busy, setBusy] = useState(false);
@@ -298,9 +386,23 @@ export function AgentCard({
 						) : (
 							<DeviceBinding agent={agent} onChanged={onChanged} />
 						)}
+						<ModelSelect
+							agent={agent}
+							options={modelOptions}
+							onChanged={onChanged}
+						/>
 						<p className="mt-3 text-12 text-muted">
 							{external
-								? "用的是你自己在那台设备上的登录，不计入 orgos 的模型用量"
+								? externalUsageLine(
+										agent,
+										usage,
+										effectiveExternalMode({
+											externalAgentMode:
+												settings?.externalAgentMode ?? "enterprise",
+											allowPersonalExternal:
+												settings?.allowPersonalExternal ?? false,
+										}),
+									)
 								: usageLine(usage)}
 						</p>
 						{error ? (

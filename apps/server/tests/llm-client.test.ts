@@ -1,9 +1,10 @@
 /**
- * 集成：DeepSeek 客户端（假 fetch 回放 SSE）——请求体、流式解析、重试、中止与 llm_requests 记账。
+ * 集成：代理引擎的模型客户端经网关调用（上游是假的 DeepSeek，OpenAI 协议）——请求体、流式解析、
+ * 重试、中止与 llm_requests 记账（计量在网关，每次上游尝试一行）。
  */
 import { eq } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
-import { createDeepSeekClient } from "@/agent/llm";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createGatewayClient } from "@/agent/llm";
 import {
 	LlmAbortedError,
 	type LlmRequest,
@@ -11,78 +12,40 @@ import {
 } from "@/agent/llm-types";
 import { llmRequests } from "@/db/schema";
 import { scoped } from "@/db/scope";
+import { createProvider } from "@/services/model-providers";
+import {
+	FAKE_TEXT,
+	type FakeUpstream,
+	sse,
+	startFakeUpstream,
+} from "./fake-upstream";
 import { createTeam, type TeamMember } from "./helpers";
 
-function sse(chunks: unknown[]): string {
-	return `${chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("")}data: [DONE]\n\n`;
-}
+const KEY = "sk-fake-deepseek-0123456789";
+const PATH = "/openai/chat/completions";
 
-const OK_STREAM = sse([
-	{ choices: [{ delta: { role: "assistant", content: "你好，" } }] },
-	{ choices: [{ delta: { content: "我是分身。" } }] },
-	{ choices: [{ delta: {}, finish_reason: "stop" }] },
-	{
-		choices: [],
-		usage: {
-			prompt_tokens: 1200,
-			completion_tokens: 30,
-			prompt_tokens_details: { cached_tokens: 200 },
-		},
-	},
-]);
-
-const TOOL_STREAM = sse([
-	{
-		choices: [
-			{
-				delta: {
-					tool_calls: [
-						{
-							index: 0,
-							id: "call_1",
-							type: "function",
-							function: { name: "knowledge_search", arguments: '{"que' },
-						},
-					],
-				},
-			},
-		],
-	},
-	{
-		choices: [
-			{
-				delta: {
-					tool_calls: [{ index: 0, function: { arguments: 'ry":"预算"}' } }],
-				},
-			},
-		],
-	},
-	{ choices: [], usage: { prompt_tokens: 10, completion_tokens: 5 } },
-]);
-
-type Call = { url: string; body: Record<string, unknown> };
-
-function fakeFetch(responses: (() => Response | Promise<Response>)[]) {
-	const calls: Call[] = [];
-	const impl = (async (url: string | URL | Request, init?: RequestInit) => {
-		calls.push({
-			url: String(url),
-			body: JSON.parse(String(init?.body)),
-		});
-		const next = responses.shift();
-		if (!next) throw new Error("没有更多响应");
-		return next();
-	}) as typeof fetch;
-	return { impl, calls };
-}
-
+let upstream: FakeUpstream;
 let alice: TeamMember;
 let agentId: string;
 
 beforeAll(async () => {
+	upstream = await startFakeUpstream({ openai: KEY, anthropic: "unused-key" });
 	[alice] = (await createTeam(["Alice"])) as [TeamMember];
 	agentId = alice.me.agents[0]?.principal.id ?? "";
+	await createProvider(scoped(alice.me.tenant.id), {
+		name: "deepseek",
+		preset: "deepseek",
+		endpoints: { openai: `${upstream.url}/openai` },
+		apiKey: KEY,
+		exposedModels: ["deepseek-v4-flash"],
+	});
 });
+
+afterAll(async () => {
+	await upstream.close();
+});
+
+const client = createGatewayClient({ retryDelaysMs: [1, 1] });
 
 function request(extra: Partial<LlmRequest> = {}): LlmRequest {
 	return {
@@ -97,7 +60,8 @@ function request(extra: Partial<LlmRequest> = {}): LlmRequest {
 			onBehalfOfId: alice.me.principal.id,
 			conversationId: null,
 			runId: null,
-			model: "deepseek-v4-flash",
+			taskId: null,
+			model: "deepseek/deepseek-v4-flash",
 		},
 		trigger: {
 			text: "你好",
@@ -110,185 +74,151 @@ function request(extra: Partial<LlmRequest> = {}): LlmRequest {
 }
 
 async function rows() {
-	return scoped(alice.me.tenant.id).select(
+	const all = await scoped(alice.me.tenant.id).select(
 		llmRequests,
 		eq(llmRequests.agentId, agentId),
 	);
+	return all.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 }
 
-describe("createDeepSeekClient", () => {
-	it("成功：请求体带关思考 / include_usage / max_tokens，流式拼文本，记账含成本", async () => {
-		const before = (await rows()).length;
-		const { impl, calls } = fakeFetch([
-			() => new Response(OK_STREAM, { status: 200 }),
-		]);
+async function newRows<T>(fn: () => Promise<T>) {
+	const before = (await rows()).length;
+	const out = await fn().catch((e: unknown) => e);
+	return { out, rows: (await rows()).slice(before) };
+}
+
+const TOOL_SPEC = {
+	type: "function" as const,
+	function: {
+		name: "lookup",
+		description: "查资料",
+		parameters: { type: "object", properties: { q: { type: "string" } } },
+	},
+};
+
+describe("代理引擎经网关调用模型", () => {
+	it("请求体关思考、带 include_usage 与 max_tokens，换成上游模型 id；流式拼文本；记一行账含成本", async () => {
 		const deltas: string[] = [];
-		const res = await createDeepSeekClient({
-			apiKey: "test-key",
-			fetch: impl,
-		}).complete(request({ onDelta: (d) => deltas.push(d) }));
-		expect(res).toEqual({
-			text: "你好，我是分身。",
-			toolCalls: [],
-			reasoning: false,
-		});
-		expect(deltas).toEqual(["你好，", "我是分身。"]);
-		expect(calls[0]?.url).toBe("https://api.deepseek.com/v1/chat/completions");
-		expect(calls[0]?.body).toMatchObject({
+		const { out, rows: added } = await newRows(() =>
+			client.complete(request({ onDelta: (d) => deltas.push(d) })),
+		);
+		expect(out).toMatchObject({ text: FAKE_TEXT.join(""), toolCalls: [] });
+		expect(deltas).toEqual([...FAKE_TEXT]);
+		const sent = upstream.requests.at(-1);
+		expect(sent?.headers.authorization).toBe(`Bearer ${KEY}`);
+		expect(sent?.body).toMatchObject({
 			model: "deepseek-v4-flash",
 			stream: true,
 			stream_options: { include_usage: true },
 			max_tokens: 4000,
 			thinking: { type: "disabled" },
 		});
-		expect(calls[0]?.body).not.toHaveProperty("tools");
-		const all = await rows();
-		expect(all).toHaveLength(before + 1);
-		expect(all.at(-1)).toMatchObject({
+		expect(added).toHaveLength(1);
+		expect(added[0]).toMatchObject({
 			provider: "deepseek",
 			model: "deepseek-v4-flash",
+			protocolIn: "openai",
+			protocolOut: "openai",
 			httpStatus: 200,
-			inputTokens: 1000,
-			cacheReadTokens: 200,
-			outputTokens: 30,
-			// 1000×0.139 + 30×0.278 + 200×0.0028 = 147.9
-			costMicroUsd: 148,
+			inputTokens: 80,
+			outputTokens: 7,
+			cacheReadTokens: 20,
+			// round(80×0.139 + 7×0.278 + 20×0.0028)
+			costMicroUsd: 13,
 			parseError: false,
 		});
 	});
 
 	it("工具调用分片拼接成完整参数", async () => {
-		const { impl } = fakeFetch([
-			() => new Response(TOOL_STREAM, { status: 200 }),
-		]);
-		const res = await createDeepSeekClient({
-			apiKey: "k",
-			fetch: impl,
-		}).complete(request());
+		const res = await client.complete(
+			request({
+				messages: [{ role: "user", content: "请用工具查一下" }],
+				tools: [TOOL_SPEC],
+			}),
+		);
 		expect(res.toolCalls).toEqual([
-			{
-				id: "call_1",
-				name: "knowledge_search",
-				arguments: '{"query":"预算"}',
-			},
+			{ id: "call_fake", name: "lookup", arguments: '{"q":"预算"}' },
 		]);
 	});
 
-	it("5xx 与 429 重试后成功：每次 HTTP 调用各记一行", async () => {
-		const before = (await rows()).length;
-		const { impl, calls } = fakeFetch([
-			() => new Response("busy", { status: 503 }),
-			() => new Response("slow down", { status: 429 }),
-			() => new Response(OK_STREAM, { status: 200 }),
-		]);
-		const res = await createDeepSeekClient({
-			apiKey: "k",
-			fetch: impl,
-			retryDelaysMs: [1, 1],
-		}).complete(request());
-		expect(res.text).toBe("你好，我是分身。");
-		expect(calls).toHaveLength(3);
-		const statuses = (await rows()).slice(before).map((r) => r.httpStatus);
-		expect(statuses).toEqual([503, 429, 200]);
+	it("5xx 与 429 重试后成功：每次上游尝试各记一行", async () => {
+		upstream.script(PATH, { status: 500 }, { status: 429 });
+		const { out, rows: added } = await newRows(() =>
+			client.complete(request()),
+		);
+		expect(out).toMatchObject({ text: FAKE_TEXT.join("") });
+		expect(added.map((r) => r.httpStatus)).toEqual([500, 429, 200]);
 	});
 
 	it("重试 2 次仍失败 → LlmUnavailableError，三行失败记录", async () => {
-		const before = (await rows()).length;
-		const { impl } = fakeFetch([
-			() => new Response("x", { status: 500 }),
-			() => Promise.reject(new TypeError("network down")),
-			() => new Response("x", { status: 502 }),
-		]);
-		await expect(
-			createDeepSeekClient({
-				apiKey: "k",
-				fetch: impl,
-				retryDelaysMs: [1, 1],
-			}).complete(request()),
-		).rejects.toBeInstanceOf(LlmUnavailableError);
-		const failed = (await rows()).slice(before);
-		expect(failed.map((r) => r.httpStatus)).toEqual([500, 0, 502]);
-		expect(failed.every((r) => r.inputTokens === null)).toBe(true);
+		upstream.script(PATH, { status: 503 }, { status: 503 }, { status: 503 });
+		const { out, rows: added } = await newRows(() =>
+			client.complete(request()),
+		);
+		expect(out).toBeInstanceOf(LlmUnavailableError);
+		expect(added.map((r) => r.httpStatus)).toEqual([503, 503, 503]);
 	});
 
 	it("4xx（非 429）不重试", async () => {
-		const { impl, calls } = fakeFetch([
-			() => new Response("bad", { status: 400 }),
-		]);
-		await expect(
-			createDeepSeekClient({ apiKey: "k", fetch: impl }).complete(request()),
-		).rejects.toBeInstanceOf(LlmUnavailableError);
-		expect(calls).toHaveLength(1);
+		upstream.script(PATH, { status: 400, body: '{"error":{"message":"bad"}}' });
+		const { out, rows: added } = await newRows(() =>
+			client.complete(request()),
+		);
+		expect(out).toBeInstanceOf(LlmUnavailableError);
+		expect(added.map((r) => r.httpStatus)).toEqual([400]);
 	});
 
 	it("中止：抛 LlmAbortedError，记一行 499", async () => {
-		const before = (await rows()).length;
+		upstream.script(PATH, { delayMs: 2_000 });
 		const controller = new AbortController();
-		const { impl } = fakeFetch([
-			() =>
-				new Promise<Response>((_, reject) => {
-					controller.signal.addEventListener("abort", () =>
-						reject(new DOMException("aborted", "AbortError")),
-					);
-					setTimeout(() => controller.abort(), 5);
-				}),
-		]);
-		await expect(
-			createDeepSeekClient({ apiKey: "k", fetch: impl }).complete(
-				request({ signal: controller.signal }),
-			),
-		).rejects.toBeInstanceOf(LlmAbortedError);
-		const aborted = (await rows()).slice(before);
-		expect(aborted.map((r) => r.httpStatus)).toEqual([499]);
+		setTimeout(() => controller.abort(), 50);
+		const { out, rows: added } = await newRows(() =>
+			client.complete(request({ signal: controller.signal })),
+		);
+		expect(out).toBeInstanceOf(LlmAbortedError);
+		expect(added.map((r) => r.httpStatus)).toEqual([499]);
 	});
 
 	it("计量字段损坏：parseError=true、成本为空，回复照常", async () => {
-		const before = (await rows()).length;
-		const broken = sse([
-			{ choices: [{ delta: { content: "好" } }] },
-			{ choices: [], usage: { prompt_tokens: "很多", completion_tokens: 1 } },
-		]);
-		const { impl } = fakeFetch([() => new Response(broken, { status: 200 })]);
-		const res = await createDeepSeekClient({
-			apiKey: "k",
-			fetch: impl,
-		}).complete(request());
-		expect(res.text).toBe("好");
-		expect((await rows()).slice(before)[0]).toMatchObject({
-			parseError: true,
-			costMicroUsd: null,
+		upstream.script(PATH, {
+			contentType: "text/event-stream",
+			body: sse([
+				{ choices: [{ delta: { content: "好" } }] },
+				{ choices: [], usage: { prompt_tokens: "很多", completion_tokens: 1 } },
+				"[DONE]",
+			]),
 		});
-	});
-
-	it("写账失败只记日志，不影响回复", async () => {
-		const { impl } = fakeFetch([
-			() => new Response(OK_STREAM, { status: 200 }),
-		]);
-		const res = await createDeepSeekClient({
-			apiKey: "k",
-			fetch: impl,
-			record: async () => {
-				throw new Error("db down");
-			},
-		}).complete(request());
-		expect(res.text).toBe("你好，我是分身。");
+		const { out, rows: added } = await newRows(() =>
+			client.complete(request()),
+		);
+		expect(out).toMatchObject({ text: "好" });
+		expect(added[0]).toMatchObject({ parseError: true, costMicroUsd: null });
 	});
 
 	it("响应里出现推理内容时如实标出", async () => {
-		const { impl } = fakeFetch([
-			() =>
-				new Response(
-					sse([
-						{ choices: [{ delta: { reasoning_content: "想一想" } }] },
-						{ choices: [{ delta: { content: "好" } }] },
-					]),
-					{ status: 200 },
-				),
-		]);
-		const res = await createDeepSeekClient({
-			apiKey: "k",
-			fetch: impl,
-		}).complete(request());
-		expect(res.reasoning).toBe(true);
+		upstream.script(PATH, {
+			contentType: "text/event-stream",
+			body: sse([
+				{ choices: [{ delta: { reasoning_content: "想一想" } }] },
+				{ choices: [{ delta: { content: "答" }, finish_reason: "stop" }] },
+				"[DONE]",
+			]),
+		});
+		const res = await client.complete(request());
+		expect(res).toMatchObject({ text: "答", reasoning: true });
+	});
+
+	it("模型未在本组织开放：不出网，LlmUnavailableError(400)", async () => {
+		const before = upstream.requests.length;
+		const out = await client
+			.complete(
+				request({
+					meta: { ...request().meta, model: "deepseek/deepseek-v4-pro" },
+				}),
+			)
+			.catch((e: unknown) => e);
+		expect(out).toBeInstanceOf(LlmUnavailableError);
+		expect((out as LlmUnavailableError).httpStatus).toBe(400);
+		expect(upstream.requests.length).toBe(before);
 	});
 });

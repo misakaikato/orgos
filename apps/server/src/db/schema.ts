@@ -10,10 +10,14 @@ import {
 	CONVERSATION_KINDS,
 	CONVERSATION_MEMBER_ROLES,
 	DEFAULT_AGENT_MODEL,
+	EXTERNAL_AGENT_MODES,
+	GATEWAY_PROTOCOLS,
+	GROUP_ROUTINGS,
 	MEMBER_ROLES,
 	NOTE_VISIBILITIES,
 	PRINCIPAL_KINDS,
 	PRINCIPAL_STATUSES,
+	type ProviderEndpoints,
 	RUN_STATES,
 	RUNNER_STATUSES,
 	TASK_LOG_KINDS,
@@ -303,10 +307,18 @@ export const llmRequests = pgTable(
 		durationMs: integer("duration_ms").notNull(),
 		httpStatus: integer("http_status").notNull(),
 		parseError: boolean("parse_error").notNull().default(false),
+		/** 服务于哪个任务（外部 agent 的任务令牌、或内置运行所服务的任务）。 */
+		taskId: uuid("task_id").references((): PgColumn => tasks.id),
+		/** 调用方说的协议与发给上游的协议（相同即直通）。 */
+		protocolIn: text("protocol_in", { enum: GATEWAY_PROTOCOLS }).notNull(),
+		protocolOut: text("protocol_out", { enum: GATEWAY_PROTOCOLS }).notNull(),
+		/** 经路由组时：哪个组（一次请求内的每次切换各一行）。 */
+		groupId: uuid("group_id"),
 		createdAt: createdAt(),
 	},
 	(t) => [
 		index("llm_requests_agent_idx").on(t.agentId),
+		index("llm_requests_task_idx").on(t.taskId),
 		index("llm_requests_conversation_idx").on(t.conversationId),
 		index("llm_requests_run_idx").on(t.runId),
 	],
@@ -497,5 +509,75 @@ export const tenantSettings = pgTable("tenant_settings", {
 	allowUnsupervisedAdapters: boolean("allow_unsupervised_adapters")
 		.notNull()
 		.default(false),
+	defaultModel: text("default_model").notNull().default(DEFAULT_AGENT_MODEL),
+	externalAgentMode: text("external_agent_mode", { enum: EXTERNAL_AGENT_MODES })
+		.notNull()
+		.default("enterprise"),
+	allowPersonalExternal: boolean("allow_personal_external")
+		.notNull()
+		.default(false),
 	updatedAt: updatedAt(),
 });
+
+/**
+ * 模型厂商：本租户的一家上游。key 以 AES-256-GCM 加密存放（`@/gateway/secret`），接口与日志永不回显明文；
+ * 本机推理服务可以没有 key。name 用在模型引用 `name/model` 里，建好后不改。
+ */
+export const modelProviders = pgTable(
+	"model_providers",
+	{
+		id: uuid("id").primaryKey().defaultRandom(),
+		tenantId: tenantId(),
+		name: text("name").notNull(),
+		preset: text("preset"),
+		endpoints: jsonb("endpoints").$type<ProviderEndpoints>().notNull(),
+		keyCiphertext: text("key_ciphertext"),
+		exposedModels: text("exposed_models")
+			.array()
+			.notNull()
+			.default(sql`'{}'::text[]`),
+		createdAt: createdAt(),
+		updatedAt: updatedAt(),
+	},
+	(t) => [unique("model_providers_tenant_name_unique").on(t.tenantId, t.name)],
+);
+
+/** 路由组：一组 `厂商/模型`，order 依次尝试、rotate 每次轮换。 */
+export const modelGroups = pgTable("model_groups", {
+	id: uuid("id").primaryKey().defaultRandom(),
+	tenantId: tenantId(),
+	name: text("name").notNull(),
+	members: text("members").array().notNull(),
+	routing: text("routing", { enum: GROUP_ROUTINGS }).notNull(),
+	createdAt: createdAt(),
+});
+
+/**
+ * 任务令牌：外部 agent 在企业模式下调用网关的唯一凭据。库里只存哈希；绑定租户、代理（及其本人）、
+ * 该话题的外部会话。外部会话关闭时吊销；话题里任务的开始与结束不影响它。
+ */
+export const gatewayTokens = pgTable(
+	"gateway_tokens",
+	{
+		tokenHash: text("token_hash").primaryKey(),
+		tenantId: tenantId(),
+		agentId: uuid("agent_id")
+			.notNull()
+			.references(() => principals.id),
+		onBehalfOfId: uuid("on_behalf_of_id")
+			.notNull()
+			.references(() => principals.id),
+		conversationId: uuid("conversation_id")
+			.notNull()
+			.references(() => conversations.id),
+		topicId: uuid("topic_id")
+			.notNull()
+			.references(() => topics.id),
+		runnerId: uuid("runner_id")
+			.notNull()
+			.references(() => runners.id),
+		createdAt: createdAt(),
+		revokedAt: timestamp("revoked_at", { withTimezone: true }),
+	},
+	(t) => [index("gateway_tokens_topic_idx").on(t.topicId)],
+);

@@ -113,7 +113,7 @@ describe("onboarding 成功", () => {
 		expect(ops?.role).toBe("specialist");
 		expect(ops?.principal.handle).toBe(`${handle}-ops`);
 		expect(ops?.principal.displayName).toBe("Alice的执行助手");
-		expect(twin?.model).toBe("deepseek-v4-flash");
+		expect(twin?.model).toBe("deepseek/deepseek-v4-flash");
 		expect(twin?.description.length).toBeGreaterThan(0);
 		expect(body.principal.status).toBe("available");
 		expect(twin?.principal.status).toBeUndefined();

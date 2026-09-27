@@ -19,6 +19,7 @@ import type {
 	TenantSettings,
 	Topic,
 	TopicToGroupRequest,
+	UpdateTenantSettingsRequest,
 	WorkItem,
 } from "@orgos/protocol";
 import { useSyncExternalStore } from "react";
@@ -596,13 +597,19 @@ export async function loadTenantSettings(): Promise<void> {
 	set({ tenantSettings: settings });
 }
 
+/** 改租户设置（仅 owner）；服务端返回的整份设置写回 store。 */
+export async function updateTenantSettings(
+	patch: UpdateTenantSettingsRequest,
+): Promise<TenantSettings> {
+	const { settings } = await api.updateTenantSettings(patch);
+	set({ tenantSettings: settings });
+	return settings;
+}
+
 export async function setAllowUnsupervisedAdapters(
 	allow: boolean,
 ): Promise<void> {
-	const { settings } = await api.updateTenantSettings({
-		allowUnsupervisedAdapters: allow,
-	});
-	set({ tenantSettings: settings });
+	await updateTenantSettings({ allowUnsupervisedAdapters: allow });
 }
 
 // ─────────────────────────── 设备 ───────────────────────────

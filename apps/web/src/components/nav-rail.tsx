@@ -10,6 +10,7 @@ import {
 	IconDevice,
 	IconLogout,
 	IconMe,
+	IconModel,
 	IconTodo,
 } from "@/components/icons";
 import { Mascot } from "@/components/mascot";
@@ -29,10 +30,18 @@ export type NavKey =
 	| "contacts"
 	| "agents"
 	| "devices"
+	| "models"
 	| "me";
 
 export function navKeyOf(pathname: string): NavKey {
-	for (const key of ["todo", "contacts", "agents", "devices", "me"] as const)
+	for (const key of [
+		"todo",
+		"contacts",
+		"agents",
+		"devices",
+		"models",
+		"me",
+	] as const)
 		if (pathname === `/${key}` || pathname.startsWith(`/${key}/`)) return key;
 	return "chats";
 }
@@ -92,12 +101,14 @@ export function useSignOut(): (() => Promise<void>) | null {
 	};
 }
 
-/** 本人头像菜单：身份、在线状态、主题、退出。 */
+/** 本人头像菜单：身份、在线状态、主题、（租户 owner 的）模型、退出。 */
 function AccountMenu() {
 	const me = useStore((s) => s.me);
 	const signOut = useSignOut();
+	const router = useRouter();
 	const [open, setOpen] = useState(false);
 	if (!me) return null;
+	const isOwner = Boolean(me.tenant.inviteCode);
 	return (
 		<Popover
 			open={open}
@@ -137,6 +148,19 @@ function AccountMenu() {
 				<p className="mb-2 text-12 text-muted">主题</p>
 				<ThemeSegmented />
 			</div>
+			{isOwner ? (
+				<div className="border-t border-line py-1">
+					<MenuItem
+						onClick={() => {
+							setOpen(false);
+							router.push(appHref("/models"));
+						}}
+					>
+						<IconModel size={18} />
+						模型
+					</MenuItem>
+				</div>
+			) : null}
 			{signOut ? (
 				<div className="border-t border-line pt-1">
 					<MenuItem tone="danger" onClick={() => void signOut()}>
@@ -193,8 +217,9 @@ export function NavRail({ className }: { className?: string }) {
 export function BottomTabs({ className }: { className?: string }) {
 	const pathname = usePathname();
 	const key = navKeyOf(pathname);
-	// 代理组与设备在手机上从"我的"进入。
-	const active = key === "agents" || key === "devices" ? "me" : key;
+	// 代理组、设备与模型在手机上从"我的"进入。
+	const active =
+		key === "agents" || key === "devices" || key === "models" ? "me" : key;
 	const counts = useCounts();
 	return (
 		<nav

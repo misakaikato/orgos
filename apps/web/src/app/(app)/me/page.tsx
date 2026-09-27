@@ -7,6 +7,7 @@ import {
 	IconChevronRight,
 	IconDevice,
 	IconLogout,
+	IconModel,
 } from "@/components/icons";
 import { useSignOut } from "@/components/nav-rail";
 import { PageHeader } from "@/components/page-header";
@@ -37,7 +38,7 @@ function Row({
 	);
 }
 
-/** 我的（手机底部标签）：身份、在线状态、代理组与设备入口、主题、退出。 */
+/** 我的（手机底部标签）：身份、在线状态、代理组与设备入口、（租户 owner 的）模型入口、主题、退出。 */
 export default function MePage() {
 	const me = useStore((s) => s.me);
 	const signOut = useSignOut();
@@ -69,6 +70,11 @@ export default function MePage() {
 						<Row href="/devices" icon={<IconDevice />}>
 							设备
 						</Row>
+						{me.tenant.inviteCode ? (
+							<Row href="/models" icon={<IconModel />}>
+								模型
+							</Row>
+						) : null}
 					</section>
 					<section className="rounded-card bg-bg p-4">
 						<p className="mb-2 text-14 font-semibold text-ink">主题</p>

@@ -6,6 +6,15 @@ import type {
 import { useId } from "react";
 import { cx } from "@/lib/cx";
 
+const selectBase =
+	"h-control w-full rounded-pill px-3 text-14 text-ink outline-none focus:ring-2 focus:ring-accent disabled:opacity-50";
+
+/** 下拉选择：与输入框同一套底色与聚焦外环。 */
+export const selectClass = `${selectBase} bg-surface-2`;
+
+/** 放在 --surface-2 底色区块里的下拉选择。 */
+export const selectOnSurfaceClass = `${selectBase} bg-bg`;
+
 /** 输入框：--surface-2 底、无描边，聚焦时 2px 品牌色外环。 */
 export const fieldClass =
 	"w-full bg-surface-2 text-14 text-ink placeholder:text-muted outline-none focus-visible:outline-none focus:ring-2 focus:ring-accent";

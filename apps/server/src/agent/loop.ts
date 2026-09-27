@@ -176,6 +176,7 @@ export async function runAgent(input: RunInput): Promise<RunResult> {
 			conversation,
 			topic,
 			runId: run.id,
+			taskId,
 		});
 		return result;
 	} finally {
@@ -189,6 +190,7 @@ type Resolved = {
 	conversation: typeof conversations.$inferSelect;
 	topic: Awaited<ReturnType<typeof topicIn>>;
 	runId: string;
+	taskId: string | null;
 };
 
 async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
@@ -265,6 +267,7 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 		onBehalfOfId: actingFor.kind === "other" ? actingFor.principalId : owner.id,
 		conversationId: conversation.id,
 		runId,
+		taskId: r.taskId,
 		model: agent.model,
 	};
 	const history: ChatMessage[] = delegation

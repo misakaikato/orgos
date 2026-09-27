@@ -14,10 +14,10 @@
  * 6. 其余 → `收到：<触发文本>`。
  *
  * 文本按 8 字切片流式输出；每次调用写一行 llm_requests（provider='mock'，tokens 按字数估算）。
+ * 假模型不经网关：它替换的正是"经网关调用厂商"这一整段。
  */
 import {
 	type ChatMessage,
-	HTTP_STATUS_ABORTED,
 	LlmAbortedError,
 	type LlmClient,
 	type LlmRequest,
@@ -25,6 +25,7 @@ import {
 	type RunTrigger,
 	sleep,
 } from "@/agent/llm-types";
+import { STATUS_ABORTED } from "@/gateway/meter";
 import {
 	type RecordLlmRequest,
 	recordLlmRequest,
@@ -250,7 +251,7 @@ export function createMockLlm(opts: MockOptions = {}): LlmClient {
 					throw new LlmAbortedError();
 				}
 			} catch (e) {
-				httpStatus = HTTP_STATUS_ABORTED;
+				httpStatus = STATUS_ABORTED;
 				throw e;
 			} finally {
 				await recordSafely(record, {
@@ -261,6 +262,9 @@ export function createMockLlm(opts: MockOptions = {}): LlmClient {
 					runId: req.meta.runId,
 					provider: "mock",
 					model: "mock",
+					protocolIn: "openai",
+					protocolOut: "openai",
+					taskId: req.meta.taskId,
 					inputTokens: charCount(req.messages),
 					outputTokens: Array.from(output).length,
 					cacheReadTokens: 0,

@@ -263,7 +263,7 @@ describe("接入外部助手", () => {
 			error: { code: "ADAPTER_UNAVAILABLE" },
 		});
 		const settings = await alice.client.request("GET", "/api/tenant/settings");
-		expect(await settings.json()).toEqual({
+		expect(await settings.json()).toMatchObject({
 			settings: { allowUnsupervisedAdapters: false },
 		});
 		const notOwner = await bob.client.request("PATCH", "/api/tenant/settings", {
@@ -273,7 +273,7 @@ describe("接入外部助手", () => {
 		const on = await alice.client.request("PATCH", "/api/tenant/settings", {
 			allowUnsupervisedAdapters: true,
 		});
-		expect(await on.json()).toEqual({
+		expect(await on.json()).toMatchObject({
 			settings: { allowUnsupervisedAdapters: true },
 		});
 		const unconfirmed = await alice.client.request(

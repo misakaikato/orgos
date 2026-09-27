@@ -113,10 +113,16 @@ export function isValidSpawnEnvKey(key: string): boolean {
 export function scrubEnvWrap(
 	command: string,
 	args: readonly string[],
+	/** 另外要去掉的键（企业模式下设备主人自己的凭据等）。 */
+	alsoUnset: readonly string[] = [],
 ): { command: string; args: string[] } {
 	return {
 		command: ENV_BIN,
-		args: [...SCRUBBED_ENV_KEYS.flatMap((k) => ["-u", k]), command, ...args],
+		args: [
+			...[...SCRUBBED_ENV_KEYS, ...alsoUnset].flatMap((k) => ["-u", k]),
+			command,
+			...args,
+		],
 	};
 }
 
@@ -126,7 +132,7 @@ export const ACP_MAX_ARGS = 20;
 export const ACP_MAX_ENV_KEYS = 20;
 export const ACP_ENV_VALUE_MAX = 4000;
 
-/** 起一个 ACP agent 进程的三件套。`env` 只放适配器自己需要的开关；orgos 不注入任何模型密钥。 */
+/** 起一个 ACP agent 进程的三件套。`env` 只放适配器自己需要的开关与企业模式的注入；orgos 不注入任何厂商密钥。 */
 export const AcpConfigSchema = z.object({
 	command: z.string().default(""),
 	args: z.array(z.string()).default([]),
@@ -199,7 +205,56 @@ export type AcpAdapterDef = {
 	delegatesTools: boolean;
 	/** 选适配器时给本人看的一句说明。 */
 	note: string;
+	/** 企业模式的注入规则；null 表示该适配器只支持个人模式（原因写在 enterpriseNote）。 */
+	enterprise: AcpEnterpriseInjection | null;
+	/** 企业模式的说明（不支持时写明原因）。 */
+	enterpriseNote: string;
 };
+
+/**
+ * 企业模式：让外部 agent 经 orgos 网关调用模型，只持有本任务的令牌。只用本次子进程的环境变量
+ * 与启动参数，绝不改设备主人的全局配置文件。值里的占位符在 Runner 起进程时替换：
+ *   {baseUrl} 网关地址（`<服务端>/llm`），{token} 任务令牌，{model} 外部助手配置的模型引用。
+ * 令牌只放进环境变量，不进命令行（`ps` 看得见命令行）。
+ */
+export type AcpEnterpriseInjection = {
+	env: Readonly<Record<string, string>>;
+	/** 追加在适配器启动参数之后；不许出现 {token}。 */
+	args: readonly string[];
+	/** 从子进程环境里去掉的键：设备主人自己的凭据，以及会让 agent 绕开网关的开关。 */
+	unset: readonly string[];
+};
+
+export type GatewayLaunch = { baseUrl: string; token: string; model: string };
+
+const fill = (template: string, v: GatewayLaunch, allowToken: boolean) => {
+	if (!allowToken && template.includes("{token}"))
+		throw new Error("任务令牌只能经环境变量注入");
+	return template
+		.replaceAll("{baseUrl}", v.baseUrl)
+		.replaceAll("{token}", v.token)
+		.replaceAll("{model}", v.model);
+};
+
+/** 按适配器的注入规则装配企业模式的启动配置（不支持企业模式的适配器返回 null）。 */
+export function enterpriseLaunchConfig(
+	def: Pick<AcpAdapterDef, "enterprise">,
+	base: AcpConfig,
+	v: GatewayLaunch,
+): { config: AcpConfig; unset: string[] } | null {
+	const rule = def.enterprise;
+	if (!rule) return null;
+	const env: Record<string, string> = { ...base.env };
+	for (const [k, t] of Object.entries(rule.env)) env[k] = fill(t, v, true);
+	return {
+		config: {
+			command: base.command,
+			args: [...base.args, ...rule.args.map((a) => fill(a, v, false))],
+			env,
+		},
+		unset: [...rule.unset],
+	};
+}
 
 /**
  * 内置适配器。版本钉死；npx 按需拉取，不写入任何 package.json。
@@ -223,7 +278,32 @@ export const ACP_ADAPTERS: readonly AcpAdapterDef[] = [
 		},
 		requires: ["npx", "node"],
 		delegatesTools: true,
-		note: "读写文件与执行命令都经这台设备，限制在工作目录内，写入和命令先问你。使用本机 Claude Code 的登录。",
+		note: "读写文件与执行命令都经这台设备，限制在工作目录内，写入和命令先问你。",
+		enterprise: {
+			env: {
+				ANTHROPIC_BASE_URL: "{baseUrl}",
+				ANTHROPIC_AUTH_TOKEN: "{token}",
+				ANTHROPIC_MODEL: "{model}",
+				ANTHROPIC_SMALL_FAST_MODEL: "{model}",
+				ANTHROPIC_DEFAULT_OPUS_MODEL: "{model}",
+				ANTHROPIC_DEFAULT_SONNET_MODEL: "{model}",
+				ANTHROPIC_DEFAULT_HAIKU_MODEL: "{model}",
+				CLAUDE_CODE_SUBAGENT_MODEL: "{model}",
+				CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+			},
+			args: [],
+			unset: [
+				"ANTHROPIC_API_KEY",
+				"CLAUDE_CODE_OAUTH_TOKEN",
+				"CLAUDE_CODE_USE_BEDROCK",
+				"CLAUDE_CODE_USE_VERTEX",
+				"CLAUDE_CODE_USE_FOUNDRY",
+				"ANTHROPIC_BEDROCK_BASE_URL",
+				"ANTHROPIC_VERTEX_BASE_URL",
+			],
+		},
+		enterpriseNote:
+			"ANTHROPIC_BASE_URL 指向网关、ANTHROPIC_AUTH_TOKEN 为任务令牌，主模型与各档小模型都设为该助手的模型。",
 	},
 	{
 		id: "codex",
@@ -235,7 +315,27 @@ export const ACP_ADAPTERS: readonly AcpAdapterDef[] = [
 		},
 		requires: ["npx", "node"],
 		delegatesTools: true,
-		note: "操作前会请你批准。使用本机 Codex 的登录。",
+		note: "操作前会请你批准。",
+		enterprise: {
+			env: { ORGOS_LLM_TOKEN: "{token}" },
+			args: [
+				"-c",
+				'model_providers.orgos.name="orgos"',
+				"-c",
+				'model_providers.orgos.base_url="{baseUrl}/v1"',
+				"-c",
+				'model_providers.orgos.env_key="ORGOS_LLM_TOKEN"',
+				"-c",
+				'model_providers.orgos.wire_api="responses"',
+				"-c",
+				'model_provider="orgos"',
+				"-c",
+				'model="{model}"',
+			],
+			unset: ["OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY"],
+		},
+		enterpriseNote:
+			"以 -c 参数定义临时厂商 orgos（Responses 协议，base_url 指向网关），令牌经 ORGOS_LLM_TOKEN 传入；不改 ~/.codex/config.toml。",
 	},
 	{
 		id: "pi",
@@ -244,6 +344,9 @@ export const ACP_ADAPTERS: readonly AcpAdapterDef[] = [
 		requires: ["npx", "node", "pi"],
 		delegatesTools: false,
 		note: "pi 在本机直接读写文件、执行命令，不经工作目录限制，也不会先问你。使用本机 pi 的配置。",
+		enterprise: null,
+		enterpriseNote:
+			"仅支持个人模式：pi-acp 以固定参数启动 pi，pi 只能经 ~/.pi/agent/models.json 定义自定义端点，没有环境变量或参数可指定 base URL。",
 	},
 	{
 		id: "hermes",
@@ -252,6 +355,9 @@ export const ACP_ADAPTERS: readonly AcpAdapterDef[] = [
 		requires: ["hermes"],
 		delegatesTools: false,
 		note: "Hermes 在本机直接读写文件、执行命令，只有它判断为危险的命令才会先问你。使用本机 Hermes 的配置。",
+		enterprise: null,
+		enterpriseNote:
+			"仅支持个人模式：hermes acp 的厂商与模型取自 ~/.hermes/config.yaml，自定义端点的 key 按主机名筛选，环境变量无法可靠地把它指向网关。",
 	},
 	{
 		id: "fake",
@@ -262,6 +368,16 @@ export const ACP_ADAPTERS: readonly AcpAdapterDef[] = [
 		devOnly: true,
 		delegatesTools: true,
 		note: "仓库内的测试用 ACP agent，只在开发模式下提供。",
+		enterprise: {
+			env: {
+				OPENAI_BASE_URL: "{baseUrl}/v1",
+				OPENAI_API_KEY: "{token}",
+				OPENAI_MODEL: "{model}",
+			},
+			args: [],
+			unset: [],
+		},
+		enterpriseNote: "OpenAI 风格的三个环境变量。",
 	},
 ];
 

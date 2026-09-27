@@ -8,9 +8,11 @@
  *    而不是只存在于一段谁都可能改掉的对象构造代码里；且不经 shell，注入面为零。
  *    token 本身只在 Runner 的内存里（读自 runner.json），从不进任何环境变量。
  *
- * 2. orgos 不注入任何模型密钥。子进程的环境 = Runner 自己的环境去掉上述键，再并上适配器表里
- *    写死的开关（表里一个密钥都没有，`enforceAcpConfig` 也拒绝任何被清洗的键名）。外部 agent
- *    用的是本人自己在这台设备上的登录或 key，orgos 不代付、不代管。
+ * 2. orgos 不注入任何厂商密钥。子进程的环境 = Runner 自己的环境去掉上述键，再并上适配器表里
+ *    写死的开关（表里一个密钥都没有，`enforceAcpConfig` 也拒绝任何被清洗的键名）。
+ *    个人模式下外部 agent 用本人自己在这台设备上的登录；企业模式下按适配器表的注入规则
+ *    只多给三样：网关地址（`<服务端>/llm`，只认任务令牌）、本会话的任务令牌、模型引用，
+ *    并去掉设备主人自己的凭据与会绕开网关的开关——都只在本次子进程里，不碰任何配置文件。
  *
  * 3. stdio 是管道，不是 PTY。ACP 走 NDJSON over stdin/stdout，PTY 会插入回显与行编辑，
  *    把协议帧搅烂。
@@ -29,10 +31,12 @@ const SCRUBBED: ReadonlySet<string> = new Set(SCRUBBED_ENV_KEYS);
 export function scrubEnv(
 	base: Record<string, string | undefined>,
 	extra: Record<string, string>,
+	alsoUnset: readonly string[] = [],
 ): Record<string, string> {
 	const out: Record<string, string> = {};
+	const drop = new Set(alsoUnset);
 	for (const [k, v] of Object.entries(base)) {
-		if (SCRUBBED.has(k)) continue;
+		if (SCRUBBED.has(k) || drop.has(k)) continue;
 		if (v !== undefined) out[k] = v;
 	}
 	for (const [k, v] of Object.entries(extra)) {
@@ -55,12 +59,14 @@ export function buildLaunchPlan(
 	config: AcpConfig,
 	workspace: string,
 	baseEnv: Record<string, string | undefined>,
+	/** 企业模式下另外去掉的键。 */
+	alsoUnset: readonly string[] = [],
 ): AcpLaunchPlan {
-	const wrapped = scrubEnvWrap(config.command, config.args ?? []);
+	const wrapped = scrubEnvWrap(config.command, config.args ?? [], alsoUnset);
 	return {
 		command: wrapped.command,
 		args: wrapped.args,
-		env: scrubEnv(baseEnv, config.env ?? {}),
+		env: scrubEnv(baseEnv, config.env ?? {}, alsoUnset),
 		cwd: workspace,
 	};
 }

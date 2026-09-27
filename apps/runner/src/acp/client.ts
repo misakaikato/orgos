@@ -68,6 +68,8 @@ export const STOP_ERROR = "error";
 
 export interface AcpClientDeps {
 	config: AcpConfig;
+	/** 另外从子进程环境里去掉的键（企业模式）。 */
+	unset?: readonly string[];
 	workspace: string;
 	emit: EmitLog;
 	/** agent 请求权限：交回本人所选的 optionId；null 表示取消。 */
@@ -193,6 +195,7 @@ export function createAcpClient(deps: AcpClientDeps): AcpClient {
 				deps.config,
 				workspace,
 				deps.baseEnv ?? process.env,
+				deps.unset,
 			);
 			terminals = createAcpTerminals(workspace, plan.env, deps.terminalGate);
 			peer = createJsonRpcPeer({

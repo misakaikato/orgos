@@ -9,7 +9,9 @@ import { nextWsTarget, proxyToNext } from "@/proxy";
 import { registerAgentRoutes } from "@/routes/agents";
 import { registerConversationRoutes } from "@/routes/conversations";
 import { registerDevRoutes } from "@/routes/dev";
+import { registerLlmRoutes } from "@/routes/llm";
 import { registerMeRoutes } from "@/routes/me";
+import { registerModelRoutes } from "@/routes/models";
 import { registerNoteRoutes } from "@/routes/notes";
 import { registerOnboardingRoutes } from "@/routes/onboarding";
 import { registerRunnerRoutes } from "@/routes/runners";
@@ -37,6 +39,8 @@ export function createApp(): Hono<AppEnv> {
 	registerTopicRoutes(app);
 	registerRunRoutes(app);
 	registerTenantRoutes(app);
+	registerModelRoutes(app);
+	registerLlmRoutes(app);
 	registerWsRoutes(app);
 	registerDevRoutes(app);
 

@@ -75,6 +75,7 @@ beforeAll(async () => {
 	for (const k of SCRUBBED_ENV_KEYS) process.env[k] = `leak-${k}`;
 	manager = new AcpManager({
 		runnerWorkspace: ws,
+		server: "http://127.0.0.1:8930",
 		adapters,
 		send: (f) => frames.push(f),
 	});

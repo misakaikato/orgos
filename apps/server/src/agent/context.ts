@@ -9,9 +9,8 @@
  * 近期工作简报：该代理过去 48 小时在其他话题与会话里说的最后一句，最多 10 行、约 350 token，
  * 放在历史之后（不进系统提示，以保住提示缓存）；为他人办事时只列对方也在的会话。
  */
-import type { Event } from "@orgos/protocol";
+import { contextWindowOf, type Event } from "@orgos/protocol";
 import { and, asc, desc, eq, gt, inArray, ne } from "drizzle-orm";
-import { contextWindowFor } from "@/agent/llm-config";
 import type {
 	ChatMessage,
 	LlmClient,
@@ -57,7 +56,7 @@ function envInt(name: string): number | undefined {
 export function contextLimits(model: string): ContextLimits {
 	return {
 		windowTokens:
-			envInt("ORGOS_CONTEXT_WINDOW_TOKENS") ?? contextWindowFor(model),
+			envInt("ORGOS_CONTEXT_WINDOW_TOKENS") ?? contextWindowOf(model),
 		reserveTokens:
 			envInt("ORGOS_CONTEXT_RESERVE_TOKENS") ?? DEFAULT_RESERVE_TOKENS,
 		maxEvents: envInt("ORGOS_COMPACT_MAX_EVENTS") ?? DEFAULT_MAX_EVENTS,

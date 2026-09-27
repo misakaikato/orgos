@@ -1,6 +1,7 @@
 /**
  * 子进程环境的安全面：runner token、服务器地址与配置目录不可见（两道都上）；orgos 不注入任何
- * 模型密钥；命令不经 shell；适配器表里的每一条都过得了启动前的卫生判据。
+ * 厂商密钥；命令不经 shell；适配器表里的每一条都过得了启动前的卫生判据；企业模式只注入网关地址、
+ * 任务令牌与模型（令牌不进命令行），并去掉设备主人自己的凭据。
  */
 import { describe, expect, it } from "bun:test";
 import {
@@ -8,6 +9,7 @@ import {
 	type AcpConfig,
 	ENV_BIN,
 	enforceAcpConfig,
+	enterpriseLaunchConfig,
 	SCRUBBED_ENV_KEYS,
 } from "@orgos/protocol";
 import { launchConfigOf } from "@/acp/adapters";
@@ -97,5 +99,84 @@ describe("启动配置的卫生判据", () => {
 			expect(enforceAcpConfig(config).rejection).toBeNull();
 			expect(config.env).toEqual({});
 		}
+	});
+});
+
+describe("企业模式的注入", () => {
+	const gateway = {
+		baseUrl: "http://orgos.example:8930/llm",
+		token: "ogt_task-token-value",
+		model: "deepseek/deepseek-v4-flash",
+	};
+	const find = (id: string) => {
+		const def = ACP_ADAPTERS.find((a) => a.id === id);
+		if (!def) throw new Error(`没有 ${id}`);
+		return def;
+	};
+
+	it("claude-code：base URL 指向网关、令牌走 ANTHROPIC_AUTH_TOKEN、各档模型都是该助手的模型", () => {
+		const def = find("claude-code");
+		const out = enterpriseLaunchConfig(def, launchConfigOf(def), gateway);
+		if (!out) throw new Error("claude-code 应支持企业模式");
+		expect(enforceAcpConfig(out.config).rejection).toBeNull();
+		expect(out.config.env.ANTHROPIC_BASE_URL).toBe(gateway.baseUrl);
+		expect(out.config.env.ANTHROPIC_AUTH_TOKEN).toBe(gateway.token);
+		for (const k of [
+			"ANTHROPIC_MODEL",
+			"ANTHROPIC_SMALL_FAST_MODEL",
+			"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+			"ANTHROPIC_DEFAULT_SONNET_MODEL",
+			"ANTHROPIC_DEFAULT_OPUS_MODEL",
+		])
+			expect(out.config.env[k]).toBe(gateway.model);
+		expect(out.unset).toContain("ANTHROPIC_API_KEY");
+		expect(out.config.args.join(" ")).not.toContain(gateway.token);
+	});
+
+	it("codex：-c 定义临时厂商指向网关，令牌只在环境变量里", () => {
+		const def = find("codex");
+		const out = enterpriseLaunchConfig(def, launchConfigOf(def), gateway);
+		if (!out) throw new Error("codex 应支持企业模式");
+		expect(enforceAcpConfig(out.config).rejection).toBeNull();
+		const args = out.config.args.join(" ");
+		expect(args).toContain(
+			`model_providers.orgos.base_url="${gateway.baseUrl}/v1"`,
+		);
+		expect(args).toContain('model_provider="orgos"');
+		expect(args).toContain(`model="${gateway.model}"`);
+		expect(args).not.toContain(gateway.token);
+		expect(out.config.env.ORGOS_LLM_TOKEN).toBe(gateway.token);
+	});
+
+	it("pi 与 hermes 只支持个人模式", () => {
+		for (const id of ["pi", "hermes"]) {
+			const def = find(id);
+			expect(def.enterprise).toBeNull();
+			expect(
+				enterpriseLaunchConfig(def, launchConfigOf(def), gateway),
+			).toBeNull();
+		}
+	});
+
+	it("去掉的键既不在子进程 env 里，也以 -u 出现在命令行上", () => {
+		const env = { ...RUNNER_ENV, ANTHROPIC_API_KEY: "sk-personal" };
+		const def = find("claude-code");
+		const out = enterpriseLaunchConfig(def, launchConfigOf(def), gateway);
+		if (!out) throw new Error("claude-code 应支持企业模式");
+		const plan = buildLaunchPlan(out.config, "/ws", env, out.unset);
+		expect(plan.env).not.toHaveProperty("ANTHROPIC_API_KEY");
+		const at = plan.args.indexOf("ANTHROPIC_API_KEY");
+		expect(plan.args[at - 1]).toBe("-u");
+		expect(plan.env.ANTHROPIC_AUTH_TOKEN).toBe(gateway.token);
+	});
+
+	it("令牌不许出现在参数模板里", () => {
+		expect(() =>
+			enterpriseLaunchConfig(
+				{ enterprise: { env: {}, args: ["--key={token}"], unset: [] } },
+				{ command: "x", args: [], env: {} },
+				gateway,
+			),
+		).toThrow();
 	});
 });

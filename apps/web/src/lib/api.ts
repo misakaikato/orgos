@@ -9,6 +9,8 @@ import {
 	type CreateAgentRequest,
 	type CreateConversationRequest,
 	CreateConversationResponseSchema,
+	type CreateModelGroupRequest,
+	type CreateModelProviderRequest,
 	type CreateNoteRequest,
 	CreatePairingCodeResponseSchema,
 	type CreateTaskRequest,
@@ -21,12 +23,19 @@ import {
 	type Event,
 	EventsResponseSchema,
 	MeResponseSchema,
+	ModelAdminResponseSchema,
+	ModelGroupResponseSchema,
+	ModelOptionsResponseSchema,
+	ModelProviderResponseSchema,
 	NoteListResponseSchema,
 	NoteResponseSchema,
 	type OnboardingRequest,
 	OnboardingResponseSchema,
 	type PostMessageRequest,
 	PostMessageResponseSchema,
+	ProviderModelsResponseSchema,
+	type ProviderTestRequest,
+	ProviderTestResponseSchema,
 	ResetDemoResponseSchema,
 	type ResolveWorkItemRequest,
 	RunListResponseSchema,
@@ -41,6 +50,8 @@ import {
 	TopicSourceResponseSchema,
 	type TopicToGroupRequest,
 	type UpdateAgentRequest,
+	type UpdateModelGroupRequest,
+	type UpdateModelProviderRequest,
 	type UpdateNoteRequest,
 	type UpdateStatusRequest,
 	UpdateStatusResponseSchema,
@@ -234,6 +245,56 @@ export const api = {
 				.patch("/api/tenant/settings", { json: req })
 				.json(TenantSettingsResponseSchema),
 		),
+
+	/** 代理可选的模型（本租户开放的模型与路由组）。 */
+	modelOptions: () =>
+		run(() => http.get("/api/models").json(ModelOptionsResponseSchema)),
+	/** 模型页（仅租户 owner）：厂商、路由组与相关设置。 */
+	modelAdmin: () =>
+		run(() => http.get("/api/model-admin").json(ModelAdminResponseSchema)),
+	createProvider: (req: CreateModelProviderRequest) =>
+		run(() =>
+			http
+				.post("/api/model-providers", { json: req })
+				.json(ModelProviderResponseSchema),
+		),
+	updateProvider: (id: string, req: UpdateModelProviderRequest) =>
+		run(() =>
+			http
+				.patch(`/api/model-providers/${id}`, { json: req })
+				.json(ModelProviderResponseSchema),
+		),
+	deleteProvider: (id: string) =>
+		noContent(http.delete(`/api/model-providers/${id}`)),
+	providerModels: (id: string) =>
+		run(() =>
+			http
+				.get(`/api/model-providers/${id}/models`, { timeout: 30_000 })
+				.json(ProviderModelsResponseSchema),
+		),
+	testProvider: (id: string, req: ProviderTestRequest = {}) =>
+		run(() =>
+			http
+				.post(`/api/model-providers/${id}/test`, {
+					json: req,
+					timeout: 120_000,
+				})
+				.json(ProviderTestResponseSchema),
+		),
+	createGroup: (req: CreateModelGroupRequest) =>
+		run(() =>
+			http
+				.post("/api/model-groups", { json: req })
+				.json(ModelGroupResponseSchema),
+		),
+	updateGroup: (id: string, req: UpdateModelGroupRequest) =>
+		run(() =>
+			http
+				.patch(`/api/model-groups/${id}`, { json: req })
+				.json(ModelGroupResponseSchema),
+		),
+	deleteGroup: (id: string) =>
+		noContent(http.delete(`/api/model-groups/${id}`)),
 
 	agents: () =>
 		run(() => http.get("/api/agents").json(AgentListResponseSchema)),

@@ -22,6 +22,7 @@ import {
 import { openDm } from "@/services/conversations";
 import { externalSessions } from "@/services/external-sessions";
 import { usageByAgent } from "@/services/llm-requests";
+import { requireAvailableModel } from "@/services/model-providers";
 import { requireOwnRunner, toRunner } from "@/services/runners";
 import { openTasksOfAssignee } from "@/services/tasks";
 import { getTenantSettings } from "@/services/tenant-settings";
@@ -32,6 +33,7 @@ import { getTenantSettings } from "@/services/tenant-settings";
  * 外部助手（kind=external）同样只能用本人未吊销的设备，适配器须是该设备上报可用的；
  * 不经审批、不限工作目录的适配器（pi、Hermes）须租户开启且本人勾选确认；
  * 建好后随即建立本人与它的私聊，使它出现在会话列表里。
+ * 模型只能选本租户开放的模型或路由组（否则 400 MODEL_UNAVAILABLE）。
  */
 export function registerAgentRoutes(app: Hono<AppEnv>): void {
 	app.use("/api/agents", requireAuth, requireMember);
@@ -85,6 +87,7 @@ export function registerAgentRoutes(app: Hono<AppEnv>): void {
 		}
 		if (req.runnerId)
 			await requireOwnRunner(s, c.get("principal"), req.runnerId);
+		if (req.model !== undefined) await requireAvailableModel(s, req.model);
 		const body: AgentResponse = {
 			agent: await updateAgentProfile(s, agent.principal.id, req),
 		};

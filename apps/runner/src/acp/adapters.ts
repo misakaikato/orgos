@@ -5,7 +5,8 @@
  *   1. 选出本机该考虑的（测试适配器只在 `ORGOS_DEV=1` 时）；
  *   2. 探测：`requires` 里的可执行文件都在 PATH 上，且真的起得来并回应 ACP `initialize`
  *      （npx 首次拉包可能要一会儿，故探测在后台进行，完成后更新能力声明）；
- *   3. 起任务时给出启动配置，并再过一次 `enforceAcpConfig`（第二道卫生判据）。
+ *   3. 起任务时给出启动配置（企业模式按适配器表的注入规则装配），并再过一次 `enforceAcpConfig`
+ *      （第二道卫生判据）。
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,8 @@ import {
 	type AcpAdapterStatus,
 	type AcpConfig,
 	enforceAcpConfig,
+	enterpriseLaunchConfig,
+	type GatewayLaunch,
 } from "@orgos/protocol";
 import { CLIENT_INFO, ORGOS_CLIENT_CAPABILITIES } from "@/acp/client";
 import { createJsonRpcPeer } from "@/acp/jsonrpc";
@@ -111,7 +114,7 @@ export async function probeAdapter(
 }
 
 export type LaunchResult =
-	| { ok: true; config: AcpConfig }
+	| { ok: true; config: AcpConfig; unset: string[] }
 	| { ok: false; error: string };
 
 /** 本机的适配器：探测结果与启动配置。 */
@@ -141,17 +144,30 @@ export class AdapterRegistry {
 		);
 	}
 
-	launch(id: string): LaunchResult {
+	/** 启动配置；给了 gateway 即企业模式，按适配器表的注入规则装配。 */
+	launch(id: string, gateway?: GatewayLaunch): LaunchResult {
 		const def = this.defs.find((d) => d.id === id);
 		if (!def) return { ok: false, error: `这台设备不提供适配器 ${id}` };
 		if (!this.available.get(id))
 			return { ok: false, error: `这台设备上的 ${def.label} 当前不可用` };
-		const { config, rejection } = enforceAcpConfig(launchConfigOf(def));
+		let base = launchConfigOf(def);
+		let unset: string[] = [];
+		if (gateway) {
+			const enterprise = enterpriseLaunchConfig(def, base, gateway);
+			if (!enterprise)
+				return {
+					ok: false,
+					error: `${def.label} 只支持个人模式：${def.enterpriseNote}`,
+				};
+			base = enterprise.config;
+			unset = enterprise.unset;
+		}
+		const { config, rejection } = enforceAcpConfig(base);
 		if (rejection)
 			return {
 				ok: false,
 				error: `${def.label} 的启动配置不合法（${rejection.reason}）`,
 			};
-		return { ok: true, config };
+		return { ok: true, config, unset };
 	}
 }
