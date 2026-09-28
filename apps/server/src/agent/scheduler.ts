@@ -23,6 +23,7 @@ import { desc, eq, gt, ne } from "drizzle-orm";
 import { getLlmClient } from "@/agent/llm";
 import type { LlmClient, RunTrigger } from "@/agent/llm-types";
 import { type RunResult, runAgent } from "@/agent/loop";
+import { modelTextOf } from "@/agent/prompt";
 import { LIMIT_SUMMARY, MAX_ROUNDS, RunSession } from "@/agent/session";
 import {
 	type ActingFor,
@@ -358,7 +359,7 @@ export class Scheduler {
 				{
 					id: trigger.id,
 					actorId: trigger.actorId,
-					text: trigger.payload.text,
+					text: modelTextOf(trigger.payload),
 				},
 			);
 			return { outcome: "ended" };
@@ -370,7 +371,7 @@ export class Scheduler {
 			topicId: input.topicId,
 			actingFor: t.actingFor,
 			trigger: {
-				text: trigger.payload.text,
+				text: modelTextOf(trigger.payload),
 				mentions: trigger.payload.mentions,
 			},
 			triggerRef: `event:${trigger.id}`,

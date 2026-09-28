@@ -1,11 +1,12 @@
 "use client";
 
-import type {
-	DisclosureRule,
-	MemoryCategory,
-	MemoryStatus,
-	MessageCitation,
-	TwinAnswer,
+import {
+	type DisclosureRule,
+	type MemoryCategory,
+	type MemoryStatus,
+	type MessageCitation,
+	plainTextOf,
+	type TwinAnswer,
 } from "@orgos/protocol";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
@@ -226,10 +227,12 @@ function AnswerCard({
 	const agent = map.get(item.answer.actorId);
 	const citations = citationsOf(item);
 	const text =
-		item.answer.type === "message.posted" ? item.answer.payload.text : "";
+		item.answer.type === "message.posted"
+			? plainTextOf(item.answer.payload)
+			: "";
 	const question =
 		item.question?.type === "message.posted"
-			? item.question.payload.text
+			? plainTextOf(item.question.payload)
 			: null;
 	const seq = item.answer.seq;
 	const topicId = item.answer.topicId;

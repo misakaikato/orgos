@@ -1,8 +1,9 @@
 "use client";
 
-import type { Principal } from "@orgos/protocol";
+import { formatOf, type Principal } from "@orgos/protocol";
 import { type ReactNode, useState } from "react";
 import { Citations } from "@/components/conversation/citations";
+import { MessageBody } from "@/components/conversation/message-body";
 import { IconCheck, IconChevronRight, IconClose } from "@/components/icons";
 import { mascotInkClass } from "@/components/mascot";
 import { Avatar } from "@/components/ui/avatar";
@@ -12,12 +13,11 @@ import { describeEvent } from "@/lib/describe";
 import { formatClock, formatStamp } from "@/lib/format";
 import { useExternalAgentIds } from "@/lib/hooks";
 import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
-import {
-	type ActionEvent,
-	type BubbleSide,
-	type MessageEvent,
-	type SystemEvent,
-	splitMentions,
+import type {
+	ActionEvent,
+	BubbleSide,
+	MessageEvent,
+	SystemEvent,
 } from "@/lib/thread";
 
 /** 找不到主体时的占位（已离开或不可见的成员）。 */
@@ -32,29 +32,6 @@ export function fallbackPrincipal(
 		displayName: "已离开的成员",
 		ownerId: null,
 	};
-}
-
-function MessageText({
-	text,
-	handles,
-}: {
-	text: string;
-	handles: ReadonlySet<string>;
-}) {
-	return (
-		<p className="text-15 whitespace-pre-wrap break-words text-ink [overflow-wrap:anywhere]">
-			{splitMentions(text, handles).map((part, i) =>
-				part.mention ? (
-					// biome-ignore lint/suspicious/noArrayIndexKey: 片段顺序固定，只随文本整体变化。
-					<span key={i} className="font-medium text-accent">
-						{part.text}
-					</span>
-				) : (
-					part.text
-				),
-			)}
-		</p>
-	);
 }
 
 /** 悬停气泡时出现的时间。 */
@@ -181,7 +158,9 @@ export function Bubble({
 	isGroup: boolean;
 }) {
 	const gap = continued ? "mt-0.5" : "mt-3";
-	const text = event.payload.text;
+	const body = <MessageBody payload={event.payload} handles={handles} />;
+	/** html 片段没有自然宽度，气泡占满可用宽度。 */
+	const fill = formatOf(event.payload) === "html" && "w-full";
 
 	if (side === "me") {
 		return (
@@ -190,8 +169,13 @@ export function Bubble({
 				className={cx("group flex justify-end gap-2", gap)}
 			>
 				<HoverTime at={event.createdAt} />
-				<div className="max-w-[72%] rounded-bubble bg-accent-soft px-3.5 py-2.5">
-					<MessageText text={text} handles={handles} />
+				<div
+					className={cx(
+						"min-w-0 max-w-[72%] rounded-bubble bg-accent-soft px-3.5 py-2.5",
+						fill,
+					)}
+				>
+					{body}
 				</div>
 			</div>
 		);
@@ -231,9 +215,10 @@ export function Bubble({
 						className={cx(
 							"min-w-0 max-w-[72%] rounded-bubble px-3.5 py-2.5",
 							agent ? "border border-line bg-bg" : "bg-surface-2",
+							fill,
 						)}
 					>
-						<MessageText text={text} handles={handles} />
+						{body}
 					</div>
 					<HoverTime at={event.createdAt} />
 				</div>

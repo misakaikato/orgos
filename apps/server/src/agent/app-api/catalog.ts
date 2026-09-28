@@ -137,7 +137,7 @@ const ROWS: Row[] = [
 		"POST",
 		"/api/conversations/:id/messages",
 		"social_write",
-		"在会话里发一条消息",
+		"在会话里发一条消息（format 可选 text 纯文本、md Markdown、html 网页片段）",
 		{ body: PostMessageRequestSchema },
 	],
 	[

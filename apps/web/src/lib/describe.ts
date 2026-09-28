@@ -1,7 +1,12 @@
 /**
  * 事件的一行文字描述（会话里的系统行、卡片副标题与列表预览共用）。
  */
-import type { Event, NEGOTIATION_OUTCOMES, TaskState } from "@orgos/protocol";
+import {
+	type Event,
+	type NEGOTIATION_OUTCOMES,
+	plainTextOf,
+	type TaskState,
+} from "@orgos/protocol";
 import { APPROVAL_OUTCOME_LABEL, capabilityLabel } from "@/lib/device";
 import { onBehalfLabel, type PrincipalMap } from "@/lib/principals";
 
@@ -46,7 +51,7 @@ export function describeEvent(
 	const actor = nameOf(event.actorId, map, meId);
 	switch (event.type) {
 		case "message.posted":
-			return event.payload.text;
+			return plainTextOf(event.payload);
 		case "member.joined": {
 			const who = nameOf(event.payload.principalId, map, meId);
 			return event.payload.principalId === event.actorId
@@ -94,7 +99,7 @@ export function describeEvent(
 	}
 }
 
-/** 列表预览：消息取首行，群聊带说话人；其他事件用描述。 */
+/** 列表预览：消息取纯文本的首行，群聊带说话人；其他事件用描述。 */
 export function previewOf(
 	event: Event,
 	map: PrincipalMap,
@@ -102,7 +107,7 @@ export function previewOf(
 	withSpeaker: boolean,
 ): string {
 	if (event.type !== "message.posted") return describeEvent(event, map, meId);
-	const firstLine = event.payload.text.split("\n", 1)[0] ?? "";
+	const firstLine = plainTextOf(event.payload).split("\n", 1)[0] ?? "";
 	if (event.actorId === meId) return `你：${firstLine}`;
 	return withSpeaker
 		? `${nameOf(event.actorId, map, meId)}：${firstLine}`

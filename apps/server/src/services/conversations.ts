@@ -28,7 +28,11 @@ import { isUuid } from "@/lib/uuid";
 import { scheduleIdleExtraction } from "@/memory/queue";
 import { browserHub } from "@/realtime/browser-hub";
 import { requireTwinOf } from "@/services/agents";
-import { type Append, transactWithEvents } from "@/services/events";
+import {
+	type Append,
+	actingAgent,
+	transactWithEvents,
+} from "@/services/events";
 import {
 	insertConversation,
 	latestTopics,
@@ -662,6 +666,7 @@ export async function postAs(
 			type: "message.posted",
 			payload: {
 				text: req.text,
+				...(req.format && req.format !== "text" ? { format: req.format } : {}),
 				mentions,
 				...(req.askTwin ? { askTwin: true } : {}),
 				...(extra.citations?.length ? { citations: extra.citations } : {}),
@@ -678,7 +683,10 @@ export async function postAs(
 	});
 }
 
-/** 本人发消息。`at` 只在回放历史（演示数据）时指定。 */
+/**
+ * 本人发消息。`at` 只在回放历史（演示数据）时指定。
+ * html 只接受代理经应用接口代发；人自己发 → 400。
+ */
 export async function postMessage(
 	s: Scoped,
 	me: PrincipalRow,
@@ -686,6 +694,8 @@ export async function postMessage(
 	req: PostMessageRequest,
 	at?: Date,
 ): Promise<Event> {
+	if (req.format === "html" && !actingAgent())
+		throw badRequest("HTML 消息只能由代理经应用接口发送");
 	return postAs(s, me, conversationId, req, { at });
 }
 

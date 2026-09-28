@@ -18,7 +18,7 @@ import type {
 	LlmMeta,
 	RunTrigger,
 } from "@/agent/llm-types";
-import { historyMessages } from "@/agent/prompt";
+import { historyMessages, modelTextOf } from "@/agent/prompt";
 import {
 	compactions,
 	conversationMembers,
@@ -332,7 +332,7 @@ export async function recentWorkBrief(
 		const where = r.topicMain
 			? (labels.get(r.conversationId) ?? "会话")
 			: `${labels.get(r.conversationId) ?? "会话"} · ${r.topicTitle}`;
-		const line = `- 〔${where}〕${clipLine(e.payload.text)}`;
+		const line = `- 〔${where}〕${clipLine(modelTextOf(e.payload))}`;
 		const cost = estimateTokens(line);
 		if (tokens + cost > BRIEF_MAX_TOKENS) break;
 		lines.push(line);

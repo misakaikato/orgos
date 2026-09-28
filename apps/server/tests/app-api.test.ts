@@ -164,6 +164,26 @@ describe("为本人：经分身操作软件", () => {
 		expect(messagesBy(events, bobTwin)).toHaveLength(0);
 	});
 
+	it("代发的消息可以是 html；分身自己的回复记为 md", async () => {
+		const body = { text: "<p>排期见<b>下表</b></p>", format: "html" };
+		await say(
+			alice.client,
+			ownDm,
+			`#api POST /api/conversations/${pairDm}/messages ${JSON.stringify(body)}`,
+		);
+		const { action } = await lastOutcome(ownDm, aliceTwin);
+		expect(action?.payload).toMatchObject({ tool: "app_api_call", ok: true });
+		const posted = messagesBy(await eventsOf(bob.client, pairDm), aliceTwin).at(
+			-1,
+		);
+		expect(posted?.payload).toMatchObject(body);
+		expect(posted?.onBehalfOfId).toBe(alice.me.principal.id);
+		const reply = messagesBy(await eventsOf(alice.client, ownDm), aliceTwin).at(
+			-1,
+		);
+		expect(reply?.payload.format).toBe("md");
+	});
+
 	it("excluded 接口经工具调用一律拒绝，不执行", async () => {
 		for (const target of [
 			"GET /api/dev/info",

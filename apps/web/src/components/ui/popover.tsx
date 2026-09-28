@@ -65,28 +65,42 @@ export function Popover({
 	);
 }
 
-/** 浮层里的一行菜单项。 */
+/** 浮层里的一行菜单项；给了 `checked` 就是一个开关项。 */
 export function MenuItem({
 	children,
 	onClick,
 	tone = "ink",
 	disabled,
+	checked,
 }: {
 	children: ReactNode;
 	onClick?: () => void;
 	tone?: "ink" | "danger";
 	disabled?: boolean;
+	checked?: boolean;
 }) {
-	return (
+	const className = cx(
+		"flex h-9 w-full items-center gap-2.5 px-3 text-left text-14 transition-colors duration-150 hover:bg-surface-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent",
+		tone === "danger" ? "text-danger" : "text-ink",
+	);
+	return checked === undefined ? (
 		<button
 			type="button"
 			role="menuitem"
 			disabled={disabled}
 			onClick={onClick}
-			className={cx(
-				"flex h-9 w-full items-center gap-2.5 px-3 text-left text-14 transition-colors duration-150 hover:bg-surface-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent",
-				tone === "danger" ? "text-danger" : "text-ink",
-			)}
+			className={className}
+		>
+			{children}
+		</button>
+	) : (
+		<button
+			type="button"
+			role="menuitemcheckbox"
+			aria-checked={checked}
+			disabled={disabled}
+			onClick={onClick}
+			className={className}
 		>
 			{children}
 		</button>

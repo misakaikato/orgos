@@ -9,6 +9,7 @@ export * from "./memory";
 export * from "./models";
 export * from "./naming";
 export * from "./org";
+export * from "./plain-text";
 export * from "./rest";
 export * from "./runner";
 export * from "./ws";

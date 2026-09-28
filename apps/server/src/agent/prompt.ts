@@ -1,7 +1,14 @@
 /**
  * 代理的系统提示与会话历史（转成模型消息）。
  */
-import { AGENT_ROLE_LABEL, type Agent, type Event } from "@orgos/protocol";
+import {
+	AGENT_ROLE_LABEL,
+	type Agent,
+	type Event,
+	formatOf,
+	type MessageFormat,
+	plainTextOf,
+} from "@orgos/protocol";
 import type { ChatMessage, RunTrigger } from "@/agent/llm-types";
 import type { AgentTool, ToolScope } from "@/agent/tools/tool";
 import { COLLEAGUE_SOURCE_LABEL } from "@/memory/access";
@@ -180,10 +187,21 @@ export function buildSystemPrompt(input: PromptInput): string {
 	}
 	lines.push(
 		"历史消息里别人的发言以“【显示名】”开头；你的回复不要加这个前缀。",
-		"用中文，简洁，像同事之间发消息；不用 Markdown 标题。",
+		"用中文回复。回复用 Markdown（界面会渲染），简洁，像同事之间发消息，少用标题。",
 		`现在是北京时间 ${formatNow(input.now ?? new Date())}。`,
 	);
 	return lines.join("\n");
+}
+
+/**
+ * 消息正文给模型看的形态（历史、触发消息、近期工作简报）：text 与 md 原样，
+ * 保留 Markdown 标记让模型延续格式；html 转成纯文本。
+ */
+export function modelTextOf(payload: {
+	text: string;
+	format?: MessageFormat;
+}): string {
+	return formatOf(payload) === "html" ? plainTextOf(payload) : payload.text;
 }
 
 /**
@@ -218,10 +236,10 @@ export function historyMessages(
 		if (e.type !== "message.posted") continue;
 		out.push(
 			e.actorId === agentId
-				? { role: "assistant", content: e.payload.text }
+				? { role: "assistant", content: modelTextOf(e.payload) }
 				: {
 						role: "user",
-						content: `【${nameOf(e.actorId)}】${e.payload.text}`,
+						content: `【${nameOf(e.actorId)}】${modelTextOf(e.payload)}`,
 					},
 		);
 	}

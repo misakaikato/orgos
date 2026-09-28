@@ -6,6 +6,7 @@ import {
 	CreateConversationResponseSchema,
 	ErrorBodySchema,
 	EventsResponseSchema,
+	formatOf,
 	MESSAGE_MAX_LENGTH,
 	PostMessageResponseSchema,
 } from "@orgos/protocol";
@@ -289,6 +290,48 @@ describe("消息与事件", () => {
 			400,
 			"BAD_REQUEST",
 		);
+	});
+
+	it("消息格式：缺省为 text；人可以发 md；人直接发 html → 400", async () => {
+		const [xia, yan] = (await createTeam(["Xia", "Yan"])) as [
+			TeamMember,
+			TeamMember,
+		];
+		const convId = (await dm(xia.client, yan.me.principal.id)).id;
+		const plain = await say(xia.client, convId, "**原样**");
+		if (plain.type !== "message.posted") throw new Error(plain.type);
+		expect(plain.payload).toEqual({ text: "**原样**", mentions: [] });
+		expect(formatOf(plain.payload)).toBe("text");
+
+		const res = await xia.client.request(
+			"POST",
+			`/api/conversations/${convId}/messages`,
+			{ text: "**加粗**", format: "md" },
+		);
+		expect(res.status).toBe(201);
+		const { event } = PostMessageResponseSchema.parse(await res.json());
+		expect(event.payload).toMatchObject({ text: "**加粗**", format: "md" });
+
+		const before = (await eventsOf(xia.client, convId)).length;
+		await expectError(
+			await xia.client.request(
+				"POST",
+				`/api/conversations/${convId}/messages`,
+				{ text: "<b>网页</b>", format: "html" },
+			),
+			400,
+			"BAD_REQUEST",
+		);
+		await expectError(
+			await xia.client.request(
+				"POST",
+				`/api/conversations/${convId}/messages`,
+				{ text: "x", format: "rtf" },
+			),
+			400,
+			"BAD_REQUEST",
+		);
+		expect(await eventsOf(xia.client, convId)).toHaveLength(before);
 	});
 
 	it("20 个并发发送：seq 连续不重不缺", async () => {

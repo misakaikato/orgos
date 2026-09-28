@@ -11,6 +11,7 @@ import type {
 	DirectoryResponse,
 	Event,
 	MeResponse,
+	MessageFormat,
 	OrgUnit,
 	Principal,
 	PrincipalStatus,
@@ -723,12 +724,14 @@ export async function sendMessage(
 	text: string,
 	mentions: string[],
 	askTwin = false,
+	format: MessageFormat = "text",
 ): Promise<void> {
 	const { event } = await api.postMessage(conversationId, {
 		text,
 		mentions,
 		topicId,
 		...(askTwin ? { askTwin } : {}),
+		...(format !== "text" ? { format } : {}),
 	});
 	applyEvent(event);
 }

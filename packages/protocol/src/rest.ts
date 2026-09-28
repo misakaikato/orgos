@@ -25,7 +25,7 @@ import {
 	type WorkItem,
 	WorkItemSchema,
 } from "./entities";
-import { EventSchema, MESSAGE_MAX_LENGTH } from "./events";
+import { EventSchema, MESSAGE_MAX_LENGTH, MessageFormatSchema } from "./events";
 import {
 	EXTERNAL_AGENT_MODES,
 	GATEWAY_PROTOCOLS,
@@ -201,6 +201,8 @@ export const PostMessageRequestSchema = z.object({
 	askTwin: z.boolean().optional(),
 	/** 发在哪个话题；缺省为主线。 */
 	topicId: z.uuid().optional(),
+	/** 正文格式，缺省 text；html 只接受代理经应用接口代发，人直接发 → 400。 */
+	format: MessageFormatSchema.optional(),
 });
 export type PostMessageRequest = z.infer<typeof PostMessageRequestSchema>;
 

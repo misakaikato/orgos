@@ -9,6 +9,7 @@ import {
 	type Event,
 	isExternalAgent,
 	isTaskEnded,
+	plainTextOf,
 	type Task,
 	type TopicSourceResponse,
 } from "@orgos/protocol";
@@ -78,7 +79,7 @@ async function lastOwnMessage(
 		.limit(1);
 	if (!row) return null;
 	const e = toEvent(row);
-	return e.type === "message.posted" ? e.payload.text : null;
+	return e.type === "message.posted" ? plainTextOf(e.payload) : null;
 }
 
 function taskInput(me: PrincipalRow, agent: Agent) {

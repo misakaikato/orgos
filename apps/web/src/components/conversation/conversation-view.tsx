@@ -380,7 +380,7 @@ export function ConversationView({
 										/>
 									) : null
 								}
-								onSend={async (text, mentions, askTwin) => {
+								onSend={async (text, mentions, askTwin, format) => {
 									if (newTask) {
 										const id = await startNewTask(conversationId, text);
 										setNewTask(false);
@@ -393,6 +393,7 @@ export function ConversationView({
 										text,
 										mentions,
 										askTwin,
+										format,
 									);
 								}}
 							/>

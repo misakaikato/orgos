@@ -1,6 +1,7 @@
 "use client";
 
 import type { Principal } from "@orgos/protocol";
+import { MarkdownText } from "@/components/conversation/message-body";
 import {
 	AgentName,
 	fallbackPrincipal,
@@ -8,6 +9,12 @@ import {
 import { Mascot } from "@/components/mascot";
 import type { AgentActivity } from "@/lib/activity";
 import type { PrincipalMap } from "@/lib/principals";
+
+const NO_HANDLES: ReadonlySet<string> = new Set();
+
+/** 闪烁光标跟在最后一块正文的末尾。 */
+const CARET_AFTER_LAST_BLOCK =
+	"[&>:last-child]:after:ml-0.5 [&>:last-child]:after:inline-block [&>:last-child]:after:h-[1.1em] [&>:last-child]:after:w-0.5 [&>:last-child]:after:translate-y-[0.2em] [&>:last-child]:after:animate-caret [&>:last-child]:after:bg-ink [&>:last-child]:after:content-[''] motion-reduce:[&>:last-child]:after:animate-none";
 
 /**
  * "正在工作"（DESIGN.md §4）：消息列末尾，代理的团子（工作动画）+ 一个小气泡。
@@ -51,7 +58,7 @@ export function WorkingIndicator({
 
 /**
  * 代理正在流式输出的回复：与代理气泡同样的描边气泡 + 团子（工作动画）+ 名字行，
- * 文本末尾一个闪烁光标。落库后由正式气泡取代。
+ * 正文按 Markdown 显示（代理的回复都是 Markdown），末尾一个闪烁光标。落库后由正式气泡取代。
  */
 export function DraftBubble({
 	agent,
@@ -77,13 +84,11 @@ export function DraftBubble({
 					<AgentName agent={agent} map={map} meId={meId} />
 				</div>
 				<div className="min-w-0 max-w-[72%] rounded-bubble border border-line bg-bg px-3.5 py-2.5">
-					<p className="text-15 whitespace-pre-wrap break-words text-ink [overflow-wrap:anywhere]">
-						{text}
-						<span
-							aria-hidden="true"
-							className="ml-0.5 inline-block h-[1.1em] w-0.5 translate-y-[0.2em] animate-caret bg-ink motion-reduce:animate-none"
-						/>
-					</p>
+					<MarkdownText
+						text={text}
+						handles={NO_HANDLES}
+						className={CARET_AFTER_LAST_BLOCK}
+					/>
 				</div>
 			</div>
 		</div>

@@ -20,8 +20,18 @@ export const MessageCitationSchema = z.object({
 });
 export type MessageCitation = z.infer<typeof MessageCitationSchema>;
 
+/**
+ * 消息正文的格式：`text` 纯文本（保留换行）、`md` Markdown（GFM）、`html` 片段（沙箱内显示）。
+ * 人经输入框只能发 text 与 md；html 只由代理与接口调用产生。
+ */
+export const MESSAGE_FORMATS = ["text", "md", "html"] as const;
+export const MessageFormatSchema = z.enum(MESSAGE_FORMATS);
+export type MessageFormat = z.infer<typeof MessageFormatSchema>;
+
 export const MessagePostedPayloadSchema = z.object({
 	text: z.string(),
+	/** 正文格式，缺省为 text（见 `formatOf`）。 */
+	format: MessageFormatSchema.optional(),
 	/** 被 @ 的主体 id。 */
 	mentions: z.array(z.uuid()),
 	/** 发送者切到"问分身"：私聊里指向对方的分身，群聊里指向被 @ 的人的分身。 */

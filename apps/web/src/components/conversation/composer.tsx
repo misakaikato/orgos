@@ -1,6 +1,10 @@
 "use client";
 
-import { MESSAGE_MAX_LENGTH, type Principal } from "@orgos/protocol";
+import {
+	MESSAGE_MAX_LENGTH,
+	type MessageFormat,
+	type Principal,
+} from "@orgos/protocol";
 import {
 	type KeyboardEvent,
 	type ReactNode,
@@ -9,7 +13,13 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { IconClip, IconPlus, IconSend, IconStop } from "@/components/icons";
+import {
+	IconCheck,
+	IconClip,
+	IconPlus,
+	IconSend,
+	IconStop,
+} from "@/components/icons";
 import { Mascot } from "@/components/mascot";
 import { Avatar, PersonAvatar } from "@/components/ui/avatar";
 import { Tag } from "@/components/ui/badge";
@@ -55,6 +65,32 @@ function grouped(list: readonly Principal[]): {
 		{ label: "同事", items: humans },
 		{ label: "代理", items: agents },
 	].filter((g) => g.items.length > 0);
+}
+
+/** "Markdown"开关按人记在本机浏览器。 */
+function markdownKey(meId: string): string {
+	return `orgos-composer-markdown:${meId}`;
+}
+
+function useMarkdownSwitch(meId: string): [boolean, (on: boolean) => void] {
+	const [on, setOn] = useState(false);
+	useEffect(() => {
+		try {
+			setOn(localStorage.getItem(markdownKey(meId)) === "1");
+		} catch {
+			setOn(false);
+		}
+	}, [meId]);
+	return [
+		on,
+		(next) => {
+			setOn(next);
+			try {
+				if (next) localStorage.setItem(markdownKey(meId), "1");
+				else localStorage.removeItem(markdownKey(meId));
+			} catch {}
+		},
+	];
 }
 
 /** 真人私聊里的对方与其分身：输入框据此显示"问分身"开关与忙碌提示。 */
@@ -124,6 +160,7 @@ function AskTwinToggle({
  * （输入法组字中的 Enter 不发送）；多行自适应最高 8 行；`@` 弹出成员补全（人与代理分组）。
  * 真人私聊里多一个"问分身"开关（发送后复位），对方忙碌 / 离开时上方有一行提示；
  * 群聊里正文 @ 了某人后出现"问 TA 的分身"开关。
+ * "+"菜单里的"Markdown 格式"开关打开后，消息按 Markdown 发送（开关状态按人记在本机）。
  */
 export function Composer({
 	members,
@@ -140,7 +177,12 @@ export function Composer({
 	members: readonly Principal[];
 	meId: string;
 	map: PrincipalMap;
-	onSend: (text: string, mentions: string[], askTwin: boolean) => Promise<void>;
+	onSend: (
+		text: string,
+		mentions: string[],
+		askTwin: boolean,
+		format: MessageFormat,
+	) => Promise<void>;
 	placeholder: string;
 	twinTarget?: TwinTarget | null;
 	/** 群聊：@ 了某人后可以问 TA 的分身。 */
@@ -161,6 +203,7 @@ export function Composer({
 	const [error, setError] = useState<string | null>(null);
 	const [askTwin, setAskTwin] = useState(false);
 	const [stopping, setStopping] = useState(false);
+	const [markdown, setMarkdown] = useMarkdownSwitch(meId);
 	const hint = twinTarget ? unavailableHint(twinTarget.peer) : null;
 	const groupTargets = isGroup ? mentionedTwins(text, members, meId) : [];
 	const target = twinTarget ?? groupTargets[0] ?? null;
@@ -222,6 +265,7 @@ export function Composer({
 				text,
 				extractMentions(text, members, meId),
 				Boolean(target) && askTwin,
+				markdown ? "md" : "text",
 			);
 			setText("");
 			setMention(null);
@@ -336,6 +380,9 @@ export function Composer({
 					{hint}
 				</p>
 			) : null}
+			{markdown ? (
+				<p className="mb-2 px-2 text-12 text-muted">Markdown 已开启</p>
+			) : null}
 			{banner ? <div className="mb-2 px-2">{banner}</div> : null}
 			<div
 				className={cx(
@@ -360,6 +407,17 @@ export function Composer({
 						</button>
 					}
 				>
+					<MenuItem
+						checked={markdown}
+						onClick={() => {
+							setMarkdown(!markdown);
+							setAttachOpen(false);
+							area.current?.focus();
+						}}
+					>
+						<span className="flex-1">Markdown 格式</span>
+						{markdown ? <IconCheck size={18} className="text-accent" /> : null}
+					</MenuItem>
 					<MenuItem disabled>
 						<IconClip size={18} />
 						附件即将开放

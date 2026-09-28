@@ -7,7 +7,11 @@
  *
  * 返回写入或取代了条目的 subject（画像是否需要重建据此判断）与本次提炼到的最后一条事件。
  */
-import { type Event, NegotiationStateSchema } from "@orgos/protocol";
+import {
+	type Event,
+	NegotiationStateSchema,
+	plainTextOf,
+} from "@orgos/protocol";
 import { asc, desc, eq, gt, inArray, isNotNull, max, sql } from "drizzle-orm";
 import type { LlmClient } from "@/agent/llm-types";
 import { formatNow } from "@/agent/prompt";
@@ -103,7 +107,7 @@ function lineOf(
 	const clip = (t: string) => clipChars(t, LINE_CHARS);
 	switch (e.type) {
 		case "message.posted":
-			return `${speaker}：${clip(e.payload.text)}`;
+			return `${speaker}：${clip(plainTextOf(e.payload))}`;
 		case "escalation.created":
 			return `${speaker}把问题转给了本人：${clip(e.payload.question)}`;
 		case "escalation.resolved":

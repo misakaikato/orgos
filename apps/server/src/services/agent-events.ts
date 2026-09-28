@@ -37,7 +37,7 @@ export type AgentMessageExtra = Pick<
 	"citations" | "askedById" | "replyToEventId"
 >;
 
-/** 代理发一条消息（代理须是会话成员）。 */
+/** 代理发一条消息（代理须是会话成员）。代理的文字一律按 Markdown 记。 */
 export async function postAgentMessage(
 	s: Scoped,
 	agentId: string,
@@ -52,6 +52,7 @@ export async function postAgentMessage(
 		place.conversationId,
 		{
 			text,
+			format: "md",
 			mentions: opts.mentions ?? [],
 			...(place.topicId ? { topicId: place.topicId } : {}),
 		},

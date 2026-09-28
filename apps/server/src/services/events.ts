@@ -44,6 +44,11 @@ export function actingAsAgent<R>(
 	return delegation.run(mark, fn);
 }
 
+/** 当前是否在代办标记之内（代理经应用接口替本人操作）。 */
+export function actingAgent(): AgentDelegation | undefined {
+	return delegation.getStore();
+}
+
 function attribution(input: AppendInput): {
 	actorId: string;
 	onBehalfOfId: string | null;

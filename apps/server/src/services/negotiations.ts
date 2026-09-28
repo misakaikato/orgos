@@ -19,6 +19,7 @@ import {
 	type NEGOTIATION_STATUSES,
 	type NegotiationState,
 	NegotiationStateSchema,
+	plainTextOf,
 	type WorkItem,
 } from "@orgos/protocol";
 import { asc, desc, eq, gt, lte, sql } from "drizzle-orm";
@@ -573,7 +574,7 @@ export async function negotiationContext(
 		steps: await stepsOf(s, conversationId),
 		request: request.map((e) => ({
 			self: e.actorId === self.id,
-			text: e.payload.text,
+			text: plainTextOf(e.payload),
 		})),
 		ownerAnswers: answers.map(toWorkItem).flatMap((item) => {
 			if (item.kind !== "decision") return [];
