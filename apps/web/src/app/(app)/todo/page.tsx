@@ -95,6 +95,7 @@ function WorkItemCard({
 					workItemId={item.id}
 					requesterName={nameOf(item.requesterId, map, meId)}
 					negotiating={item.payload.negotiationConversationId !== undefined}
+					options={item.payload.options}
 				/>
 			) : null}
 		</MessageCard>

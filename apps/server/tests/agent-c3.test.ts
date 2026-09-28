@@ -5,18 +5,19 @@
  */
 import {
 	type BrowserFrame,
+	DECISION_OPTION_MAX_CHARS,
 	ErrorBodySchema,
 	type WorkItem,
 	WorkItemListResponseSchema,
 	WorkItemResponseSchema,
 } from "@orgos/protocol";
 import { and, eq } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { historyMessages } from "@/agent/prompt";
 import { scheduler } from "@/agent/scheduler";
 import { llmRequests, notes } from "@/db/schema";
 import { scoped } from "@/db/scope";
-import { createWorkItem } from "@/services/work-items";
+import { createWorkItem, decisionOptionsOf } from "@/services/work-items";
 import {
 	actions,
 	captureFrames,
@@ -308,6 +309,139 @@ describe("escalate_to_owner 的可用范围", () => {
 		);
 		expect(reply?.payload.text).toContain("无权限");
 		expect(await openItems(alice.client)).toHaveLength(before);
+	});
+});
+
+describe("决策待办的候选选项", () => {
+	const OPTIONS = ["可以，按 85 折签", "不行，最多 9 折", "85 折但要签两年"];
+
+	afterAll(async () => {
+		await setStatus(alice, "available");
+	});
+
+	it("带候选的上报：待办接口与上报卡片里都有候选", async () => {
+		const item = await escalate(`大客户 A 要 85 折|${OPTIONS.join("|")}`);
+		expect(item).toMatchObject({
+			kind: "decision",
+			payload: { question: "大客户 A 要 85 折", options: OPTIONS },
+		});
+		const created = (await eventsOf(bob.client, pairDm)).findLast(
+			(e) => e.type === "escalation.created",
+		);
+		expect(created).toMatchObject({
+			payload: { workItemId: item.id, options: OPTIONS },
+		});
+	});
+
+	it("选候选答复：事件与结果记下 option，分身转告的正是该候选的文字", async () => {
+		const item = (await openItems(alice.client))[0];
+		if (item?.kind !== "decision") throw new Error("缺少 decision");
+		const res = await resolve(alice.client, item.id, {
+			action: "answer",
+			text: OPTIONS[1],
+			option: 1,
+		});
+		expect(res.status).toBe(200);
+		await scheduler.idle(pairDm);
+		const { workItem } = WorkItemResponseSchema.parse(await res.json());
+		expect(workItem.resolution).toEqual({
+			action: "answer",
+			text: OPTIONS[1],
+			option: 1,
+		});
+		const events = await eventsOf(bob.client, pairDm);
+		const resolvedAt = events.findLastIndex(
+			(e) => e.type === "escalation.resolved",
+		);
+		expect(events[resolvedAt]).toMatchObject({
+			payload: {
+				workItemId: item.id,
+				action: "answer",
+				text: OPTIONS[1],
+				option: 1,
+			},
+		});
+		const reply = events
+			.slice(resolvedAt)
+			.find((e) => e.type === "message.posted" && e.actorId === aliceTwin);
+		expect(reply?.type === "message.posted" && reply.payload.text).toBe(
+			`本人答复：${OPTIONS[1]}`,
+		);
+	});
+
+	it("自定义答复（含选了候选又改过）不带 option", async () => {
+		const item = await escalate(`能打 8 折吗|${OPTIONS.join("|")}`);
+		const res = await resolve(alice.client, item.id, {
+			action: "answer",
+			text: `${OPTIONS[0]}，下周签`,
+		});
+		expect(res.status).toBe(200);
+		await scheduler.idle(pairDm);
+		const { workItem } = WorkItemResponseSchema.parse(await res.json());
+		expect(workItem.resolution).toEqual({
+			action: "answer",
+			text: `${OPTIONS[0]}，下周签`,
+		});
+		const resolved = (await eventsOf(bob.client, pairDm)).findLast(
+			(e) => e.type === "escalation.resolved",
+		);
+		expect(resolved?.payload).not.toHaveProperty("option");
+	});
+
+	it("option 与候选不符（越界、文字不一致、待办没有候选）→ 400，待办仍未处理", async () => {
+		const item = await escalate(`能打 7 折吗|${OPTIONS.join("|")}`);
+		for (const body of [
+			{ action: "answer", text: OPTIONS[0], option: 3 },
+			{ action: "answer", text: "随便", option: 0 },
+			{ action: "answer", text: OPTIONS[0], option: -1 },
+		])
+			await expectError(
+				await resolve(alice.client, item.id, body),
+				400,
+				"BAD_REQUEST",
+			);
+		const plain = await escalate("能不能换个交付方式");
+		expect(plain.payload).not.toHaveProperty("options");
+		await expectError(
+			await resolve(alice.client, plain.id, {
+				action: "answer",
+				text: "可以",
+				option: 0,
+			}),
+			400,
+			"BAD_REQUEST",
+		);
+		const open = (await openItems(alice.client)).map((w) => w.id);
+		expect(open).toEqual(expect.arrayContaining([item.id, plain.id]));
+		for (const id of [item.id, plain.id]) {
+			expect(
+				(await resolve(alice.client, id, { action: "decline" })).status,
+			).toBe(200);
+			await scheduler.idle(pairDm);
+		}
+	});
+
+	it("候选超过 4 条时截断，超长、空白、重复的丢弃，不足 2 条时不带候选", async () => {
+		const long = "长".repeat(DECISION_OPTION_MAX_CHARS + 1);
+		expect(
+			decisionOptionsOf([" A ", "B", "A", "", long, "C", "D", "E", "F"]),
+		).toEqual(["A", "B", "C", "D"]);
+		expect(decisionOptionsOf(["A", long, " "])).toBeUndefined();
+		expect(decisionOptionsOf(undefined)).toBeUndefined();
+
+		const item = await escalate(
+			"交期选哪天|10 月 8 日|10 月 9 日|10 月 10 日|10 月 11 日|10 月 12 日",
+		);
+		expect(item.kind === "decision" && item.payload.options).toEqual([
+			"10 月 8 日",
+			"10 月 9 日",
+			"10 月 10 日",
+			"10 月 11 日",
+		]);
+		expect(
+			(await resolve(alice.client, item.id, { action: "decline" })).status,
+		).toBe(200);
+		await scheduler.idle(pairDm);
 	});
 });
 

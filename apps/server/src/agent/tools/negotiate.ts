@@ -99,16 +99,17 @@ const STATUS_LABEL: Record<(typeof NEGOTIATION_STATUSES)[number], string> = {
 export const negotiationReplyTool = makeTool({
 	name: "negotiation_reply",
 	description:
-		"协商中你每一轮的唯一出口：调用一次就结束这一轮。status：continue（提出或修改方案，必须带完整 proposal；或回应但还没同意）/ agree（接受对方最近的 proposal，必须原样带上它）/ reject（谈不成，终止协商）/ need_owner（需要本人拍板，message 写给本人、问清要本人定什么）。其余状态的 message 用一两句话写给对方的分身。proposal 是 JSON 对象，用简短的键值写出完整方案。",
+		"协商中你每一轮的唯一出口：调用一次就结束这一轮。status：continue（提出或修改方案，必须带完整 proposal；或回应但还没同意）/ agree（接受对方最近的 proposal，必须原样带上它）/ reject（谈不成，终止协商）/ need_owner（需要本人拍板，message 写给本人、问清要本人定什么）。其余状态的 message 用一两句话写给对方的分身。proposal 是 JSON 对象，用简短的键值写出完整方案。need_owner 时若本人的答法很明确（接受对方的方案 / 改约某个具体时间 / 不约了），用 options 给出 2–4 个候选答复，本人点一下就能答复：每条是本人可以直接拿来答复你的完整一句话（例如“接受对方的 10 月 9 日 14:00”），不超过 60 字；其余状态不带 options。",
 	label: "正在回应对方…",
 	schema: z.object({
 		status: z.enum(NEGOTIATION_STATUSES),
 		message: z.string().trim().min(1).max(2000),
 		proposal: z.record(z.string(), z.unknown()).optional(),
+		options: z.array(z.string()).optional(),
 	}),
 	available: (scope) =>
 		scope.conversation.kind === "negotiation" && scope.depth === 0,
-	run: async ({ status, message, proposal }, scope) => {
+	run: async ({ status, message, proposal, options }, scope) => {
 		if (status === "agree") {
 			const state = await negotiationStateOf(scope.s, scope.conversation.id);
 			const problem = agreeProblem(state, scope.agent.principal.id, proposal);
@@ -129,6 +130,7 @@ export const negotiationReplyTool = makeTool({
 				status,
 				message,
 				...(proposal === undefined ? {} : { proposal }),
+				...(status === "need_owner" && options ? { options } : {}),
 			},
 		};
 	},

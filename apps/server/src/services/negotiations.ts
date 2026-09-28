@@ -55,6 +55,8 @@ export type NegotiationReply = {
 	status: (typeof NEGOTIATION_STATUSES)[number];
 	message: string;
 	proposal?: unknown;
+	/** need_owner 时给本人的候选答复（经 `escalateToOwner` 整理）。 */
+	options?: readonly string[];
 };
 export type StepEvent = Extract<Event, { type: "negotiation.step" }>;
 
@@ -499,6 +501,7 @@ export async function recordNegotiationReply(
 			title: `协商需要你定：${head}`,
 			sourceEventId: event.id,
 			negotiationConversationId: conversationId,
+			...(reply.options ? { options: reply.options } : {}),
 		});
 	}
 	return state;

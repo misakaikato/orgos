@@ -249,6 +249,8 @@ export const ResolveWorkItemRequestSchema = z.discriminatedUnion("action", [
 		text: z.string().trim().min(1).max(RESOLUTION_TEXT_MAX_LENGTH),
 		/** 同时把问题与答复存为本人的共享资料。 */
 		saveAsNote: z.boolean().optional(),
+		/** 选的是第几个候选（从 0 起），text 须与该候选一致；自己写的答复不带。 */
+		option: z.number().int().min(0).optional(),
 	}),
 	z.object({
 		action: z.literal("decline"),

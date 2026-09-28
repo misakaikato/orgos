@@ -27,14 +27,17 @@ function titleOf(requesterName: string, question: string): string {
 export const escalateTool = makeTool({
 	name: "escalate_to_owner",
 	description:
-		"把超出你授权的问题转给本人答复（新的承诺、决定，或对外政策要求问本人的事）。question 写清楚对方要什么、相关背景。调用后本次回复结束，对方会看到“已转给本人”，本人答复后你会被叫回来转告对方。",
+		"把超出你授权的问题转给本人答复（新的承诺、决定，或对外政策要求问本人的事）。question 写清楚对方要什么、相关背景。问题有明确的几种答法时（同意 / 不同意 / 折中，或几个具体的日期、价格），用 options 给出 2–4 个候选答复，本人点一下就能答复：每条是可以直接转告对方的完整答复（例如“可以，85 折按一年合同签”），不超过 60 字，互不重复；答法开放的问题不给。调用后本次回复结束，对方会看到“已转给本人”，本人答复后你会被叫回来转告对方。",
 	label: "正在转给本人…",
-	schema: z.object({ question: z.string().trim().min(1).max(2000) }),
+	schema: z.object({
+		question: z.string().trim().min(1).max(2000),
+		options: z.array(z.string()).optional(),
+	}),
 	available: (scope) =>
 		!forOwner(scope) &&
 		scope.depth === 0 &&
 		scope.conversation.kind !== "negotiation",
-	run: async ({ question }, scope) => {
+	run: async ({ question, options }, scope) => {
 		if (scope.actingFor.kind !== "other")
 			throw new Error("escalate_to_owner 只在为他人办事时可用");
 		const requester = await scope.s.first(
@@ -48,6 +51,7 @@ export const escalateTool = makeTool({
 			topicId: scope.conversation.topicId,
 			requesterId: scope.actingFor.principalId,
 			question,
+			...(options ? { options } : {}),
 			title: titleOf(requesterName, question),
 			sourceEventId: scope.triggerEventId,
 		});

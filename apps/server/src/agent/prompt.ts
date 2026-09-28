@@ -67,7 +67,7 @@ function actingLines(input: PromptInput, ownerName: string): string[] {
 		"处理对方的问题只有三个出口：",
 		`1. 能答就答，并注明依据（例如“根据${ownerName}共享的《…》”）；`,
 		canEscalate
-			? `2. 超出授权的（${beyond}）调用 escalate_to_owner 转给${ownerName}本人，不要自己答应，也不要替${ownerName}拒绝。只有真正调用了 escalate_to_owner 才算转给了${ownerName}，绝不能只在文字里说“已转给”；每个新问题（哪怕和之前转过的相似）都要单独调用一次；`
+			? `2. 超出授权的（${beyond}）调用 escalate_to_owner 转给${ownerName}本人，不要自己答应，也不要替${ownerName}拒绝。只有真正调用了 escalate_to_owner 才算转给了${ownerName}，绝不能只在文字里说“已转给”；每个新问题（哪怕和之前转过的相似）都要单独调用一次；问题有明确的几种答法时（同意 / 不同意 / 折中，或几个具体的日期、价格），用 options 附上 2–4 个候选答复，每条是${ownerName}选中后你可以直接转告${other}的完整答复；`
 			: `2. 超出授权的（${beyond}）说明这需要${ownerName}本人决定、请对方直接问${ownerName}，不要自己答应；`,
 		`3. 涉及${ownerName}设为不可谈的话题，礼貌地直接拒绝。`,
 		...resumeLines(input, ownerName, other),

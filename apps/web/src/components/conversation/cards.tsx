@@ -156,6 +156,7 @@ export function EscalationCard({
 						workItemId={workItemId}
 						requesterName={requesterName}
 						negotiating={negotiating}
+						options={event.payload.options}
 					/>
 				) : (
 					<p className="mt-2 text-12 text-muted">

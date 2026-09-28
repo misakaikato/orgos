@@ -65,7 +65,8 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
 }
 
 /**
- * 添加设备：显示一次性配对码（10 分钟倒计时）与在那台电脑上要运行的两条命令。
+ * 添加设备：显示一次性配对码（10 分钟倒计时）与在那台电脑上分两步运行的命令（第 1 步配对、第 2 步启动），
+ * 并说明也可以在桌面客户端的 Runner 控制里填配对码。
  * 设备连上后（列表里出现新的在线设备）提示成功。
  */
 export function PairingPanel({ onClose }: { onClose: () => void }) {
@@ -177,10 +178,24 @@ export function PairingPanel({ onClose }: { onClose: () => void }) {
 						onChange={(e) => setName(e.target.value)}
 					/>
 					<p className="text-13 text-muted">
-						在这台电脑的终端里依次运行下面两条命令。工作目录是助手唯一能访问的地方，可以换成别的目录。
+						在那台电脑的终端里分两步运行下面的命令。
 					</p>
-					<CommandBlock label="1. 配对" command={commands.pair} />
-					<CommandBlock label="2. 启动" command={commands.serve} />
+					<div className="flex flex-col gap-1.5">
+						<CommandBlock label="第 1 步：配对" command={commands.pair} />
+						<p className="text-12 text-muted">
+							只需运行一次。配对码用过即失效，重复运行会提示这台电脑已配对。
+						</p>
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<CommandBlock label="第 2 步：启动" command={commands.serve} />
+						<p className="text-12 text-muted">
+							配对成功后运行，以后每次开机再运行这一条。工作目录是助手唯一能访问的地方，可以换成别的目录。
+						</p>
+					</div>
+					<p className="text-13 text-muted">
+						装了桌面客户端的话，也可以在它的 Runner
+						控制里填这个配对码，由它来配对和启动。
+					</p>
 				</div>
 			)}
 		</MessageCard>

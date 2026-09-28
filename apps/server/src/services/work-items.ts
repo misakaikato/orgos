@@ -8,6 +8,9 @@ import {
 	type ApprovalOutcome,
 	type ApprovalResolution,
 	type ConfirmationResolution,
+	DECISION_OPTION_MAX_CHARS,
+	DECISION_OPTIONS_MAX,
+	DECISION_OPTIONS_MIN,
 	type DecisionResolution,
 	ERROR_CODES,
 	isAllowOption,
@@ -95,6 +98,24 @@ export async function listWorkItems(
 }
 
 /**
+ * 代理给出的候选答复 → 待办里存的候选（候选的整理只在这里）：去掉空白与重复，
+ * 超过 60 字的丢弃（截断会把一句完整的答复截坏），多于 4 条的只留前 4 条；
+ * 剩下不足 2 条就不算有候选。不报错。
+ */
+export function decisionOptionsOf(
+	raw: readonly string[] | undefined,
+): string[] | undefined {
+	const kept: string[] = [];
+	for (const option of raw ?? []) {
+		const text = option.trim();
+		if (!text || Array.from(text).length > DECISION_OPTION_MAX_CHARS) continue;
+		if (!kept.includes(text)) kept.push(text);
+	}
+	const options = kept.slice(0, DECISION_OPTIONS_MAX);
+	return options.length >= DECISION_OPTIONS_MIN ? options : undefined;
+}
+
+/**
  * 代理把超出授权的问题转给本人（上报的唯一入口）：一个事务内建 decision 待办
  * （处理人 = 替代理的本人拍板的人：人是本人，单元是负责人；提问人 = requesterId）
  * 并在会话里落 `escalation.created`，提交后把待办推给处理人。
@@ -112,14 +133,20 @@ export async function escalateToOwner(
 		sourceEventId?: number | null;
 		/** 协商中请本人拍板：答复后恢复该协商而不是在会话里回复。 */
 		negotiationConversationId?: string;
+		/** 代理给出的候选答复，经 `decisionOptionsOf` 整理后存入。 */
+		options?: readonly string[];
 		at?: Date;
 	},
 ): Promise<WorkItem> {
 	const agent = await requireAgentPrincipal(s, input.agentId);
 	const decider = await deciderOf(s, agent.ownerId);
-	const negotiation = input.negotiationConversationId
-		? { negotiationConversationId: input.negotiationConversationId }
-		: {};
+	const options = decisionOptionsOf(input.options);
+	const extra = {
+		...(input.negotiationConversationId
+			? { negotiationConversationId: input.negotiationConversationId }
+			: {}),
+		...(options ? { options } : {}),
+	};
 	// 协商中请本人拍板时，卡片落在拍板人的私聊里（单元分身不在任何人的私聊里）。
 	await requireConversation(
 		s,
@@ -132,7 +159,7 @@ export async function escalateToOwner(
 			payload: {
 				question: input.question,
 				askedById: input.requesterId,
-				...negotiation,
+				...extra,
 			},
 			title: input.title,
 			body: input.question,
@@ -150,7 +177,7 @@ export async function escalateToOwner(
 			payload: {
 				workItemId: item.id,
 				question: input.question,
-				...negotiation,
+				...extra,
 			},
 			at: input.at,
 		});
@@ -296,6 +323,9 @@ async function resolveDecision(
 	req: Extract<ResolveWorkItemRequest, { action: "answer" | "decline" }>,
 ): Promise<WorkItem> {
 	const text = req.text?.trim() || undefined;
+	const option = req.action === "answer" ? req.option : undefined;
+	if (option !== undefined && item.payload.options?.[option] !== text)
+		throw badRequest("答复与所选候选不一致");
 	const card = await cardEventOf(s, item);
 	const unit = card ? await unitOfAgent(s, card.actorId) : null;
 	const resolved = await transactWithEvents(s, async (tx, append) => {
@@ -314,6 +344,7 @@ async function resolveDecision(
 		const resolution: DecisionResolution = {
 			action: req.action,
 			...(text ? { text } : {}),
+			...(option === undefined ? {} : { option }),
 			...(noteId ? { noteId } : {}),
 		};
 		const updated = await closeOpen(tx, item.id, resolution);
@@ -327,6 +358,7 @@ async function resolveDecision(
 					workItemId: item.id,
 					action: req.action,
 					...(text ? { text } : {}),
+					...(option === undefined ? {} : { option }),
 				},
 			});
 			if (req.action === "answer")

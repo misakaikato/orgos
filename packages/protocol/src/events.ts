@@ -45,12 +45,16 @@ export const EscalationCreatedPayloadSchema = z.object({
 	question: z.string(),
 	/** 协商中分身请本人拍板（need_owner）时：所在的协商会话。 */
 	negotiationConversationId: z.uuid().optional(),
+	/** 分身给出的候选答复（与待办载荷里的相同）。 */
+	options: z.array(z.string()).optional(),
 });
 
 export const EscalationResolvedPayloadSchema = z.object({
 	workItemId: z.uuid(),
 	action: z.string(),
 	text: z.string().optional(),
+	/** 答复选的是第几个候选（从 0 起）；自己写的答复不带。 */
+	option: z.number().int().min(0).optional(),
 });
 
 export const NegotiationStepPayloadSchema = z.object({

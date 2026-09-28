@@ -21,7 +21,7 @@ import {
 } from "@orgos/protocol";
 import { AdapterRegistry, candidateAdapters } from "@/acp/adapters";
 import { AcpManager } from "@/acp/session";
-import { loadConfig, saveConfig } from "@/config";
+import { loadConfig, pairedServer, saveConfig } from "@/config";
 import { log } from "@/log";
 import { openWorkspace, runCapability } from "@/workspace";
 import { startWsBridge } from "@/ws-bridge";
@@ -62,8 +62,21 @@ function parseArgs(argv: string[]): {
 	return { positional, flags };
 }
 
-async function pair(code: string, server: string, name: string): Promise<void> {
-	const base = new URL(server);
+const SERVE_HINT =
+	"启动：bun run --cwd apps/runner start serve --workspace <工作目录>，或在桌面客户端里启动";
+
+/** 配对失败时，本机若已配对，在同一行报错后说明无需重复配对（桌面客户端只显示最后一行）。 */
+async function withPairedHint(message: string): Promise<string> {
+	const server = await pairedServer();
+	if (!server) return message;
+	return `${message.replace(/[。.]$/, "")}。这台电脑已配对（服务器 ${server}），无需重复配对；配对码只能用一次。`;
+}
+
+async function requestPairing(
+	base: URL,
+	code: string,
+	name: string,
+): Promise<{ runnerId: string; token: string }> {
 	const res = await fetch(new URL("/api/runners/pair", base), {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -76,10 +89,25 @@ async function pair(code: string, server: string, name: string): Promise<void> {
 			err.success ? err.data.error.message : `配对失败（HTTP ${res.status}）`,
 		);
 	}
-	const { runnerId, token } = PairRunnerResponseSchema.parse(body);
+	return PairRunnerResponseSchema.parse(body);
+}
+
+async function pair(code: string, server: string, name: string): Promise<void> {
+	const base = new URL(server);
+	let paired: { runnerId: string; token: string };
+	try {
+		paired = await requestPairing(base, code, name);
+	} catch (e) {
+		throw new Error(
+			await withPairedHint(e instanceof Error ? e.message : String(e)),
+		);
+	}
+	const { runnerId, token } = paired;
 	const file = await saveConfig({ server: base.origin, runnerId, token });
 	log.info("paired", { runnerId, name, config: file });
-	process.stdout.write(`已配对“${name}”，配对信息写入 ${file}\n`);
+	process.stdout.write(
+		`已配对“${name}”，配对信息写入 ${file}\n${SERVE_HINT}\n`,
+	);
 }
 
 /** 断线期间外部任务的上行最多暂存多少帧（重连后补发）。 */

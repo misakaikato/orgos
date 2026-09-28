@@ -46,6 +46,11 @@ describe("mockDecide 优先级", () => {
 			{ handle: "alice-ops", task: "整理周报" },
 		],
 		["#escalate 能提前吗", "escalate_to_owner", { question: "能提前吗" }],
+		[
+			"#escalate 能打 85 折吗|可以|不行 | 最多 9 折",
+			"escalate_to_owner",
+			{ question: "能打 85 折吗", options: ["可以", "不行", "最多 9 折"] },
+		],
 		["#note 预算 口径", "memory_search", { query: "预算 口径" }],
 		[
 			"#remember 私事|下周三请假看牙",

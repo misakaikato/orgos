@@ -1,12 +1,23 @@
 "use client";
 
 import { RESOLUTION_TEXT_MAX_LENGTH } from "@orgos/protocol";
-import { type FormEvent, useId, useState } from "react";
-import { IconCheck } from "@/components/icons";
+import {
+	type FormEvent,
+	type KeyboardEvent,
+	useId,
+	useRef,
+	useState,
+} from "react";
+import { IconCheck, IconPlus } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { fieldClass } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
 import { cx } from "@/lib/cx";
+import {
+	answerRequest,
+	choiceAfterEdit,
+	type DecisionChoice,
+} from "@/lib/decision";
 import { loadWorkItems, resolveWorkItem } from "@/lib/store";
 
 type Pending = "answer" | "decline" | null;
@@ -17,37 +28,51 @@ function errorText(e: unknown): string {
 }
 
 /**
- * 答复分身转来的问题（decision 待办）：答复框 + "存为共享资料" + 主按钮"答复"、次按钮"暂不答复"。
+ * 答复分身转来的问题（decision 待办）：分身给的候选（可选）+ 答复框 + "存为共享资料"
+ * + 主按钮"答复"、次按钮"暂不答复"。
  * 会话里的上报卡片与待办页共用；处理结果经事件与待办推送回流，本组件不保存处理后的状态。
  */
 export function DecisionForm({
 	workItemId,
 	requesterName,
 	negotiating = false,
+	options = [],
 }: {
 	workItemId: string;
 	/** 提问的人，用于占位提示。 */
 	requesterName: string;
 	/** 分身在协商中请你拍板：答复后它据此接着协商，而不是转告提问的人。 */
 	negotiating?: boolean;
+	/** 分身给出的候选答复。 */
+	options?: readonly string[];
 }) {
 	const [text, setText] = useState("");
+	const [choice, setChoice] = useState<DecisionChoice>(null);
 	const [saveAsNote, setSaveAsNote] = useState(false);
 	const [pending, setPending] = useState<Pending>(null);
 	const [error, setError] = useState<string | null>(null);
 	const inputId = useId();
+	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const answer = text.trim();
 
+	const choose = (next: Exclude<DecisionChoice, null>) => {
+		setChoice(next);
+		if (next === "custom") {
+			setText("");
+			inputRef.current?.focus();
+		} else setText(options[next] ?? "");
+	};
+
 	const submit = async (action: "answer" | "decline") => {
+		const req =
+			action === "answer"
+				? answerRequest(text, options, choice, saveAsNote)
+				: { action, ...(answer ? { text: answer } : {}) };
+		if (!req) return;
 		setPending(action);
 		setError(null);
 		try {
-			await resolveWorkItem(
-				workItemId,
-				action === "answer"
-					? { action, text: answer, ...(saveAsNote ? { saveAsNote } : {}) }
-					: { action, ...(answer ? { text: answer } : {}) },
-			);
+			await resolveWorkItem(workItemId, req);
 		} catch (e) {
 			setError(errorText(e));
 			setPending(null);
@@ -60,12 +85,36 @@ export function DecisionForm({
 		if (answer && !pending) void submit("answer");
 	};
 
+	/** 焦点不在答复框时，数字键 1–4 直接选候选。 */
+	const onKeyDown = (e: KeyboardEvent<HTMLFormElement>) => {
+		if (pending !== null || e.target instanceof HTMLTextAreaElement) return;
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		const n = Number(e.key);
+		if (Number.isInteger(n) && n >= 1 && n <= options.length) {
+			e.preventDefault();
+			choose(n - 1);
+		}
+	};
+
 	return (
-		<form onSubmit={onSubmit} className="mt-3 flex flex-col gap-3">
+		<form
+			onSubmit={onSubmit}
+			onKeyDown={onKeyDown}
+			className="mt-3 flex flex-col gap-3"
+		>
+			{options.length > 0 ? (
+				<OptionList
+					options={options}
+					choice={choice}
+					disabled={pending !== null}
+					onChoose={choose}
+				/>
+			) : null}
 			<label htmlFor={inputId} className="sr-only">
 				你的答复
 			</label>
 			<textarea
+				ref={inputRef}
 				id={inputId}
 				rows={3}
 				value={text}
@@ -76,7 +125,10 @@ export function DecisionForm({
 						? "写下你的决定，分身会据此接着协商"
 						: `写下答复，分身会转告${requesterName}`
 				}
-				onChange={(e) => setText(e.target.value)}
+				onChange={(e) => {
+					setText(e.target.value);
+					setChoice((c) => choiceAfterEdit(c, options, e.target.value));
+				}}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit(e);
 				}}
@@ -125,5 +177,70 @@ export function DecisionForm({
 				</Button>
 			</div>
 		</form>
+	);
+}
+
+/**
+ * 候选答复：每项一个可选中的按钮（aria-pressed），前面是数字键提示；最后一项固定为"自己写"。
+ */
+function OptionList({
+	options,
+	choice,
+	disabled,
+	onChoose,
+}: {
+	options: readonly string[];
+	choice: DecisionChoice;
+	disabled: boolean;
+	onChoose: (choice: Exclude<DecisionChoice, null>) => void;
+}) {
+	const items: { key: Exclude<DecisionChoice, null>; label: string }[] = [
+		...options.map((label, i) => ({ key: i, label })),
+		{ key: "custom" as const, label: "自己写" },
+	];
+	return (
+		<fieldset className="flex flex-col gap-2" disabled={disabled}>
+			<legend className="mb-2 text-12 text-muted">
+				选一个答复，或自己写（数字键 1–{options.length} 可直接选）
+			</legend>
+			{items.map(({ key, label }) => {
+				const selected = choice === key;
+				const custom = key === "custom";
+				return (
+					<button
+						key={key}
+						type="button"
+						aria-pressed={selected}
+						onClick={() => onChoose(key)}
+						className={cx(
+							"flex w-full items-start gap-2 rounded-row border px-3 py-2 text-left text-14 transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50",
+							selected
+								? "border-accent bg-accent-soft"
+								: "border-line bg-bg hover:bg-surface-2",
+							custom && !selected ? "text-muted" : "text-ink",
+						)}
+					>
+						<span
+							aria-hidden="true"
+							className={cx(
+								"mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-pill text-12 font-medium",
+								selected
+									? "bg-accent text-on-accent"
+									: "bg-surface-2 text-muted",
+							)}
+						>
+							{selected ? (
+								<IconCheck size={12} />
+							) : custom ? (
+								<IconPlus size={12} />
+							) : (
+								Number(key) + 1
+							)}
+						</span>
+						<span className="min-w-0 flex-1 break-words">{label}</span>
+					</button>
+				);
+			})}
+		</fieldset>
 	);
 }

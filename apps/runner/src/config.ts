@@ -48,6 +48,24 @@ export async function saveConfig(config: RunnerConfig): Promise<string> {
 	return file;
 }
 
+/** 本机已配对时配对的服务器地址（只取 server，不碰 token）；没有或不合法 → null。 */
+export async function pairedServer(): Promise<string | null> {
+	let raw: string;
+	try {
+		raw = await readFile(configPath(), "utf8");
+	} catch {
+		return null;
+	}
+	try {
+		const parsed = RunnerConfigSchema.pick({ server: true }).safeParse(
+			JSON.parse(raw),
+		);
+		return parsed.success ? parsed.data.server : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function loadConfig(): Promise<RunnerConfig> {
 	const file = configPath();
 	let raw: string;

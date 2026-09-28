@@ -323,6 +323,7 @@ describe("C4 need_owner：应答方请本人定，本人答复后协商继续并
 			payload: {
 				askedById: aliceTwin,
 				negotiationConversationId: negotiationId,
+				options: ["接受：周四 15:00", "改约其他时间", "不约了"],
 			},
 		});
 		expect(
@@ -334,6 +335,7 @@ describe("C4 need_owner：应答方请本人定，本人答复后协商继续并
 			payload: {
 				workItemId: decision.id,
 				negotiationConversationId: negotiationId,
+				options: ["接受：周四 15:00", "改约其他时间", "不约了"],
 			},
 		});
 	});

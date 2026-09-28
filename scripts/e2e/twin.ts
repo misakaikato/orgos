@@ -142,6 +142,55 @@ export const c3: Scenario = {
 				);
 			},
 		);
+		await step(
+			"带候选的上报：alice 选第 2 个候选答复，事件记下 option，分身转告的正是该候选",
+			async () => {
+				const options = [
+					"可以，按 85 折签",
+					"不行，最多 9 折",
+					"85 折但要签两年",
+				];
+				const asked = await post(
+					bob.client,
+					dm,
+					`#escalate 大客户 A 要 85 折，能答应吗|${options.join("|")}`,
+				);
+				const card = await eventAfter(
+					"escalation.created",
+					bob.client,
+					dm,
+					asked.id,
+					is("escalation.created"),
+				);
+				equal("卡片的候选", card.payload.options, options);
+				const item = await openItem(
+					"alice 的 decision 待办",
+					alice,
+					(x) => x.id === card.payload.workItemId,
+				);
+				equal(
+					"待办的候选",
+					item.kind === "decision" ? item.payload.options : undefined,
+					options,
+				);
+				const last = (await events(bob.client, dm)).at(-1)?.id ?? 0;
+				await resolveItem(alice, item.id, {
+					action: "answer",
+					text: options[1] ?? "",
+					option: 1,
+				});
+				const resolved = await eventAfter(
+					"escalation.resolved",
+					bob.client,
+					dm,
+					last,
+					is("escalation.resolved"),
+				);
+				equal("答复记下的候选", resolved.payload.option, 1);
+				const reply = await replyFrom(bob.client, dm, alice.twin, last);
+				equal("分身的回复", reply.payload.text, `本人答复：${options[1]}`);
+			},
+		);
 		await step("alice 本人在私聊里发言：不触发任何代理", async () => {
 			const said = await post(alice.client, dm, "#note 预算");
 			await quiet("代理消息", alice.client, dm, said.id, agentSpoke, 3_000);

@@ -144,6 +144,11 @@ export type NegotiationState = z.infer<typeof NegotiationStateSchema>;
 
 // ─────────────────────────── 待办 ───────────────────────────
 
+/** decision 待办的候选答复：条数范围与每条的最大字数（按字符计）。 */
+export const DECISION_OPTIONS_MIN = 2;
+export const DECISION_OPTIONS_MAX = 4;
+export const DECISION_OPTION_MAX_CHARS = 60;
+
 /** 各 kind 的 `work_items.payload`。 */
 export const WORK_ITEM_PAYLOAD_SCHEMAS = {
 	question: z.object({}),
@@ -153,6 +158,8 @@ export const WORK_ITEM_PAYLOAD_SCHEMAS = {
 		askedById: z.uuid(),
 		/** 协商中分身请本人拍板时：答复后恢复该协商。 */
 		negotiationConversationId: z.uuid().optional(),
+		/** 分身整理的候选答复（每条可直接转告对方），本人点选即可答复。 */
+		options: z.array(z.string()).optional(),
 	}),
 	approval: z.object({
 		runnerId: z.uuid(),
@@ -175,6 +182,8 @@ export const WORK_ITEM_PAYLOAD_SCHEMAS = {
 export const DecisionResolutionSchema = z.object({
 	action: z.enum(["answer", "decline"]),
 	text: z.string().optional(),
+	/** 答复选的是第几个候选（从 0 起）；自己写的答复不带。 */
+	option: z.number().int().min(0).optional(),
 	/** 勾选"存为共享资料"时写入的资料。 */
 	noteId: z.uuid().optional(),
 });

@@ -139,7 +139,7 @@ bun run dev          # 服务端 + 界面，开发模式（ORGOS_DEV=1）
 
 ## 假模型指令
 
-`MOCK_LLM=1` 时代理不出网，按消息里的指令确定性地行动（完整规则见 `apps/server/src/agent/mock-llm.ts` 文件头）：`#note <关键词>` 检索、`#remember <标题>|<内容>` 记事、`#delegate:<handle> <任务>` 交办、`#escalate <问题>` 上报、`#commit <标题>` 建承诺、`#negotiate:<handle> <目标>` 协商（目标含 `#needowner` / `#reject` 时对方请本人定 / 拒绝）、`#decide <标题>|<内容>` 部门分身记决定、`#ls` / `#read` / `#write` / `#exec` 设备操作、`#api` 调接口、`#fact` 造记忆；没有指令时回复"收到：<原文>"。
+`MOCK_LLM=1` 时代理不出网，按消息里的指令确定性地行动（完整规则见 `apps/server/src/agent/mock-llm.ts` 文件头）：`#note <关键词>` 检索、`#remember <标题>|<内容>` 记事、`#delegate:<handle> <任务>` 交办、`#escalate <问题>[|<候选1>|<候选2>…]` 上报（可带候选答复）、`#commit <标题>` 建承诺、`#negotiate:<handle> <目标>` 协商（目标含 `#needowner` / `#reject` 时对方请本人定 / 拒绝）、`#decide <标题>|<内容>` 部门分身记决定、`#ls` / `#read` / `#write` / `#exec` 设备操作、`#api` 调接口、`#fact` 造记忆；没有指令时回复"收到：<原文>"。
 
 ## 门禁与验收脚本
 

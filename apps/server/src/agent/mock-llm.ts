@@ -9,13 +9,15 @@
  *
  * 按本次运行的触发文本决定行为，优先级：
  * 1. 本次运行已有工具结果 → `完成：<工具结果前 60 字>`，不再调工具；
- * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具（`#api <METHOD> <path> <json>` 调 app_api_call）；
+ * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具（`#api <METHOD> <path> <json>` 调 app_api_call；
+ *    `#escalate <问题>|<候选1>|<候选2>…` 带候选上报）；
  *    `#claim` 只在文字里说"已转交本人"、不调用工具（收到上报纠正提示后仍如此）；
  *    `#claim-fix <问题>` 第一步同样只说"已转交本人"，收到纠正提示后调用 escalate_to_owner(<问题>)；
  * 3. 群聊里文本既没有 @ 本代理、也不含本代理 handle → pass；
  * 4. 上报后恢复运行 → `本人答复：<答复原文>`（暂不答复时为 `本人暂不答复`，附言跟在冒号后）；
  * 5. 协商：发起方第一步 continue + `{"slot":"周四 15:00"}`；应答方看到 proposal 时，
- *    目标含 #needowner（且本人还没答复过）→ need_owner，含 #reject → reject，否则 agree 同一 proposal；
+ *    目标含 #needowner（且本人还没答复过）→ need_owner（候选：接受该 proposal / 改约其他时间 / 不约了），
+ *    含 #reject → reject，否则 agree 同一 proposal；
  *    最近的 proposal 是自己提的（对方还没回应它）→ continue 重申同一 proposal；
  * 6. 其余 → `收到：<触发文本>`。
  *
@@ -38,6 +40,7 @@ import {
 	recordLlmRequest,
 	recordSafely,
 } from "@/services/llm-requests";
+import { describeProposal } from "@/services/negotiations";
 
 export type MockDecision =
 	| { kind: "text"; text: string }
@@ -72,7 +75,12 @@ const DIRECTIVES: Directive[] = [
 	{
 		pattern: /#escalate\s+([\s\S]*)$/,
 		tool: "escalate_to_owner",
-		args: (m) => ({ question: rest(m) }),
+		args: (m) => {
+			const [question, ...options] = rest(m)
+				.split("|")
+				.map((x) => x.trim());
+			return options.length > 0 ? { question, options } : { question };
+		},
 	},
 	{
 		pattern: /#note\s+([\s\S]*)$/,
@@ -222,7 +230,15 @@ function negotiationStep(n: NonNullable<RunTrigger["negotiation"]>) {
 		n.goal.includes("#needowner") &&
 		!n.ownerAnswered
 	)
-		return { status: "need_owner", message: "这需要问本人" };
+		return {
+			status: "need_owner",
+			message: "这需要问本人",
+			options: [
+				`接受：${describeProposal(n.lastProposal)}`,
+				"改约其他时间",
+				"不约了",
+			],
+		};
 	if (n.role === "responder" && n.goal.includes("#reject"))
 		return { status: "reject", message: "这个时间不行" };
 	return { status: "agree", message: "同意", proposal: n.lastProposal };

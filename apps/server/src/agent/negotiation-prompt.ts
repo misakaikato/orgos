@@ -85,7 +85,7 @@ export function buildNegotiationPrompt(input: {
 		"2. continue：提出新方案或修改方案，proposal 里写完整方案（不是只写改动）；也用于回应对方但暂不同意。",
 		`3. agree：接受对方最近一次提出的 proposal，必须把它原样（逐字段相同）放进 proposal。只有一方 agree 了另一方最近的 proposal，协商才算谈成；不能 agree 自己提的方案。`,
 		`4. reject：这件事谈不成（对方的要求和${ownerName}的约束根本冲突），协商随即终止。`,
-		`5. need_owner：拿不准、需要${boss}本人拍板；message 写清要问${boss}什么。${boss}答复后你会接着这一轮继续。`,
+		`5. need_owner：拿不准、需要${boss}本人拍板；message 写清要问${boss}什么；${boss}的答法明确时（接受对方的方案 / 改约某个具体时间 / 不约了），用 options 附上 2–4 个候选答复，每条是${boss}可以直接选的一句完整答复。${boss}答复后你会接着这一轮继续。`,
 		'6. proposal 是 JSON 对象，用简短的中文键值写出一个确定的方案，例如 {"日期":"9 月 29 日（周二）","时间":"15:00-15:45","事项":"结算页接口评审"}。时间要落到具体的日期与钟点；一个 proposal 里只放一个方案，不要放“备选”“候选”这类第二方案——备选写在 message 里，对方不接受时再作为新的 proposal 提出。',
 		`7. 最多 ${ctx.state.maxSteps} 步，尽快收敛：对方的方案满足${ownerName}的约束就直接 agree；不满足就说明原因并给出具体的替代方案。`,
 		`8. message 用一两句中文说明理由：continue / agree / reject 写给对方的分身；need_owner 写给${boss}本人，直接问清要${boss}定什么。`,
