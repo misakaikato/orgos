@@ -37,13 +37,18 @@ export type AgentMessageExtra = Pick<
 	"citations" | "askedById" | "replyToEventId"
 >;
 
-/** 代理发一条消息（代理须是会话成员）。代理的文字一律按 Markdown 记。 */
+/** 代理发一条消息（代理须是会话成员）。代理的文字默认按 Markdown 记；html 只来自经应用接口的代发与演示数据。 */
 export async function postAgentMessage(
 	s: Scoped,
 	agentId: string,
 	place: Place,
 	text: string,
-	opts: { mentions?: string[]; at?: Date; extra?: AgentMessageExtra } = {},
+	opts: {
+		mentions?: string[];
+		at?: Date;
+		extra?: AgentMessageExtra;
+		format?: "md" | "html";
+	} = {},
 ): Promise<Event> {
 	const agent = await requireAgentPrincipal(s, agentId);
 	return postAs(
@@ -52,7 +57,7 @@ export async function postAgentMessage(
 		place.conversationId,
 		{
 			text,
-			format: "md",
+			format: opts.format ?? "md",
 			mentions: opts.mentions ?? [],
 			...(place.topicId ? { topicId: place.topicId } : {}),
 		},

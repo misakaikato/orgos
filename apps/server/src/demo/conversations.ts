@@ -26,6 +26,18 @@ function seqOf(event: Event): number {
 	return event.seq;
 }
 
+/** 执行助手出的邮件版周报：演示 html 格式的消息（在沙箱里渲染，不含脚本与外部资源）。 */
+const WEEKLY_REPORT_HTML = `<h3 style="margin:0 0 8px">Q4 管理层周报 · 第 39 周</h3>
+<p style="margin:0 0 12px;opacity:.7">产品部 林晓 · 预算口径一律不含税</p>
+<table style="border-collapse:collapse;width:100%">
+<thead><tr><th style="text-align:left;padding:6px 8px;border-bottom:1px solid currentColor">项目</th><th style="text-align:left;padding:6px 8px;border-bottom:1px solid currentColor">上线</th><th style="text-align:left;padding:6px 8px;border-bottom:1px solid currentColor">风险</th></tr></thead>
+<tbody>
+<tr><td style="padding:6px 8px">新版结算页</td><td style="padding:6px 8px">10 月 31 日</td><td style="padding:6px 8px"><b style="color:#C93636">高</b></td></tr>
+<tr><td style="padding:6px 8px">订单服务迁移</td><td style="padding:6px 8px">10 月 20 日切流</td><td style="padding:6px 8px"><b style="color:#C93636">高</b></td></tr>
+<tr><td style="padding:6px 8px">商家后台批量改价</td><td style="padding:6px 8px">11 月第一个迭代</td><td style="padding:6px 8px"><b style="color:#E0820B">中</b></td></tr>
+</tbody></table>
+<p style="margin:12px 0 0">冻结窗口：10 月 20 日 00:00 至 21 日 12:00，只冻结订单相关发布。</p>`;
+
 /** 星河科技在北京时间办公（UTC+8，无夏令时），与服务进程的时区无关。 */
 const OFFICE_UTC_OFFSET_HOURS = 8;
 
@@ -284,12 +296,57 @@ export async function writeDemoConversations(
 		},
 		t.day(1, "18:40"),
 	);
-	const weeklyLast = await agentSays(
+	await agentSays(
 		opsL,
 		dmLO.id,
-		"草稿起好了：一、Q4 三项进展；二、切流风险（15 日全量对账决定是否按期）；三、10 月 20 日 00:00 至 21 日 12:00 冻结订单相关发布。你看完告诉我要不要加预算口径。",
+		[
+			"草稿起好了，按上周的三段式：",
+			"",
+			"**一、Q4 三项进展**",
+			"",
+			"| 项目 | 上线日期 | 状态 |",
+			"| --- | --- | --- |",
+			"| 新版结算页 | 10 月 31 日 | 高保真稿已交付，接口联调中 |",
+			"| 订单服务迁移 | 10 月 20 日切流 | 预发跑完，待全量对账 |",
+			"| 商家后台批量改价 | 11 月第一个迭代 | 不在 Q4 上线范围 |",
+			"",
+			"**二、切流风险**",
+			"",
+			"- 10 月 15 日全量对账，差异率超过 0.05% 就重新评估切流日期",
+			"- 切流先切写、后切读，回滚依赖顺序",
+			"",
+			"**三、冻结窗口**：10 月 20 日 00:00 至 21 日 12:00，只冻结订单相关发布。",
+			"",
+			"附：对账差异率的口径，周野那边用的是这条：",
+			"",
+			"```sql",
+			"select count(*) filter (where o.amount <> n.amount)::numeric / count(*) as diff_rate",
+			"from legacy_orders o join new_orders n using (order_id)",
+			"where o.created_at >= date '2026-09-01';",
+			"```",
+			"",
+			"你看完告诉我要不要加预算口径。",
+		].join("\n"),
 		t.day(1, "18:42"),
 		weekly.id,
+	);
+	await postMessage(
+		s,
+		linxiao,
+		dmLO.id,
+		{
+			text: "两处改一下：\n\n- 加一行预算口径：**一律不含税**\n- 再出一版能直接贴进邮件的",
+			format: "md",
+			topicId: weekly.id,
+		},
+		t.day(1, "18:50"),
+	);
+	const weeklyLast = await postAgentMessage(
+		s,
+		opsL.id,
+		{ conversationId: dmLO.id, topicId: weekly.id },
+		WEEKLY_REPORT_HTML,
+		{ at: t.day(1, "18:53"), format: "html" },
 	);
 	await readUpTo(linxiao, dmLO.id, seqOf(weeklyLast) - 1);
 
