@@ -1,11 +1,13 @@
 /**
  * `pair` 命令的提示：成功后打印下一步；失败且本机已有 runner.json 时，报错后说明无需重复配对，
- * 且不泄露 token。真起一个本地 HTTP 服务、真跑 CLI 子进程，配对目录用临时的 ORGOS_RUNNER_HOME。
+ * 且不泄露 token；配对请求带来源（--via，默认 cli）。桌面客户端读取配对身份时拿不到 token。
+ * 真起一个本地 HTTP 服务、真跑 CLI 子进程，配对目录用临时的 ORGOS_RUNNER_HOME。
  */
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { readPairingIdentity } from "@/config";
 
 const MAIN = path.join(import.meta.dir, "..", "src", "main.ts");
 const RUNNER_ID = "5b0e8a44-5d0c-4c62-9d44-1f5b2a7c9e01";
@@ -16,6 +18,9 @@ const REJECTED = "配对码无效、已过期或已被使用";
 
 let base: string;
 let server: ReturnType<typeof Bun.serve>;
+let lastBody: Record<string, unknown> | null = null;
+/** 假服务端最近收到的配对请求体（函数读取，避免被收窄成赋值时的类型）。 */
+const received = (): Record<string, unknown> | null => lastBody;
 
 beforeAll(async () => {
 	base = await mkdtemp(path.join(tmpdir(), "orgos-runner-pair-"));
@@ -23,7 +28,9 @@ beforeAll(async () => {
 		port: 0,
 		hostname: "127.0.0.1",
 		async fetch(req) {
-			const { code } = (await req.json()) as { code: string };
+			const body = (await req.json()) as Record<string, unknown>;
+			lastBody = body;
+			const { code } = body;
 			if (code === USED_CODE)
 				return Response.json(
 					{ error: { code: "PAIRING_CODE_INVALID", message: REJECTED } },
@@ -42,7 +49,7 @@ afterAll(async () => {
 	await rm(base, { recursive: true, force: true });
 });
 
-async function runPair(home: string, code: string) {
+async function runPair(home: string, code: string, extra: string[] = []) {
 	const proc = Bun.spawn(
 		[
 			process.execPath,
@@ -53,6 +60,7 @@ async function runPair(home: string, code: string) {
 			server.url.origin,
 			"--name",
 			"测试机",
+			...extra,
 		],
 		{
 			env: {
@@ -114,5 +122,63 @@ describe("pair 的提示", () => {
 		expect(r.exitCode).toBe(1);
 		expect(r.stderr).toContain(REJECTED);
 		expect(r.stderr).not.toContain("已配对");
+	});
+
+	it("配对请求带来源：默认 cli，桌面客户端传 --via desktop；不认识的取值不发请求", async () => {
+		lastBody = null;
+		expect(
+			(await runPair(path.join(base, "via-cli"), "GOOD-CODE")).exitCode,
+		).toBe(0);
+		expect(received()?.via).toBe("cli");
+		const desktop = await runPair(path.join(base, "via-desktop"), "GOOD-CODE", [
+			"--via",
+			"desktop",
+		]);
+		expect(desktop.exitCode).toBe(0);
+		expect(received()?.via).toBe("desktop");
+		lastBody = null;
+		const bad = await runPair(path.join(base, "via-bad"), "GOOD-CODE", [
+			"--via",
+			"web",
+		]);
+		expect(bad.exitCode).toBe(1);
+		expect(bad.stderr).toContain("--via 只能是 desktop 或 cli");
+		expect(received()).toBeNull();
+	});
+});
+
+describe("配对身份", () => {
+	it("只返回 server 与 runnerId，不含 token；没有配对文件或内容不合法 → null", async () => {
+		const home = path.join(base, "identity");
+		await mkdir(home, { recursive: true });
+		await writeFile(
+			path.join(home, "runner.json"),
+			JSON.stringify({
+				server: "http://orgos.example:8930",
+				runnerId: RUNNER_ID,
+				token: OLD_TOKEN,
+			}),
+		);
+		const identity = await readPairingIdentity(
+			{ ORGOS_RUNNER_HOME: home },
+			"/nonexistent",
+		);
+		expect(identity).toEqual({
+			server: "http://orgos.example:8930",
+			runnerId: RUNNER_ID,
+		});
+		expect(JSON.stringify(identity)).not.toContain(OLD_TOKEN);
+		expect(
+			await readPairingIdentity(
+				{ ORGOS_RUNNER_HOME: path.join(base, "nobody") },
+				"/nonexistent",
+			),
+		).toBeNull();
+		const broken = path.join(base, "broken");
+		await mkdir(broken, { recursive: true });
+		await writeFile(path.join(broken, "runner.json"), "{not json");
+		expect(
+			await readPairingIdentity({ ORGOS_RUNNER_HOME: broken }, "/nonexistent"),
+		).toBeNull();
 	});
 });

@@ -31,7 +31,12 @@ import {
 	clearAgentActivity,
 } from "@/lib/activity";
 import { ApiError, api, fetchEventsAfter } from "@/lib/api";
-import { syncDesktop } from "@/lib/desktop";
+import {
+	desktopBridge,
+	onLocalRunnerEnabled,
+	syncDesktop,
+	syncLocalRunner,
+} from "@/lib/desktop";
 import {
 	applyEventToSummaries,
 	maxSeq,
@@ -82,6 +87,8 @@ export type State = {
 	/** 我的设备（null = 还没加载过）。 */
 	runners: Runner[] | null;
 	runnersStatus: LoadStatus | null;
+	/** 页面在桌面客户端里时，本机在当前服务器上的设备 id（设备页标"本机"）。 */
+	localRunnerId: string | null;
 	/** 已加载的任务（卡片与输入框上方的任务条读取），按任务 id。 */
 	tasks: Record<string, TaskView>;
 	tasksStatus: Record<string, LoadStatus>;
@@ -109,6 +116,7 @@ const initialState: State = {
 	activity: {},
 	runners: null,
 	runnersStatus: null,
+	localRunnerId: null,
 	tasks: {},
 	tasksStatus: {},
 	tenantSettings: null,
@@ -168,6 +176,7 @@ async function doLoadSession(): Promise<void> {
 		set({ me, directory: directory.people, org: org.units });
 		applyConversationList(list.items);
 		set({ session: "ready" });
+		void checkLocalRunner();
 	} catch (e) {
 		if (e instanceof ApiError && e.status === 401) {
 			set({ session: "unauthorized" });
@@ -636,13 +645,48 @@ export function loadRunners(): Promise<void> {
 	return runnersLoad;
 }
 
+async function fetchRunners(): Promise<Runner[]> {
+	const { items } = await api.runners();
+	set({ runners: items, runnersStatus: "ready" });
+	return items;
+}
+
 async function doLoadRunners(): Promise<void> {
 	set((s) => ({ runnersStatus: s.runners ? s.runnersStatus : "loading" }));
 	try {
-		const { items } = await api.runners();
-		set({ runners: items, runnersStatus: "ready" });
+		await fetchRunners();
 	} catch {
 		set((s) => ({ runnersStatus: s.runners ? "ready" : "error" }));
+	}
+}
+
+let localRunnerCheck: Promise<void> | null = null;
+
+/**
+ * 页面在桌面客户端里时：需要的话把本机配对到当前账号，并记下本机的设备 id。
+ * 并发调用共用同一次检查；失败留到下次登录、进入设备页或重新打开开关时再试。
+ */
+export function checkLocalRunner(): Promise<void> {
+	if (!desktopBridge()) return Promise.resolve();
+	onLocalRunnerEnabled(() => void checkLocalRunner());
+	localRunnerCheck ??= doCheckLocalRunner().finally(() => {
+		localRunnerCheck = null;
+	});
+	return localRunnerCheck;
+}
+
+async function doCheckLocalRunner(): Promise<void> {
+	if (state.session !== "ready") return;
+	try {
+		const localRunnerId = await syncLocalRunner({
+			bridge: desktopBridge(),
+			origin: window.location.origin,
+			myRunnerIds: async () => (await fetchRunners()).map((r) => r.id),
+			createPairingCode: async () => (await api.createPairingCode()).code,
+		});
+		set({ localRunnerId });
+	} catch (e) {
+		console.warn("本机 Runner 自动配对失败：", messageOf(e));
 	}
 }
 

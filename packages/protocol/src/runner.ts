@@ -11,7 +11,7 @@ import {
 	AcpPermissionOptionSchema,
 	AcpToolCallSchema,
 } from "./acp";
-import { RUNNER_STATUSES, TASK_LOG_KINDS } from "./entities";
+import { RUNNER_STATUSES, RUNNER_VIAS, TASK_LOG_KINDS } from "./entities";
 
 export const RUNNER_PROTOCOL_VERSION = 1;
 
@@ -278,6 +278,8 @@ export const RunnerSchema = z.object({
 	createdAt: z.iso.datetime(),
 	/** 已吊销：推给本人后前端从列表移除。 */
 	revoked: z.boolean().optional(),
+	/** 来源；较早配对、没有记录来源的设备不带。 */
+	via: z.enum(RUNNER_VIAS).optional(),
 });
 export type Runner = z.infer<typeof RunnerSchema>;
 

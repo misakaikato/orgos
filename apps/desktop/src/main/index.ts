@@ -1,9 +1,14 @@
 /**
  * orgos 桌面客户端的主进程：聊天窗口、菜单栏图标与 Runner 看护。
  */
+import { execFileSync } from "node:child_process";
 import { homedir, hostname } from "node:os";
 import path from "node:path";
 import { ACP_ADAPTERS } from "@orgos/protocol";
+import {
+	type PairingIdentity,
+	readPairingIdentity,
+} from "@orgos/runner/config";
 import {
 	app,
 	type BrowserWindow,
@@ -19,13 +24,16 @@ import {
 import { RotatingLog } from "@/main/log-file";
 import { findExecutable, resolveLoginPath } from "@/main/login-path";
 import {
+	deviceNameOf,
 	isPaired,
 	pairArgs,
 	pairOutcome,
 	removePairing,
 	runnerBinaryName,
 	runnerEnv,
+	runnerIdentityOf,
 	serveArgs,
+	shouldStartOnLaunch,
 } from "@/main/runner-cli";
 import {
 	killOrphanRunner,
@@ -53,6 +61,7 @@ import {
 	type ControlState,
 	IPC,
 	type Result,
+	type RunnerIdentity,
 } from "@/shared/ipc";
 
 const customUserData = process.env.ORGOS_DESKTOP_USER_DATA;
@@ -85,6 +94,20 @@ const RUNNER_BINARY = app.isPackaged
 const settings = new SettingsStore(path.join(USER_DATA, "settings.json"), HOME);
 const runnerLog = new RotatingLog(path.join(USER_DATA, "logs", "runner.log"));
 const paired = () => isPaired(process.env, HOME);
+const DEVICE_NAME = deviceNameOf(process.platform, hostname(), (file, args) => {
+	try {
+		return execFileSync(file, args, { encoding: "utf8", timeout: 2_000 });
+	} catch {
+		return null;
+	}
+});
+
+/** runner.json 里的 server 与 runnerId（经 Runner 的 config 模块读取，不含 token）。 */
+let pairing: PairingIdentity | null = null;
+async function refreshPairing(): Promise<PairingIdentity | null> {
+	pairing = await readPairingIdentity(process.env, HOME);
+	return pairing;
+}
 
 let loginPath: string | null = null;
 let loginPathError: string | null = null;
@@ -191,9 +214,8 @@ function controlState(): ControlState {
 		logFile: runnerLog.file,
 		loginPathError,
 		quitPending,
-		defaultDeviceName: hostname()
-			.replace(/\.local$/, "")
-			.slice(0, 40),
+		pairedServer: pairing?.server ?? null,
+		defaultDeviceName: DEVICE_NAME,
 		appVersion: app.getVersion(),
 	};
 }
@@ -203,6 +225,7 @@ const tray = createTray({
 	openControl: showControl,
 	startRunner: () => void startRunner(),
 	stopRunner: () => void supervisor.stop(),
+	setRunAsRunner: (on) => void applyRunAsRunner(on),
 	setOpenAtLogin: (on) => applyOpenAtLogin(on),
 	quit: () => requestQuit(),
 });
@@ -237,6 +260,59 @@ async function startRunner(): Promise<void> {
 		return;
 	}
 	supervisor.start();
+}
+
+/**
+ * "本机作为 Runner"：关闭即停止 Runner（此后不再自动配对）；打开时若本机已配对到当前服务器
+ * 就启动，否则通知聊天页面重新检查是否需要配对。
+ */
+async function applyRunAsRunner(on: boolean): Promise<void> {
+	settings.update({ runAsRunner: on });
+	if (!on) {
+		await supervisor.stop();
+	} else if (shouldStartOnLaunch(settings.get(), await refreshPairing())) {
+		await startRunner();
+	} else if (chatWindow && !chatWindow.isDestroyed()) {
+		chatWindow.webContents.send(IPC.runnerEnabled);
+	}
+	broadcast();
+}
+
+/** 同一时刻只跑一次配对（自动配对与手动配对共用）。 */
+let pairQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * 用现有的 `pair` 命令把本机配对到当前服务器，配好后启动 Runner。
+ * 配对码只作为子进程参数出现，不写日志、不落盘。
+ */
+function pairWith(code: string, name: string): Promise<Result> {
+	const run = async (): Promise<Result> => {
+		const server = serverOrigin();
+		if (!server) return { ok: false, message: "先填写服务器地址" };
+		await loginPathReady;
+		const wasRunning = supervisor.wantsRunning;
+		if (wasRunning) await supervisor.stop();
+		const r = await runOnce(
+			{
+				binary: RUNNER_BINARY,
+				args: pairArgs(code, server, name),
+				env: runnerEnv(process.env, loginPath ?? ""),
+				cwd: HOME,
+			},
+			30_000,
+		);
+		for (const line of `${r.stdout}${r.stderr}`.split("\n"))
+			if (line.trim()) runnerLog.write(`${line}\n`);
+		const outcome = pairOutcome(r.code, r.stdout, r.stderr);
+		await refreshPairing();
+		supervisor.refreshPaired();
+		if (outcome.ok || wasRunning) await startRunner();
+		broadcast();
+		return outcome;
+	};
+	const next = pairQueue.then(run, run);
+	pairQueue = next;
+	return next;
 }
 
 function applyOpenAtLogin(on: boolean): void {
@@ -318,6 +394,33 @@ function registerIpc(): void {
 	ipcMain.on(IPC.focus, (event) => {
 		if (fromChat(event)) showChat();
 	});
+	/** 聊天窗口里、当前服务器源上的页面。 */
+	const fromServerPage = (event: IpcMainInvokeEvent) => {
+		if (!fromChat(event)) return false;
+		try {
+			return new URL(event.sender.getURL()).origin === serverOrigin();
+		} catch {
+			return false;
+		}
+	};
+	ipcMain.handle(
+		IPC.runnerIdentity,
+		async (event): Promise<RunnerIdentity | null> =>
+			fromServerPage(event)
+				? runnerIdentityOf(settings.get(), await refreshPairing())
+				: null,
+	);
+	ipcMain.handle(
+		IPC.pairRunner,
+		async (event, code: unknown): Promise<Result> => {
+			if (!fromServerPage(event)) return { ok: false, message: "无权调用" };
+			if (!settings.get().runAsRunner)
+				return { ok: false, message: "本机作为 Runner 已关闭" };
+			if (typeof code !== "string" || !code.trim())
+				return { ok: false, message: "缺少配对码" };
+			return pairWith(code, DEVICE_NAME);
+		},
+	);
 	ipcMain.handle(
 		IPC.saveServer,
 		async (event, input: unknown): Promise<Result> => {
@@ -350,30 +453,11 @@ function registerIpc(): void {
 	});
 
 	handleControl(IPC.pair, async (code, name) => {
-		const server = serverOrigin();
-		if (!server) return { ok: false, message: "先填写服务器地址" };
 		if (typeof code !== "string" || !code.trim())
 			return { ok: false, message: "请输入配对码" };
 		if (typeof name !== "string" || !name.trim())
 			return { ok: false, message: "请输入设备名" };
-		await loginPathReady;
-		const wasRunning = supervisor.wantsRunning;
-		if (wasRunning) await supervisor.stop();
-		const r = await runOnce(
-			{
-				binary: RUNNER_BINARY,
-				args: pairArgs(code, server, name),
-				env: runnerEnv(process.env, loginPath ?? ""),
-				cwd: HOME,
-			},
-			30_000,
-		);
-		for (const line of `${r.stdout}${r.stderr}`.split("\n"))
-			if (line.trim()) runnerLog.write(`${line}\n`);
-		const outcome = pairOutcome(r.code, r.stdout, r.stderr);
-		supervisor.refreshPaired();
-		if (outcome.ok || wasRunning) await startRunner();
-		return outcome;
+		return pairWith(code, name);
 	});
 
 	handleControl(IPC.unpair, async () => {
@@ -391,6 +475,7 @@ function registerIpc(): void {
 		if (response !== 0) return { ok: false, message: "已取消" };
 		await supervisor.stop();
 		removePairing(process.env, HOME);
+		await refreshPairing();
 		supervisor.refreshPaired();
 		return { ok: true, message: "已解除本机配对" };
 	});
@@ -425,8 +510,8 @@ function registerIpc(): void {
 		return { ok: true };
 	});
 
-	handleControl(IPC.setAutoStart, (on) => {
-		settings.update({ autoStartRunner: on === true });
+	handleControl(IPC.setRunAsRunner, async (on) => {
+		await applyRunAsRunner(on === true);
 		return { ok: true };
 	});
 	handleControl(IPC.setOpenAtLogin, (on) => {
@@ -528,7 +613,8 @@ if (!app.requestSingleInstanceLock()) {
 		broadcast();
 		showChat();
 		await loginPathReady;
-		if (settings.get().autoStartRunner && paired()) supervisor.start();
+		if (shouldStartOnLaunch(settings.get(), await refreshPairing()))
+			supervisor.start();
 		broadcast();
 	});
 }

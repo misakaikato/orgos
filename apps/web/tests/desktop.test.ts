@@ -3,10 +3,18 @@ import type {
 	Event,
 	MeResponse,
 	Principal,
+	RunnerIdentity,
 	WorkItem,
 } from "@orgos/protocol";
 import { describe, expect, it } from "vitest";
-import { desktopNotices, syncDesktop, unreadTotal } from "@/lib/desktop";
+import {
+	desktopNotices,
+	type LocalRunnerDeps,
+	localRunnerPairingNeed,
+	syncDesktop,
+	syncLocalRunner,
+	unreadTotal,
+} from "@/lib/desktop";
 import { getState, type State } from "@/lib/store";
 
 const TENANT = "44444444-4444-4444-8444-444444444444";
@@ -212,5 +220,160 @@ describe("桌面端的角标与通知", () => {
 
 	it("不在桌面壳里时什么都不做", () => {
 		expect(() => syncDesktop(state({}))).not.toThrow();
+	});
+});
+
+describe("本机 Runner 是否需要配对", () => {
+	const ORIGIN = "http://localhost:8930";
+	const MINE = "66666666-6666-4666-8666-666666666666";
+	const OTHERS = "77777777-7777-4777-8777-777777777777";
+	const paired = { paired: true, server: ORIGIN, runnerId: MINE };
+
+	it("未配对", () => {
+		expect(
+			localRunnerPairingNeed(
+				{ paired: false, server: null, runnerId: null },
+				ORIGIN,
+				[MINE],
+			),
+		).toBe("unpaired");
+	});
+
+	it("配对的服务器不是当前页面的源", () => {
+		expect(
+			localRunnerPairingNeed(
+				{ ...paired, server: "http://localhost:8980" },
+				ORIGIN,
+				[MINE],
+			),
+		).toBe("other-server");
+	});
+
+	it("runnerId 不在当前账号的设备列表里（换了账号登录）", () => {
+		expect(
+			localRunnerPairingNeed({ ...paired, runnerId: OTHERS }, ORIGIN, [MINE]),
+		).toBe("not-mine");
+		expect(localRunnerPairingNeed(paired, ORIGIN, [])).toBe("not-mine");
+	});
+
+	it("已配对到当前服务器、属于本人 → 不需要", () => {
+		expect(localRunnerPairingNeed(paired, ORIGIN, [OTHERS, MINE])).toBeNull();
+	});
+});
+
+describe("登录后同步本机 Runner", () => {
+	const ORIGIN = "http://localhost:8930";
+	const OLD = "66666666-6666-4666-8666-666666666666";
+	const NEW = "88888888-8888-4888-8888-888888888888";
+
+	function fakeBridge(initial: RunnerIdentity) {
+		let identity = initial;
+		const paired: string[] = [];
+		return {
+			paired,
+			bridge: {
+				setBadge: () => {},
+				focus: () => {},
+				runnerIdentity: async () => identity,
+				pairRunner: async (code: string) => {
+					paired.push(code);
+					identity = {
+						enabled: true,
+						paired: true,
+						server: ORIGIN,
+						runnerId: NEW,
+					};
+					return { ok: true as const };
+				},
+			},
+		};
+	}
+
+	function deps(
+		bridge: LocalRunnerDeps["bridge"],
+		mine: string[],
+		codes: string[] = [],
+	): LocalRunnerDeps {
+		return {
+			bridge,
+			origin: ORIGIN,
+			myRunnerIds: async () => mine,
+			createPairingCode: async () => {
+				const code = `CODE-${codes.length + 1}`;
+				codes.push(code);
+				return code;
+			},
+		};
+	}
+
+	it("换了账号：生成一次性配对码交给客户端配对，返回新的本机设备", async () => {
+		const f = fakeBridge({
+			enabled: true,
+			paired: true,
+			server: ORIGIN,
+			runnerId: OLD,
+		});
+		const codes: string[] = [];
+		expect(await syncLocalRunner(deps(f.bridge, [], codes))).toBe(NEW);
+		expect(f.paired).toEqual(codes);
+		expect(codes).toHaveLength(1);
+	});
+
+	it("已是本人的设备：不生成配对码", async () => {
+		const f = fakeBridge({
+			enabled: true,
+			paired: true,
+			server: ORIGIN,
+			runnerId: OLD,
+		});
+		const codes: string[] = [];
+		expect(await syncLocalRunner(deps(f.bridge, [OLD], codes))).toBe(OLD);
+		expect(codes).toEqual([]);
+	});
+
+	it("关闭了“本机作为 Runner”：不配对，仍标出本机", async () => {
+		const f = fakeBridge({
+			enabled: false,
+			paired: true,
+			server: ORIGIN,
+			runnerId: OLD,
+		});
+		const codes: string[] = [];
+		expect(await syncLocalRunner(deps(f.bridge, [], codes))).toBe(OLD);
+		expect(codes).toEqual([]);
+		const off = fakeBridge({
+			enabled: false,
+			paired: false,
+			server: null,
+			runnerId: null,
+		});
+		expect(await syncLocalRunner(deps(off.bridge, [], codes))).toBeNull();
+		expect(codes).toEqual([]);
+	});
+
+	it("客户端配对失败：报错", async () => {
+		const bridge = {
+			setBadge: () => {},
+			focus: () => {},
+			runnerIdentity: async (): Promise<RunnerIdentity> => ({
+				enabled: true,
+				paired: false,
+				server: null,
+				runnerId: null,
+			}),
+			pairRunner: async () => ({
+				ok: false as const,
+				message: "配对码无效、已过期或已被使用",
+			}),
+		};
+		await expect(syncLocalRunner(deps(bridge, []))).rejects.toThrow(
+			"配对码无效",
+		);
+	});
+
+	it("普通浏览器（没有桌面桥）：什么都不做", async () => {
+		const codes: string[] = [];
+		expect(await syncLocalRunner(deps(undefined, [], codes))).toBeNull();
+		expect(codes).toEqual([]);
 	});
 });

@@ -8,11 +8,14 @@ import {
 	localPageWith,
 } from "@/main/navigation";
 import {
+	deviceNameOf,
 	pairArgs,
 	pairOutcome,
 	runnerConfigFile,
 	runnerEnv,
+	runnerIdentityOf,
 	serveArgs,
+	shouldStartOnLaunch,
 } from "@/main/runner-cli";
 import {
 	adaptersFlag,
@@ -60,7 +63,7 @@ describe("设置", () => {
 					serverUrl: "localhost:8930",
 					workspace: "relative/dir",
 					adapters: ["codex", "codex", 3],
-					autoStartRunner: "yes",
+					runAsRunner: "yes",
 					openAtLogin: true,
 				},
 				"/Users/me",
@@ -69,6 +72,11 @@ describe("设置", () => {
 		expect(
 			parseSettings({ adapters: ["codex", "codex"] }, "/h").adapters,
 		).toEqual(["codex"]);
+	});
+
+	it("本机作为 Runner 默认开启，可关闭", () => {
+		expect(defaultSettings("/h").runAsRunner).toBe(true);
+		expect(parseSettings({ runAsRunner: false }, "/h").runAsRunner).toBe(false);
 	});
 
 	it("写入后可读回", () => {
@@ -110,7 +118,7 @@ describe("Runner 命令行", () => {
 		).toBe("/tmp/rh/runner.json");
 	});
 
-	it("pair 与 serve 的参数", () => {
+	it("pair 与 serve 的参数；配对来源一律为 desktop", () => {
 		expect(
 			pairArgs(" ABCD-EFGH ", "http://localhost:8930", " 我的电脑 "),
 		).toEqual([
@@ -120,6 +128,8 @@ describe("Runner 命令行", () => {
 			"http://localhost:8930",
 			"--name",
 			"我的电脑",
+			"--via",
+			"desktop",
 		]);
 		expect(serveArgs("/w", null)).toEqual(["serve", "--workspace", "/w"]);
 		expect(serveArgs("/w", "none")).toEqual([
@@ -129,6 +139,65 @@ describe("Runner 命令行", () => {
 			"--adapters",
 			"none",
 		]);
+	});
+
+	it("设备名：macOS 取电脑名称，取不到或其他平台用本机名（去掉 .local），不超过 40 字", () => {
+		const calls: string[][] = [];
+		const named = (out: string | null) => (file: string, args: string[]) => {
+			calls.push([file, ...args]);
+			return out;
+		};
+		expect(
+			deviceNameOf("darwin", "mac.local", named("misaka 的 MacBook Pro\n")),
+		).toBe("misaka 的 MacBook Pro");
+		expect(calls).toEqual([["/usr/sbin/scutil", "--get", "ComputerName"]]);
+		expect(deviceNameOf("darwin", "mac.local", named(null))).toBe("mac");
+		expect(deviceNameOf("darwin", "mac.local", named("  \n"))).toBe("mac");
+		calls.length = 0;
+		expect(deviceNameOf("linux", "box.local", named("不该用"))).toBe("box");
+		expect(calls).toEqual([]);
+		expect(deviceNameOf("darwin", "h", named("x".repeat(60)))).toHaveLength(40);
+		expect(deviceNameOf("win32", "y".repeat(60), named(null))).toHaveLength(40);
+	});
+
+	it("交给聊天页面的身份：开关、是否配对、server 与 runnerId", () => {
+		const pairing = {
+			server: "http://localhost:8930",
+			runnerId: "5b0e8a44-5d0c-4c62-9d44-1f5b2a7c9e01",
+		};
+		expect(runnerIdentityOf({ runAsRunner: true }, pairing)).toEqual({
+			enabled: true,
+			paired: true,
+			...pairing,
+		});
+		expect(runnerIdentityOf({ runAsRunner: false }, null)).toEqual({
+			enabled: false,
+			paired: false,
+			server: null,
+			runnerId: null,
+		});
+	});
+
+	it("启动时只在开启且已配对到当前服务器时启动 Runner", () => {
+		const pairing = {
+			server: "http://localhost:8930",
+			runnerId: "5b0e8a44-5d0c-4c62-9d44-1f5b2a7c9e01",
+		};
+		const on = { runAsRunner: true, serverUrl: "http://localhost:8930" };
+		expect(shouldStartOnLaunch(on, pairing)).toBe(true);
+		expect(shouldStartOnLaunch({ ...on, runAsRunner: false }, pairing)).toBe(
+			false,
+		);
+		expect(
+			shouldStartOnLaunch(
+				{ ...on, serverUrl: "http://localhost:8980" },
+				pairing,
+			),
+		).toBe(false);
+		expect(shouldStartOnLaunch({ ...on, serverUrl: null }, pairing)).toBe(
+			false,
+		);
+		expect(shouldStartOnLaunch(on, null)).toBe(false);
 	});
 
 	it("子进程环境：登录 PATH、本机不走代理，其余继承", () => {

@@ -48,22 +48,39 @@ export async function saveConfig(config: RunnerConfig): Promise<string> {
 	return file;
 }
 
-/** 本机已配对时配对的服务器地址（只取 server，不碰 token）；没有或不合法 → null。 */
-export async function pairedServer(): Promise<string | null> {
+/** 本机的配对身份：配对的服务器与设备 id（不含 token）。 */
+export type PairingIdentity = Pick<RunnerConfig, "server" | "runnerId">;
+
+/**
+ * 读取本机的配对身份（桌面客户端经 `@orgos/runner/config` 引用）：只取 server 与 runnerId，
+ * token 不进入返回值。没有配对文件或内容不合法 → null。
+ */
+export async function readPairingIdentity(
+	env: Record<string, string | undefined>,
+	home: string,
+): Promise<PairingIdentity | null> {
 	let raw: string;
 	try {
-		raw = await readFile(configPath(), "utf8");
+		raw = await readFile(configPathFor(env, home), "utf8");
 	} catch {
 		return null;
 	}
 	try {
-		const parsed = RunnerConfigSchema.pick({ server: true }).safeParse(
-			JSON.parse(raw),
-		);
-		return parsed.success ? parsed.data.server : null;
+		const parsed = RunnerConfigSchema.pick({
+			server: true,
+			runnerId: true,
+		}).safeParse(JSON.parse(raw));
+		return parsed.success
+			? { server: parsed.data.server, runnerId: parsed.data.runnerId }
+			: null;
 	} catch {
 		return null;
 	}
+}
+
+/** 本机已配对时配对的服务器地址；没有或不合法 → null。 */
+export async function pairedServer(): Promise<string | null> {
+	return (await readPairingIdentity(process.env, homedir()))?.server ?? null;
 }
 
 export async function loadConfig(): Promise<RunnerConfig> {

@@ -86,6 +86,7 @@ export function toRunner(row: RunnerRow): Runner {
 		lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
 		createdAt: row.createdAt.toISOString(),
 		...(row.revokedAt ? { revoked: true } : {}),
+		...(row.via ? { via: row.via } : {}),
 	};
 }
 
@@ -135,6 +136,7 @@ export async function pairRunner(
 		tokenHash: hashSecret(token),
 		capabilities: [],
 		status: "offline",
+		via: req.via ?? null,
 	});
 	notifyRunner(row);
 	return { runnerId: row.id, token };

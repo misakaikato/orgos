@@ -63,6 +63,17 @@ function render(state: ControlState): void {
 	el("phase-dot").dataset.phase = state.phase;
 	el("phase-label").textContent = state.phaseLabel;
 
+	const on = settings.runAsRunner;
+	el("run-as-runner").setAttribute("aria-checked", String(on));
+	el("run-as-runner-note").textContent = on
+		? "登录 orgos 后，这台电脑自动成为当前账号的设备；换账号登录会改配对到新账号。"
+		: "已关闭：Runner 不会自动启动，登录后也不会自动配对。";
+	el("pairing-line").textContent = state.pairedServer
+		? `已配对到 ${state.pairedServer}`
+		: on
+			? "还没有配对：登录 orgos 后自动配对。"
+			: "还没有配对。";
+
 	el("quit").hidden = state.quitPending === null;
 	if (state.quitPending)
 		el("quit-text").textContent =
@@ -93,6 +104,9 @@ function render(state: ControlState): void {
 		server.value = settings.serverUrl ?? "";
 
 	el("paired").hidden = !state.paired;
+	el("paired-text").textContent = state.pairedServer
+		? `这台设备已配对（服务器 ${state.pairedServer}）。`
+		: "这台设备已配对。";
 	el("pair-form").hidden = state.paired;
 	const name = el<HTMLInputElement>("device-name");
 	if (!deviceNameTouched && !name.value) name.value = state.defaultDeviceName;
@@ -106,7 +120,6 @@ function render(state: ControlState): void {
 		: "";
 	renderAdapters(state);
 
-	el<HTMLInputElement>("auto-start").checked = settings.autoStartRunner;
 	el<HTMLInputElement>("open-at-login").checked = settings.openAtLogin;
 	el("footer").textContent =
 		`日志：${state.logFile} · 版本 ${state.appVersion}`;
@@ -204,10 +217,15 @@ el("choose-workspace").addEventListener(
 	"click",
 	() => void api.chooseWorkspace(),
 );
-el("auto-start").addEventListener(
-	"change",
-	(e) => void api.setAutoStart((e.target as HTMLInputElement).checked),
-);
+el("run-as-runner").addEventListener("click", () => {
+	if (!current) return;
+	const next = !current.settings.runAsRunner;
+	void run(
+		el("run-as-runner-message"),
+		() => api.setRunAsRunner(next),
+		next ? "正在开启…" : "正在停止 Runner…",
+	);
+});
 el("open-at-login").addEventListener(
 	"change",
 	(e) => void api.setOpenAtLogin((e.target as HTMLInputElement).checked),

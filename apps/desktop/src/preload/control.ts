@@ -24,7 +24,7 @@ const api: OrgosControlApi = {
 	unpair: call(IPC.unpair),
 	chooseWorkspace: call(IPC.chooseWorkspace),
 	setAdapters: call(IPC.setAdapters),
-	setAutoStart: call(IPC.setAutoStart),
+	setRunAsRunner: call(IPC.setRunAsRunner),
 	setOpenAtLogin: call(IPC.setOpenAtLogin),
 	start: call(IPC.start),
 	stop: call(IPC.stop),

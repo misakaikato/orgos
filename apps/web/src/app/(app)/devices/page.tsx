@@ -7,17 +7,22 @@ import { RunnerRow } from "@/components/devices/runner-row";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingRows } from "@/components/ui/states";
-import { loadRunners, useStore } from "@/lib/store";
+import { checkLocalRunner, loadRunners, useStore } from "@/lib/store";
 
-/** 设备：把自己的电脑配对成设备，给助手用；可随时吊销。 */
+/**
+ * 设备：把自己的电脑配对成设备，给助手用；可随时吊销。
+ * 在桌面客户端里打开时，本机自动配对到当前账号，列表里标出"本机"。
+ */
 export default function DevicesPage() {
 	const myAgents = useStore((s) => s.me?.agents);
 	const runners = useStore((s) => s.runners);
 	const status = useStore((s) => s.runnersStatus);
+	const localRunnerId = useStore((s) => s.localRunnerId);
 	const [adding, setAdding] = useState(false);
 
 	useEffect(() => {
 		void loadRunners();
+		void checkLocalRunner();
 	}, []);
 
 	const agents = myAgents ?? [];
@@ -67,7 +72,12 @@ export default function DevicesPage() {
 					) : (
 						<ul className="flex flex-col gap-3">
 							{runners.map((r) => (
-								<RunnerRow key={r.id} runner={r} boundTo={boundTo(r.id)} />
+								<RunnerRow
+									key={r.id}
+									runner={r}
+									boundTo={boundTo(r.id)}
+									local={r.id === localRunnerId}
+								/>
 							))}
 						</ul>
 					)}

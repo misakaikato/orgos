@@ -1,6 +1,6 @@
 /**
  * 菜单栏图标：图标与提示文字随 Runner 状态变化；菜单里是打开聊天、Runner 控制、
- * 启动 / 停止 Runner、开机自启与退出。
+ * 启动 / 停止 Runner、本机作为 Runner、开机自启与退出。
  */
 import { Menu, nativeImage, Tray } from "electron";
 import type { RunnerPhase } from "@/main/supervisor";
@@ -12,6 +12,7 @@ export type TrayActions = {
 	openControl: () => void;
 	startRunner: () => void;
 	stopRunner: () => void;
+	setRunAsRunner: (on: boolean) => void;
 	setOpenAtLogin: (on: boolean) => void;
 	quit: () => void;
 };
@@ -67,6 +68,12 @@ export function createTray(actions: TrayActions): {
 					? { label: "启动 Runner", click: actions.startRunner }
 					: { label: "配对这台设备…", click: actions.openControl },
 			{ type: "separator" },
+			{
+				label: "本机作为 Runner",
+				type: "checkbox",
+				checked: state.settings.runAsRunner,
+				click: (item) => actions.setRunAsRunner(item.checked),
+			},
 			{
 				label: "开机自启",
 				type: "checkbox",

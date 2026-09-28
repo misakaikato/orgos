@@ -29,6 +29,9 @@ export const PERSONAL_NOTE_VISIBILITIES = ["private", "shared"] as const;
 /** 单元资料可选的可见性：unit 仅成员可见，shared 全员可见。 */
 export const UNIT_NOTE_VISIBILITIES = ["unit", "shared"] as const;
 export const RUNNER_STATUSES = ["online", "offline"] as const;
+/** 设备的来源：桌面客户端内置的 Runner，或单独运行的命令行 Runner。 */
+export const RUNNER_VIAS = ["desktop", "cli"] as const;
+export type RunnerVia = (typeof RUNNER_VIAS)[number];
 /** 人的在线状态；忙碌与离开时，别人在私聊里发给他的消息由他的分身先回复。 */
 export const PRINCIPAL_STATUSES = ["available", "busy", "away"] as const;
 export type PrincipalStatus = (typeof PRINCIPAL_STATUSES)[number];

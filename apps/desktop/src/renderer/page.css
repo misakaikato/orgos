@@ -238,6 +238,64 @@ dl.facts dd {
 	font-weight: 400;
 }
 
+h2.flush {
+	margin: 0;
+}
+
+.switch {
+	position: relative;
+	width: 36px;
+	height: 20px;
+	padding: 0;
+	flex: none;
+	border-radius: var(--radius-pill);
+	background: var(--line);
+	transition: background-color 150ms;
+}
+
+.switch[aria-checked="true"] {
+	background: var(--accent);
+}
+
+.switch .knob {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: var(--bg);
+	box-shadow: var(--shadow-card-hover);
+	transition: transform 150ms;
+}
+
+.switch[aria-checked="true"] .knob {
+	transform: translateX(16px);
+}
+
+.pairing-line {
+	margin-top: 8px;
+	font-size: var(--fs-13);
+	overflow-wrap: anywhere;
+}
+
+.advanced > summary {
+	font-size: var(--fs-16);
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.advanced[open] > summary {
+	margin-bottom: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.switch,
+	.switch .knob {
+		transition: none;
+	}
+}
+
 .check {
 	display: flex;
 	gap: 8px;
@@ -248,6 +306,10 @@ dl.facts dd {
 	min-height: 20px;
 	font-size: var(--fs-13);
 	color: var(--muted);
+}
+
+.message.collapse:empty {
+	display: none;
 }
 
 .message[data-tone="error"] {

@@ -1,7 +1,8 @@
 /**
  * orgos 设备 Runner 命令行（bun 运行）。
  *
- *   pair <配对码> --server <地址> --name <设备名>   凭配对码登记本机，写 ~/.orgos/runner.json
+ *   pair <配对码> --server <地址> --name <设备名> [--via desktop|cli]
+ *                                                   凭配对码登记本机，写 ~/.orgos/runner.json
  *   serve --workspace <目录> [--adapters …]         连上服务端，在工作目录里执行代理的请求
  *
  * Runner 执行服务端下发的四项设备能力，并以 ACP 驱动本机的外部助手（Claude Code、Codex 等）；
@@ -17,7 +18,9 @@ import {
 	ErrorBodySchema,
 	PairRunnerResponseSchema,
 	RUNNER_PROTOCOL_VERSION,
+	RUNNER_VIAS,
 	RUNNER_WS_CLOSE,
+	type RunnerVia,
 } from "@orgos/protocol";
 import { AdapterRegistry, candidateAdapters } from "@/acp/adapters";
 import { AcpManager } from "@/acp/session";
@@ -29,10 +32,11 @@ import { startWsBridge } from "@/ws-bridge";
 const RUNNER_VERSION = "0.1.0";
 
 const USAGE = `用法：
-  bun run --cwd apps/runner start pair <配对码> --server <服务端地址> --name <设备名>
+  bun run --cwd apps/runner start pair <配对码> --server <服务端地址> --name <设备名> [--via desktop|cli]
   bun run --cwd apps/runner start serve --workspace <工作目录> [--adapters claude-code,codex|none]
 
-配对信息写在 $ORGOS_RUNNER_HOME/runner.json（默认 ~/.orgos/runner.json）。`;
+配对信息写在 $ORGOS_RUNNER_HOME/runner.json（默认 ~/.orgos/runner.json）。
+--via 标明由谁发起配对：桌面客户端传 desktop，直接在命令行运行默认为 cli。`;
 
 function osLabel(): string {
 	const name =
@@ -72,15 +76,23 @@ async function withPairedHint(message: string): Promise<string> {
 	return `${message.replace(/[。.]$/, "")}。这台电脑已配对（服务器 ${server}），无需重复配对；配对码只能用一次。`;
 }
 
+function parseVia(value: string | undefined): RunnerVia {
+	if (value === undefined) return "cli";
+	const via = RUNNER_VIAS.find((v) => v === value);
+	if (!via) throw new Error(`--via 只能是 ${RUNNER_VIAS.join(" 或 ")}`);
+	return via;
+}
+
 async function requestPairing(
 	base: URL,
 	code: string,
 	name: string,
+	via: RunnerVia,
 ): Promise<{ runnerId: string; token: string }> {
 	const res = await fetch(new URL("/api/runners/pair", base), {
 		method: "POST",
 		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ code, name, os: osLabel() }),
+		body: JSON.stringify({ code, name, os: osLabel(), via }),
 	});
 	const body: unknown = await res.json().catch(() => null);
 	if (res.status !== 201) {
@@ -92,11 +104,16 @@ async function requestPairing(
 	return PairRunnerResponseSchema.parse(body);
 }
 
-async function pair(code: string, server: string, name: string): Promise<void> {
+async function pair(
+	code: string,
+	server: string,
+	name: string,
+	via: RunnerVia,
+): Promise<void> {
 	const base = new URL(server);
 	let paired: { runnerId: string; token: string };
 	try {
-		paired = await requestPairing(base, code, name);
+		paired = await requestPairing(base, code, name, via);
 	} catch (e) {
 		throw new Error(
 			await withPairedHint(e instanceof Error ? e.message : String(e)),
@@ -104,7 +121,7 @@ async function pair(code: string, server: string, name: string): Promise<void> {
 	}
 	const { runnerId, token } = paired;
 	const file = await saveConfig({ server: base.origin, runnerId, token });
-	log.info("paired", { runnerId, name, config: file });
+	log.info("paired", { runnerId, name, via, config: file });
 	process.stdout.write(
 		`已配对“${name}”，配对信息写入 ${file}\n${SERVE_HINT}\n`,
 	);
@@ -208,7 +225,7 @@ async function main(argv: string[]): Promise<void> {
 		const server = flags.get("server");
 		const name = flags.get("name");
 		if (!code || !server || !name) throw new Error(USAGE);
-		await pair(code, server, name);
+		await pair(code, server, name, parseVia(flags.get("via")));
 		return;
 	}
 	if (command === "serve") {

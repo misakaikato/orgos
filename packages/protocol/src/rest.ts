@@ -10,6 +10,7 @@ import {
 	PERSONAL_NOTE_VISIBILITIES,
 	PRINCIPAL_STATUSES,
 	PrincipalSchema,
+	RUNNER_VIAS,
 	RunLogSchema,
 	RunSchema,
 	TASK_STATES,
@@ -599,6 +600,8 @@ export const PairRunnerRequestSchema = z.object({
 	code: z.string().trim().min(1).max(64),
 	name: z.string().trim().min(1).max(DEVICE_NAME_MAX_LENGTH),
 	os: z.string().trim().min(1).max(64),
+	/** 发起配对的是桌面客户端还是命令行 Runner。 */
+	via: z.enum(RUNNER_VIAS).optional(),
 });
 export type PairRunnerRequest = z.infer<typeof PairRunnerRequestSchema>;
 

@@ -11,8 +11,11 @@ export type Settings = {
 	workspace: string;
 	/** 启用的适配器 id；null 表示全部。 */
 	adapters: string[] | null;
-	/** app 启动时是否自动启动 Runner（已配对时）。 */
-	autoStartRunner: boolean;
+	/**
+	 * 本机作为 Runner：登录后自动把本机配对到当前账号，app 启动时（已配对到当前服务器）
+	 * 自动启动 Runner。关闭后停止 Runner，也不再自动配对。
+	 */
+	runAsRunner: boolean;
 	/** 开机自启。 */
 	openAtLogin: boolean;
 };
@@ -22,7 +25,7 @@ export function defaultSettings(home: string): Settings {
 		serverUrl: null,
 		workspace: path.join(home, "orgos-workspace"),
 		adapters: null,
-		autoStartRunner: true,
+		runAsRunner: true,
 		openAtLogin: false,
 	};
 }
@@ -67,10 +70,8 @@ export function parseSettings(raw: unknown, home: string): Settings {
 		serverUrl,
 		workspace,
 		adapters,
-		autoStartRunner:
-			typeof r.autoStartRunner === "boolean"
-				? r.autoStartRunner
-				: d.autoStartRunner,
+		runAsRunner:
+			typeof r.runAsRunner === "boolean" ? r.runAsRunner : d.runAsRunner,
 		openAtLogin:
 			typeof r.openAtLogin === "boolean" ? r.openAtLogin : d.openAtLogin,
 	};

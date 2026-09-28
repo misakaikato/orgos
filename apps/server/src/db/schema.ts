@@ -28,6 +28,7 @@ import {
 	type ProviderEndpoints,
 	RUN_STATES,
 	RUNNER_STATUSES,
+	RUNNER_VIAS,
 	TASK_LOG_KINDS,
 	TASK_STATES,
 	TOPIC_KINDS,
@@ -135,6 +136,8 @@ export const runners = pgTable(
 			.default("offline"),
 		lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
 		revokedAt: timestamp("revoked_at", { withTimezone: true }),
+		/** 来源：desktop（桌面客户端内置）或 cli（命令行）；较早配对的为空。 */
+		via: text("via", { enum: RUNNER_VIAS }),
 		createdAt: createdAt(),
 	},
 	(t) => [index("runners_owner_idx").on(t.ownerId)],

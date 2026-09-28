@@ -7,6 +7,7 @@ import {
 } from "@orgos/protocol";
 import { useState } from "react";
 import { IconDevice } from "@/components/icons";
+import { Tag } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/lib/cx";
 import { formatListTime } from "@/lib/format";
@@ -18,6 +19,11 @@ function presence(runner: Runner): string {
 		? `离线 · 最后在线 ${formatListTime(runner.lastSeenAt)}`
 		: "离线 · 还没连上过";
 }
+
+const VIA_LABEL: Record<NonNullable<Runner["via"]>, string> = {
+	desktop: "桌面客户端",
+	cli: "独立 Runner",
+};
 
 /** 这台设备能运行的外部助手（探测可用的）。 */
 function externalLine(runner: Runner): string | null {
@@ -31,14 +37,20 @@ function externalLine(runner: Runner): string | null {
 		: "这台设备上还没有可用的外部助手";
 }
 
-/** 设备列表的一行：名称、系统、工作目录、在线状态点与最后在线；吊销要二次确认。 */
+/**
+ * 设备列表的一行：名称、来源（桌面客户端 / 独立 Runner）、是否本机、系统、工作目录、
+ * 在线状态点与最后在线；吊销要二次确认。
+ */
 export function RunnerRow({
 	runner,
 	boundTo,
+	local,
 }: {
 	runner: Runner;
 	/** 绑定了这台设备的代理名。 */
 	boundTo: string[];
+	/** 就是当前打开页面的这台电脑（在桌面客户端里）。 */
+	local: boolean;
 }) {
 	const [confirming, setConfirming] = useState(false);
 	const [busy, setBusy] = useState(false);
@@ -69,10 +81,12 @@ export function RunnerRow({
 				/>
 			</span>
 			<div className="min-w-0 flex-1">
-				<div className="flex flex-wrap items-baseline gap-x-2">
+				<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
 					<h2 className="truncate text-14 font-semibold text-ink">
 						{runner.name}
 					</h2>
+					{local ? <Tag>本机</Tag> : null}
+					{runner.via ? <Tag>{VIA_LABEL[runner.via]}</Tag> : null}
 					<span className="text-12 text-muted">{runner.os}</span>
 				</div>
 				<p className="text-12 text-muted">{presence(runner)}</p>

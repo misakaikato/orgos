@@ -31,6 +31,25 @@
 			</section>
 
 			<section class="card">
+				<div class="row spread">
+					<h2 class="flush" id="run-as-runner-label">本机作为 Runner</h2>
+					<button
+						class="switch"
+						id="run-as-runner"
+						type="button"
+						role="switch"
+						aria-checked="false"
+						aria-labelledby="run-as-runner-label"
+					>
+						<span class="knob"></span>
+					</button>
+				</div>
+				<p class="muted" id="run-as-runner-note"></p>
+				<p class="pairing-line" id="pairing-line"></p>
+				<p class="message collapse" id="run-as-runner-message" role="status"></p>
+			</section>
+
+			<section class="card">
 				<h2>状态</h2>
 				<dl class="facts">
 					<dt>连接</dt>
@@ -50,7 +69,7 @@
 					<button id="restart" type="button">重启</button>
 					<button id="open-log" type="button">打开日志</button>
 				</div>
-				<p class="message" id="run-message" role="status"></p>
+				<p class="message collapse" id="run-message" role="status"></p>
 			</section>
 
 			<section class="card">
@@ -66,40 +85,12 @@
 			</section>
 
 			<section class="card">
-				<h2>配对</h2>
-				<div id="paired" hidden>
-					<div class="row spread">
-						<p>这台设备已配对。</p>
-						<button class="danger" id="unpair" type="button">解除本机配对</button>
-					</div>
-					<p class="muted">吊销设备请到网页的“设备”页操作。</p>
-				</div>
-				<form id="pair-form" class="stack" hidden>
-					<p class="muted">在网页的“设备”页生成配对码，填到这里。</p>
-					<div class="row">
-						<div class="field">
-							<label for="code">配对码</label>
-							<input id="code" type="text" autocomplete="off" required />
-						</div>
-						<div class="field">
-							<label for="device-name">设备名</label>
-							<input id="device-name" type="text" maxlength="40" required />
-						</div>
-					</div>
-					<div class="row">
-						<button class="primary" type="submit">配对</button>
-					</div>
-				</form>
-				<p class="message" id="pair-message" role="status"></p>
-			</section>
-
-			<section class="card">
 				<h2>工作目录</h2>
 				<div class="row">
 					<span class="path" id="workspace">—</span>
 					<button id="choose-workspace" type="button">选择…</button>
 				</div>
-				<p class="muted">代理只能读写这个目录里的文件、在这里执行命令。</p>
+				<p class="muted">代理只能访问这个目录；写文件、执行命令会先问你。</p>
 			</section>
 
 			<section class="card">
@@ -108,13 +99,42 @@
 				<div id="adapters"></div>
 			</section>
 
-			<section class="card stack">
+			<section class="card">
 				<h2>启动</h2>
-				<label class="check"
-					><input id="auto-start" type="checkbox" />打开 orgos 时自动启动 Runner</label
-				>
 				<label class="check"><input id="open-at-login" type="checkbox" />开机时打开 orgos</label>
 			</section>
+
+			<details class="card advanced">
+				<summary>高级</summary>
+				<div class="stack advanced-body">
+					<div id="paired" hidden>
+						<div class="row spread">
+							<p id="paired-text">这台设备已配对。</p>
+							<button class="danger" id="unpair" type="button">解除本机配对</button>
+						</div>
+						<p class="muted">吊销设备请到网页的“设备”页操作。</p>
+					</div>
+					<form id="pair-form" class="stack" hidden>
+						<p class="muted">
+							手动配对：在网页的“设备”页生成配对码，填到这里。开启“本机作为 Runner”时不需要这一步。
+						</p>
+						<div class="row">
+							<div class="field">
+								<label for="code">配对码</label>
+								<input id="code" type="text" autocomplete="off" required />
+							</div>
+							<div class="field">
+								<label for="device-name">设备名</label>
+								<input id="device-name" type="text" maxlength="40" required />
+							</div>
+						</div>
+						<div class="row">
+							<button class="primary" type="submit">配对</button>
+						</div>
+					</form>
+					<p class="message" id="pair-message" role="status"></p>
+				</div>
+			</details>
 
 			<footer class="muted small" id="footer"></footer>
 		</main>

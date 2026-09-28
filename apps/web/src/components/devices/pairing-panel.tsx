@@ -66,7 +66,7 @@ function CommandBlock({ label, command }: { label: string; command: string }) {
 
 /**
  * 添加设备：显示一次性配对码（10 分钟倒计时）与在那台电脑上分两步运行的命令（第 1 步配对、第 2 步启动），
- * 并说明也可以在桌面客户端的 Runner 控制里填配对码。
+ * 并说明装了桌面客户端的电脑登录后自动配对，也可以在客户端 Runner 控制的"高级"里手动填配对码。
  * 设备连上后（列表里出现新的在线设备）提示成功。
  */
 export function PairingPanel({ onClose }: { onClose: () => void }) {
@@ -193,8 +193,9 @@ export function PairingPanel({ onClose }: { onClose: () => void }) {
 						</p>
 					</div>
 					<p className="text-13 text-muted">
-						装了桌面客户端的话，也可以在它的 Runner
-						控制里填这个配对码，由它来配对和启动。
+						装了桌面客户端的电脑登录后会自动成为你的设备，不需要配对码；这里的命令给只作为
+						Runner 使用、没装客户端的电脑。也可以在客户端 Runner
+						控制的“高级”里手动填配对码。
 					</p>
 				</div>
 			)}

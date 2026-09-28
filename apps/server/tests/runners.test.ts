@@ -51,11 +51,12 @@ async function newCode(c: Client): Promise<string> {
 	return CreatePairingCodeResponseSchema.parse(await res.json()).code;
 }
 
-function pair(code: string, name = "测试机") {
+function pair(code: string, name = "测试机", via?: "desktop" | "cli") {
 	return anonymous.request("POST", "/api/runners/pair", {
 		code,
 		name,
 		os: "macOS arm64",
+		...(via ? { via } : {}),
 	});
 }
 
@@ -132,6 +133,37 @@ describe("配对", () => {
 		const code = await newCode(alice.client);
 		const results = await Promise.all([pair(code), pair(code), pair(code)]);
 		expect(results.map((r) => r.status).sort()).toEqual([201, 400, 400]);
+	});
+
+	it("配对请求带来源：存进库，设备列表按来源返回；不带来源的设备列表里没有 via；不认识的来源 → 400", async () => {
+		const desktop = PairRunnerResponseSchema.parse(
+			await (
+				await pair(await newCode(dave.client), "Dave 的 Mac", "desktop")
+			).json(),
+		);
+		const cli = PairRunnerResponseSchema.parse(
+			await (await pair(await newCode(dave.client), "机房", "cli")).json(),
+		);
+		const legacy = PairRunnerResponseSchema.parse(
+			await (await pair(await newCode(dave.client), "旧设备")).json(),
+		);
+		const res = await dave.client.request("GET", "/api/runners");
+		const { items } = RunnerListResponseSchema.parse(await res.json());
+		const byId = new Map(items.map((r) => [r.id, r]));
+		expect(byId.get(desktop.runnerId)?.via).toBe("desktop");
+		expect(byId.get(cli.runnerId)?.via).toBe("cli");
+		expect(byId.get(legacy.runnerId)).not.toHaveProperty("via");
+		const bad = await anonymous.request("POST", "/api/runners/pair", {
+			code: await newCode(dave.client),
+			name: "x",
+			os: "macOS arm64",
+			via: "web",
+		});
+		expect(bad.status).toBe(400);
+		for (const id of [desktop.runnerId, cli.runnerId, legacy.runnerId])
+			expect(
+				(await dave.client.request("DELETE", `/api/runners/${id}`)).status,
+			).toBe(204);
 	});
 
 	it("生成配对码需要登录", async () => {
