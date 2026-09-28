@@ -4,7 +4,8 @@
  * 引用解析为依据后剥离；替本人回答他人时记下提问人，供代答记录）。
  * 为他人办事时，最终回复若声称已转交本人而本轮没有调用 escalate_to_owner，先纠正一次（计入模型调用上限），
  * 仍如此则照常落回复并记一条未上报的系统动作。
- * 单次运行最多 8 次模型调用。结束型工具（escalate_to_owner、negotiation_reply）执行后本次运行随即结束。
+ * 单次运行最多 8 次模型调用。结束型工具（escalate_to_owner、negotiation_reply）执行后本次运行随即结束；
+ * post_html 发出的 html 消息就是这次的回复，同样随即结束。结束型工具所在那一步里随调用写的文字一律不发出。
  *
  * 每次运行写一条运行记录（`@/services/runs`）：开始、结束、失败、中止、被打断；模型调用带 runId 记账。
  *
@@ -269,6 +270,16 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 		},
 		startNegotiation: input.startNegotiation,
 	};
+	/** 替本人回答他人时，回复记下提问人与所答的消息（代答记录据此列出）。 */
+	const answerExtra =
+		actingFor.kind === "other"
+			? {
+					askedById: actingFor.principalId,
+					...(scope.triggerEventId !== null
+						? { replyToEventId: scope.triggerEventId }
+						: {}),
+				}
+			: {};
 	const tools = availableTools(scope);
 	const ctx = negotiation
 		? await negotiationContext(s, conversation.id, agentId)
@@ -398,17 +409,7 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 				}
 				const said = extractCitations(text, session.citable);
 				await postAgentMessage(s, agentId, place, said.text || text, {
-					extra: {
-						citations: said.citations,
-						...(actingFor.kind === "other"
-							? {
-									askedById: actingFor.principalId,
-									...(depth === 0 && input.triggerEventId !== undefined
-										? { replyToEventId: input.triggerEventId }
-										: {}),
-								}
-							: {}),
-					},
+					extra: { citations: said.citations, ...answerExtra },
 				});
 				if (unescalated)
 					await act(
@@ -435,6 +436,14 @@ async function runLoop(input: RunInput, r: Resolved): Promise<RunResult> {
 				const out = await executeToolCall(toolCall, scope);
 				if (out.pass) return { outcome: "passed" };
 				await act(toolCall.name, out.summary, out.ok);
+				if (out.replied) {
+					const { html, summary } = out.replied;
+					await postAgentMessage(s, agentId, place, html, {
+						format: "html",
+						extra: { summary, ...answerExtra },
+					});
+					return { outcome: "posted", text: summary };
+				}
 				if (out.end)
 					return {
 						outcome: "ended",

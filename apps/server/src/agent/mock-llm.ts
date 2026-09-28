@@ -10,7 +10,7 @@
  * 按本次运行的触发文本决定行为，优先级：
  * 1. 本次运行已有工具结果 → `完成：<工具结果前 60 字>`，不再调工具；
  * 2. 触发文本里的指令（文本中最先出现者生效）→ 调对应工具（`#api <METHOD> <path> <json>` 调 app_api_call；
- *    `#escalate <问题>|<候选1>|<候选2>…` 带候选上报）；
+ *    `#escalate <问题>|<候选1>|<候选2>…` 带候选上报；`#html <摘要>|<html>` 调 post_html）；
  *    `#claim` 只在文字里说"已转交本人"、不调用工具（收到上报纠正提示后仍如此）；
  *    `#claim-fix <问题>` 第一步同样只说"已转交本人"，收到纠正提示后调用 escalate_to_owner(<问题>)；
  * 3. 群聊里文本既没有 @ 本代理、也不含本代理 handle → pass；
@@ -80,6 +80,14 @@ const DIRECTIVES: Directive[] = [
 				.split("|")
 				.map((x) => x.trim());
 			return options.length > 0 ? { question, options } : { question };
+		},
+	},
+	{
+		pattern: /#html\s+([\s\S]*)$/,
+		tool: "post_html",
+		args: (m) => {
+			const [summary, html] = splitPipe(rest(m));
+			return { summary, html };
 		},
 	},
 	{

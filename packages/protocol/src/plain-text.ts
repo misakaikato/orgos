@@ -1,13 +1,14 @@
 /**
  * 消息正文的纯文本形态：会话列表预览、系统通知、记忆提炼材料、代理的历史上下文等
- * 不渲染格式的地方一律经 `plainTextOf` 取正文。md 去掉标记符号，html 取文本内容。
+ * 不渲染格式的地方一律经 `plainTextOf` 取正文：md 去掉标记符号，html 取文本内容。
+ * 只给人扫一眼的地方（会话列表预览、系统通知、搜索摘要）用 `previewTextOf`：html 带摘要时用摘要。
  *
  * 这里只做"去标记"，不追求完整的 Markdown / HTML 解析：结果给人和模型读，
  * 宁可留下个别符号，也不丢正文。
  */
 import type { MessageFormat } from "./events";
 
-type MessageBody = { text: string; format?: MessageFormat };
+type MessageBody = { text: string; format?: MessageFormat; summary?: string };
 
 /** 消息的格式；旧消息没有 format 字段，按纯文本处理。 */
 export function formatOf(payload: { format?: MessageFormat }): MessageFormat {
@@ -23,6 +24,11 @@ export function plainTextOf(payload: MessageBody): string {
 		case "html":
 			return htmlToPlain(payload.text);
 	}
+}
+
+/** 给人扫一眼的正文：消息带摘要（post_html）时用摘要，否则同 `plainTextOf`。 */
+export function previewTextOf(payload: MessageBody): string {
+	return payload.summary?.trim() || plainTextOf(payload);
 }
 
 // ─────────────────────────── HTML 实体 ───────────────────────────

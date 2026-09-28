@@ -7,6 +7,7 @@ import {
 	formatOf,
 	type MessageFormat,
 	plainTextOf,
+	previewTextOf,
 } from "@orgos/protocol";
 import { describe, expect, it } from "vitest";
 import { historyMessages, modelTextOf } from "@/agent/prompt";
@@ -131,10 +132,34 @@ describe("html", () => {
 		).toBe("项目  日期\nA  10-20\n甲\n乙");
 	});
 
+	it("全文语义：带摘要也取完整的文本内容", () => {
+		expect(
+			plainTextOf({
+				text: "<h1>周报</h1><p>正文</p>",
+				format: "html",
+				summary: "本周周报",
+			}),
+		).toBe("周报\n正文");
+	});
+
 	it("源码里的空白按 HTML 规则折叠；实体解码", () => {
 		expect(
 			html("<p>  多个\n  空白 </p><p>x&nbsp;&amp;&nbsp;y &#8594; z</p>"),
 		).toBe("多个 空白\nx & y → z");
+	});
+});
+
+describe("previewTextOf", () => {
+	it("有摘要用摘要（去首尾空白），没有或是空白时同 plainTextOf", () => {
+		const text = "<h1>周报</h1><p>正文</p>";
+		expect(previewTextOf({ text, format: "html", summary: " 本周周报 " })).toBe(
+			"本周周报",
+		);
+		expect(previewTextOf({ text, format: "html", summary: "  " })).toBe(
+			"周报\n正文",
+		);
+		expect(previewTextOf({ text, format: "html" })).toBe("周报\n正文");
+		expect(previewTextOf({ text: "**md**", format: "md" })).toBe("md");
 	});
 });
 
@@ -183,6 +208,15 @@ describe("模型输入：md 原样，html 转纯文本", () => {
 			{ role: "user", content: "【林晓】**加粗**的问题" },
 			{ role: "assistant", content: "见下表" },
 		]);
+	});
+
+	it("html 带摘要时，模型看到的仍是正文全文", () => {
+		const payload = {
+			text: "<h1>周报</h1><p>迁移完成 70%</p>",
+			format: "html" as const,
+			summary: "周报摘要",
+		};
+		expect(modelTextOf(payload)).toBe("周报\n迁移完成 70%");
 	});
 
 	it("触发消息同一规则", () => {

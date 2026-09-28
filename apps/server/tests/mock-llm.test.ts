@@ -59,6 +59,11 @@ describe("mockDecide 优先级", () => {
 		],
 		["#commit 周五交周报", "create_commitment", { title: "周五交周报" }],
 		[
+			"#html 本周周报|<h1>周报</h1><p>a|b</p>",
+			"post_html",
+			{ summary: "本周周报", html: "<h1>周报</h1><p>a|b</p>" },
+		],
+		[
 			"#negotiate:bob 约周四讨论预算",
 			"negotiate",
 			{ personHandle: "bob", goal: "约周四讨论预算" },

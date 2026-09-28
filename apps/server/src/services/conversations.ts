@@ -23,6 +23,7 @@ import {
 } from "@/db/schema";
 import type { PrincipalRow, Scoped } from "@/db/scope";
 import { AppError, badRequest, notFound } from "@/lib/errors";
+import { sanitizeHtml } from "@/lib/sanitize-html";
 import { toConversation, toEvent, toPrincipal } from "@/lib/serialize";
 import { isUuid } from "@/lib/uuid";
 import { scheduleIdleExtraction } from "@/memory/queue";
@@ -615,10 +616,10 @@ export async function postAs(
 	opts: {
 		onBehalfOfId?: string | null;
 		at?: Date;
-		/** 代理消息的附加载荷（引用、提问人），见 `postAgentMessage`。 */
+		/** 代理消息的附加载荷（引用、提问人、html 摘要），见 `postAgentMessage`。 */
 		extra?: Pick<
 			EventPayload<"message.posted">,
-			"citations" | "askedById" | "replyToEventId"
+			"citations" | "askedById" | "replyToEventId" | "summary"
 		>;
 	} = {},
 ): Promise<Event> {
@@ -665,8 +666,9 @@ export async function postAs(
 			onBehalfOfId: opts.onBehalfOfId ?? null,
 			type: "message.posted",
 			payload: {
-				text: req.text,
+				text: req.format === "html" ? sanitizeHtml(req.text) : req.text,
 				...(req.format && req.format !== "text" ? { format: req.format } : {}),
+				...(extra.summary ? { summary: extra.summary } : {}),
 				mentions,
 				...(req.askTwin ? { askTwin: true } : {}),
 				...(extra.citations?.length ? { citations: extra.citations } : {}),

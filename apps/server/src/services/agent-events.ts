@@ -31,13 +31,13 @@ export async function requireAgentPrincipal(
 /** 代理留痕的位置：会话与其中的话题（缺省为主线）。 */
 export type Place = { conversationId: string; topicId?: string };
 
-/** 代理消息的附加信息：引用的记忆条目；替本人回答他人时的提问人与所答的消息。 */
+/** 代理消息的附加信息：引用的记忆条目；替本人回答他人时的提问人与所答的消息；html 消息的摘要。 */
 export type AgentMessageExtra = Pick<
 	MessagePostedPayload,
-	"citations" | "askedById" | "replyToEventId"
+	"citations" | "askedById" | "replyToEventId" | "summary"
 >;
 
-/** 代理发一条消息（代理须是会话成员）。代理的文字默认按 Markdown 记；html 只来自经应用接口的代发与演示数据。 */
+/** 代理发一条消息（代理须是会话成员）。代理的文字默认按 Markdown 记；html 来自 post_html、经应用接口的代发与演示数据。 */
 export async function postAgentMessage(
 	s: Scoped,
 	agentId: string,

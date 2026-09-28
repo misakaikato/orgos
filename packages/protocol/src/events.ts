@@ -32,6 +32,8 @@ export const MessagePostedPayloadSchema = z.object({
 	text: z.string(),
 	/** 正文格式，缺省为 text（见 `formatOf`）。 */
 	format: MessageFormatSchema.optional(),
+	/** html 消息的一句话摘要：会话列表预览、通知、搜索摘要用它（见 `previewTextOf`）；模型与记忆看全文。 */
+	summary: z.string().optional(),
 	/** 被 @ 的主体 id。 */
 	mentions: z.array(z.uuid()),
 	/** 发送者切到"问分身"：私聊里指向对方的分身，群聊里指向被 @ 的人的分身。 */

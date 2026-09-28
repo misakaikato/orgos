@@ -4,7 +4,7 @@
 import {
 	type Event,
 	type NEGOTIATION_OUTCOMES,
-	plainTextOf,
+	previewTextOf,
 	type TaskState,
 } from "@orgos/protocol";
 import { APPROVAL_OUTCOME_LABEL, capabilityLabel } from "@/lib/device";
@@ -51,7 +51,7 @@ export function describeEvent(
 	const actor = nameOf(event.actorId, map, meId);
 	switch (event.type) {
 		case "message.posted":
-			return plainTextOf(event.payload);
+			return previewTextOf(event.payload);
 		case "member.joined": {
 			const who = nameOf(event.payload.principalId, map, meId);
 			return event.payload.principalId === event.actorId
@@ -107,7 +107,7 @@ export function previewOf(
 	withSpeaker: boolean,
 ): string {
 	if (event.type !== "message.posted") return describeEvent(event, map, meId);
-	const firstLine = plainTextOf(event.payload).split("\n", 1)[0] ?? "";
+	const firstLine = previewTextOf(event.payload).split("\n", 1)[0] ?? "";
 	if (event.actorId === meId) return `你：${firstLine}`;
 	return withSpeaker
 		? `${nameOf(event.actorId, map, meId)}：${firstLine}`

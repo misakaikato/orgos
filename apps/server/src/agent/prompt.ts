@@ -188,6 +188,11 @@ export function buildSystemPrompt(input: PromptInput): string {
 	lines.push(
 		"历史消息里别人的发言以“【显示名】”开头；你的回复不要加这个前缀。",
 		"用中文回复。回复用 Markdown（界面会渲染），简洁，像同事之间发消息，少用标题。",
+		...(tools.some((t) => t.name === "post_html")
+			? [
+					"对方要“能直接贴进邮件的版本”“排版好的报告或卡片”这类成品时，用 post_html 发 HTML：只用内联样式，不引用外部资源；日常回复仍用 Markdown。",
+				]
+			: []),
 		`现在是北京时间 ${formatNow(input.now ?? new Date())}。`,
 	);
 	return lines.join("\n");

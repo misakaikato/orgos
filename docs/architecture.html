@@ -1090,7 +1090,7 @@
 					<tr><td class="k">驱动本机 agent</td><td>ACP（Zed 的 Agent Client Protocol，40 多个 agent 支持）。MCP 管工具、A2A 管跨公司、AG-UI 属前端层，都不替代它；注意与 IBM 的同名协议（已并入 A2A）区分</td><td>本页</td></tr>
 					<tr><td class="k">设备联网</td><td>保持 Runner 主动连出的 WebSocket，不组 VPN；暴露本机服务时做经这条连接的端口转发；设备间大流量阶段二再考虑 iroh 或 tsnet</td><td>本页</td></tr>
 					<tr><td class="k">代理操作软件</td><td>全部 REST 接口自动开放给代理：接口是真相，目录只补用途与风险级别，漏登记测试即失败；为本人时权限同本人、不确认；为他人时只开放公开查询与三个低风险动作（拉含提问人的群、在其所在会话开话题、往其所在群加人），其余上报；鉴权、调试、签发凭据、模型 key 不开放；事件记为"分身代本人"</td><td>规格"应用接口工具"一节</td></tr>
-					<tr><td class="k">消息格式</td><td>text / md / html 三种。md 用 react-markdown 渲染为 React 元素，不渲染内嵌 HTML；html 放进不带 allow-scripts 的沙箱 iframe 并禁止加载外部资源；各处摘要统一经 plainTextOf。任意 React 代码不在聊天里执行：交互组件走白名单 JSON（阶段二），任意代码走独立域名沙箱（工作台，阶段二）</td><td>规格"消息格式"一节</td></tr>
+					<tr><td class="k">消息格式</td><td>text / md / html 三种。md 用 react-markdown 渲染为 React 元素，不渲染内嵌 HTML；html 由代理经 post_html 发出（带一句摘要），入库前在唯一写入口清理，再放进不带 allow-scripts 的沙箱 iframe 并禁止加载外部资源；预览与通知用 previewTextOf（摘要），模型与记忆用 plainTextOf（全文）。任意 React 代码不在聊天里执行：交互组件走白名单 JSON（阶段二），任意代码走独立域名沙箱（工作台，阶段二）</td><td>规格"消息格式"一节</td></tr>
 					<tr><td class="k">客户端形态</td><td>Electron 独立 app：聊天窗口加载同一个 Web 应用；每个客户端内置 Runner，登录后自动配对到当前账号，装了客户端的电脑即是本人的设备；独立命令行 Runner 只给不装客户端的机器；Runner 只经它的命令行驱动，配对信息只在 runner.json</td><td>规格"桌面客户端"一节</td></tr>
 					<tr><td class="k">上报的可靠性</td><td>不靠提示词：为他人办事时回复声称"已转交"而本轮没调用上报工具，运行循环拦下并纠正一次</td><td>规格"上报的运行时校验"</td></tr>
 					<tr><td class="k">记忆</td><td>自动提炼三层；可见范围由来源决定；14 类中 6 类默认禁止对外（私人事务、薪酬、健康、家庭、人事评价、凭据与安全）；第三人私聊只转述事实、隐去来源；回答附依据；代答记录可更正；不接本地 agent 的记忆文件；先不用向量</td><td>规格"记忆层"一节</td></tr>
@@ -1103,7 +1103,7 @@
 		<h2 id="f5">进度</h2>
 		<div class="road">
 			<div class="col"><h3><i class="dot done"></i>已完成并验收</h3><ul>
-				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li><li>组织结构与部门分身（问部门、章程外上报、部门协商真机通过）</li><li>应用接口工具（本人指挥分身拉群、他人借分身拉群、越权请求上报真机通过）</li><li>桌面客户端（打包实测：通知与角标、配对、Runner 被杀自动恢复、连不上服务器页）</li><li>端到端总验收（e2e 14 场景 51 子项；真实模型冒烟连续 5 次通过）</li><li>上报的运行时校验</li><li>架构收束：走向正式产品</li><li>决策待办的候选选项、Runner 配对提示</li><li>客户端即 Runner：登录后自动配对、换账号改配对、可关闭</li><li>消息格式：纯文本、Markdown、HTML（沙箱 iframe，不执行脚本）</li></ul></div>
+				<li>骨架、数据层、多租户</li><li>即时通讯与 Web 界面</li><li>演示数据与模拟台</li><li>视觉改版与团子插画</li><li>分身模型：私聊合并、问分身</li><li>代理引擎（DeepSeek）</li><li>上报闭环</li><li>分身协商</li><li>设备 Runner 与审批</li><li>任务与外部助手（ACP）</li><li>会话内话题、运行记录、压缩与近期工作简报、群聊加人即带分身</li><li>企业模型网关（Claude Code、Codex 企业模式真机通过）</li><li>记忆层（第三人问答与更正真机通过）</li><li>组织结构与部门分身（问部门、章程外上报、部门协商真机通过）</li><li>应用接口工具（本人指挥分身拉群、他人借分身拉群、越权请求上报真机通过）</li><li>桌面客户端（打包实测：通知与角标、配对、Runner 被杀自动恢复、连不上服务器页）</li><li>端到端总验收（e2e 14 场景 51 子项；真实模型冒烟连续 5 次通过）</li><li>上报的运行时校验</li><li>架构收束：走向正式产品</li><li>决策待办的候选选项、Runner 配对提示</li><li>客户端即 Runner：登录后自动配对、换账号改配对、可关闭</li><li>消息格式：纯文本、Markdown、HTML（沙箱 iframe，不执行脚本）；代理用 post_html 回复 HTML</li></ul></div>
 			<div class="col"><h3><i class="dot review"></i>施工中</h3><ul>
 				<li>暂无</li></ul></div>
 			<div class="col"><h3><i class="dot plan"></i>下一步（按顺序）</h3><ul>

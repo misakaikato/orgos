@@ -1,6 +1,6 @@
 /**
  * 代理工具表：唯一的注册处。本阶段注册 pass、memory_search、memory_save、record_decision（单元分身）、
- * delegate_to_teammate、escalate_to_owner、create_commitment、negotiate、negotiation_reply，
+ * delegate_to_teammate、escalate_to_owner、create_commitment、negotiate、negotiation_reply、post_html，
  * 设备的 device_list / device_read / device_write / device_exec，以及应用接口的 app_api_search / app_api_call。
  */
 import type { ToolSpec } from "@/agent/llm-types";
@@ -21,6 +21,7 @@ import {
 } from "@/agent/tools/device";
 import { escalateTool } from "@/agent/tools/escalate";
 import { negotiateTool, negotiationReplyTool } from "@/agent/tools/negotiate";
+import { postHtmlTool } from "@/agent/tools/post-html";
 import type { AgentTool, ToolOutcome, ToolScope } from "@/agent/tools/tool";
 
 export const TOOLS: readonly AgentTool[] = [
@@ -33,6 +34,7 @@ export const TOOLS: readonly AgentTool[] = [
 	createCommitmentTool,
 	negotiateTool,
 	negotiationReplyTool,
+	postHtmlTool,
 	deviceListTool,
 	deviceReadTool,
 	deviceWriteTool,

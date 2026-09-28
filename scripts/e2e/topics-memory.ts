@@ -55,7 +55,7 @@ export const topics: Scenario = {
 	async run(w, step) {
 		const { alice } = w;
 		const dm = w.ids.aliceTwinDm;
-		const secret = `暗号是${"蓝莓".repeat(1000)}`;
+		const secret = `暗号是${"蓝莓".repeat(2000)}`;
 		let a = "";
 		let b = "";
 
@@ -80,8 +80,8 @@ export const topics: Scenario = {
 				const bInput = await lastRunInput(w, alice, b);
 				check(
 					"话题乙的模型输入",
-					bInput < 2_000,
-					"< 2000 字（不含甲的 2000 字暗号）",
+					bInput < 4_000,
+					"< 4000 字（不含甲的 4000 字暗号）",
 					bInput,
 				);
 				const again = await post(alice.client, dm, "暗号还记得吗", {
@@ -91,8 +91,8 @@ export const topics: Scenario = {
 				const aInput = await lastRunInput(w, alice, a);
 				check(
 					"话题甲的模型输入",
-					aInput > 2_000,
-					"> 2000 字（含暗号）",
+					aInput > 4_000,
+					"> 4000 字（含暗号）",
 					aInput,
 				);
 			},

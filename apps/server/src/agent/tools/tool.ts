@@ -69,6 +69,11 @@ export type ToolOutcome = {
 	pass?: true;
 	/** 记下动作后本次运行随即结束，不再产生回复消息（上报后等本人答复、协商中回应了一步）。 */
 	end?: true;
+	/**
+	 * 本次的回复是一条 html 消息（post_html）：记下动作后由循环发出，本次运行随即结束，摘要是交回的结果。
+	 * 与其他结束型工具一样，模型在同一步里随工具调用写的文字不发出。
+	 */
+	replied?: { html: string; summary: string };
 	/** 协商中的这一步回应（negotiation_reply）。 */
 	reply?: NegotiationReply;
 };

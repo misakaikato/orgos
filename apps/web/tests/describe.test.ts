@@ -108,6 +108,16 @@ describe("消息的预览取纯文本", () => {
 		expect(describeEvent(posted("<i>斜</i>", "html"), map, XU)).toBe("斜");
 	});
 
+	it("html 带摘要时，预览与通知正文都用摘要", () => {
+		const event = posted("<h1>周报</h1><p>正文很长</p>", "html");
+		if (event.type !== "message.posted") throw new Error("不是消息");
+		event.payload.summary = "Q4 第 3 周周报：迁移完成 70%";
+		expect(previewOf(event, map, XU, true)).toBe(
+			"林晓的分身：Q4 第 3 周周报：迁移完成 70%",
+		);
+		expect(describeEvent(event, map, XU)).toBe("Q4 第 3 周周报：迁移完成 70%");
+	});
+
 	it("text 原样", () => {
 		expect(previewOf(posted("**原样**"), map, XU, false)).toBe("**原样**");
 	});
