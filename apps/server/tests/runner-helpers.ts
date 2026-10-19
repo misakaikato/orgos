@@ -10,6 +10,7 @@ import {
 import { WSContext } from "hono/ws";
 import type { runners } from "@/db/schema";
 import { runnerWsEvents } from "@/realtime/runner-ws";
+import { closeEvent } from "./ws-event";
 
 type Invoke = Extract<RunnerDown, { t: "invoke" }>;
 type Result = Omit<Extract<RunnerUp, { t: "result" }>, "t" | "jobId">;
@@ -49,7 +50,7 @@ export function connectRunner(
 			);
 		},
 		close: async () => {
-			await events.onClose?.(new CloseEvent("close"), ws);
+			await events.onClose?.(closeEvent(), ws);
 		},
 	};
 	const ws = new WSContext({

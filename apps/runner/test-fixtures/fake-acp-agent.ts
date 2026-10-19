@@ -177,9 +177,17 @@ async function prompt(params: Record<string, unknown>): Promise<unknown> {
 	cancelled = false;
 	const blocks = (params.prompt ?? []) as { type?: string; text?: string }[];
 	const text = blocks.map((b) => b.text ?? "").join("");
-	if (firstTurn) {
-		firstTurn = false;
-		say(`环境变量：${Object.keys(process.env).sort().join(",")}\n`);
+	const announceEnv = firstTurn;
+	if (firstTurn) firstTurn = false;
+	// 只报与隔离有关的键名，不报全量：CI 上有上百个环境变量，那一行会长到把同一轮的回复挤出摘要的截断窗口。
+	if (announceEnv) {
+		const keys = Object.keys(process.env)
+			.filter(
+				(k) =>
+					k === "PATH" || k.startsWith("ORGOS_") || k.startsWith("OPENAI_"),
+			)
+			.sort();
+		say(`环境变量：${keys.join(",")}\n`);
 	}
 	const m = /#(perm|read|sh|wait|llm)\s+([\s\S]*)$/.exec(text);
 	let result = "";

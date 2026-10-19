@@ -21,6 +21,7 @@ import {
 	signUpAndIn,
 	type TeamMember,
 } from "./helpers";
+import { closeEvent } from "./ws-event";
 
 type FakeConn = {
 	frames: BrowserFrame[];
@@ -34,7 +35,7 @@ async function connect(req: Request): Promise<FakeConn> {
 	const conn: FakeConn = {
 		frames: [],
 		closed: null,
-		close: () => events.onClose?.(new CloseEvent("close"), ws),
+		close: () => events.onClose?.(closeEvent(), ws),
 	};
 	const ws = new WSContext({
 		readyState: 1,
