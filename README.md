@@ -8,7 +8,7 @@ AI 原生办公：每个人配一组代理（替你对外说话的**分身**、�
 
 已实现的东西：两人以上的即时通讯（私聊、群聊、话题、任务），两类代理（分身 / 执行助手），代理之间的自动协商，组织记忆与对外政策，设备 Runner（让代理在你自己电脑上读写文件、执行命令、走审批），外部助手（把 Claude Code、Codex 经 ACP 接成代理），以及一个浏览器里同时扮多个同事的模拟台。详细场景见下文「场景走查」。
 
-- **许可**：[MIT](LICENSE)。
+- **许可**：[Apache-2.0](LICENSE)（含专利授权）。
 - 合同：[specs/2026-09-26-phase1-mvp.md](specs/2026-09-26-phase1-mvp.md)（与其他文档冲突时以它为准）
 - 架构与目录：[docs/architecture.html](docs/architecture.html)（架构的唯一来源，本文件只讲怎么用；用浏览器打开）
 - 决策记录：[decisions/](decisions/)
@@ -204,4 +204,6 @@ bun run e2e
 
 ## 许可
 
-[MIT](LICENSE) © 2026 misakaikato
+[Apache License 2.0](LICENSE) © 2026 misakaikato
+
+在遵守许可的前提下可自由使用、修改、分发，包括商业用途；修改过的文件需保留声明，分发时附上许可副本。

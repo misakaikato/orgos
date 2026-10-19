@@ -2,7 +2,7 @@
 	"name": "orgos",
 	"version": "0.1.0",
 	"description": "AI 原生办公实验：人与各自的代理组在同一个即时通讯里协作",
-	"license": "MIT",
+	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/misakaikato/orgos.git"
