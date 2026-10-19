@@ -1,0 +1,9 @@
+orgos
+Copyright 2026 misakaikato
+
+This product includes software developed at orgos
+(https://github.com/misakaikato/orgos).
+
+Portions of the code were adapted from the author's earlier internal project
+"wisp". No third-party code is bundled in this repository; runtime
+dependencies are used under their respective licenses (see bun.lock).
