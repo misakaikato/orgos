@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: orgos
+          POSTGRES_PASSWORD: orgos
+          POSTGRES_DB: orgos
+        ports:
+          - 5470:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U orgos -d orgos"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
+    env:
+      NO_PROXY: localhost,127.0.0.1
+      DATABASE_URL: postgresql://orgos:orgos@127.0.0.1:5470/orgos
+      TEST_DATABASE_URL: postgresql://orgos:orgos@127.0.0.1:5470/orgos_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - name: 安装依赖
+        run: bun install --frozen-lockfile
+
+      - name: 迁移
+        run: bun run db:migrate
+
+      - name: 类型检查
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: 单元与集成测试
+        run: bun run test
+
+      - name: 端到端验收（假模型，不出网）
+        run: bun run e2e

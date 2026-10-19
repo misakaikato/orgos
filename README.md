@@ -2,9 +2,16 @@
 
 AI 原生办公：每个人配一组代理（替你对外说话的**分身**、替你干活的**执行助手**），人和代理在同一个即时通讯里协作；信息先经代理，拿不准的才到人。
 
+> **状态**：阶段一 MVP，一个还在做的实验。数据模型、HTTP 接口与内部结构都会变，不承诺向后兼容。适合读代码、跑演示、提想法，还不适合当成依赖。
+
+已实现的东西：两人以上的即时通讯（私聊、群聊、话题、任务），两类代理（分身 / 执行助手），代理之间的自动协商，组织记忆与对外政策，设备 Runner（让代理在你自己电脑上读写文件、执行命令、走审批），外部助手（把 Claude Code、Codex 经 ACP 接成代理），以及一个浏览器里同时扮多个同事的模拟台。详细场景见下文「场景走查」。
+
+- **许可**：[MIT](LICENSE)。
 - 合同：[specs/2026-09-26-phase1-mvp.md](specs/2026-09-26-phase1-mvp.md)（与其他文档冲突时以它为准）
-- 架构与目录：[docs/architecture.html](docs/architecture.html)（架构的唯一来源，本文件只讲怎么用）
+- 架构与目录：[docs/architecture.html](docs/architecture.html)（架构的唯一来源，本文件只讲怎么用；用浏览器打开）
 - 决策记录：[decisions/](decisions/)
+
+文档里提到的 `wisp` 是作者另一个内部项目，仅用于说明代码从哪里移植、为什么那样写；那个仓库不公开。不影响本项目独立运行。
 
 ## 本地启动
 
@@ -20,7 +27,9 @@ bun run dev          # 服务端 + 界面，开发模式（ORGOS_DEV=1）
 
 浏览器只访问 `http://localhost:8930`（服务端，同时反代内部的 Next 3930）。
 
-模型：环境里有 `DEEPSEEK_API_KEY` 就用真实模型；没有时 `bun run dev` 只从 `~/.pi/agent/auth.json` 读取 `deepseek.key` 这一个字段；仍没有则自动用假模型（`MOCK_LLM=1`，不出网，行为确定，见下文"假模型指令"）。真实模型下演示租户会自动建好 DeepSeek 厂商。
+模型：环境里有 `DEEPSEEK_API_KEY` 就用真实模型；没有时自动用假模型（`MOCK_LLM=1`，不出网，行为确定，见下文"假模型指令"）。作者本机的开发脚本还会顺带读一下 `~/.pi/agent/auth.json` 里的 `deepseek.key`（作者自用 pi 工具的凭证文件，可选路径，仓库不依赖它）；换台机器请直接设 `DEEPSEEK_API_KEY`。真实模型下演示租户会自动建好 DeepSeek 厂商。
+
+其余可配置项见 [.env.example](.env.example)；不开这个文件也能跑，默认值对应本地开发环境。
 
 `bun run seed` 另建一组空白测试账号（见下表），适合从零体验注册后的状态。
 
@@ -154,7 +163,7 @@ bun run smoke:llm   # 真实模型冒烟（需要网络）
 ```
 
 - `bun run e2e`（即 `MOCK_LLM=1 bun scripts/e2e.ts`）：假模型、不出网。自建库 `orgos_e2e`，在 8931 起服务端，建两个租户，以子进程跑真实的 Runner 命令行，覆盖 C1–C4、群聊轮次、防循环、设备、外部助手、租户隔离、话题、记忆、应用接口与组织结构；逐项打印"✓ 场景 · 子项"，失败时打印期望与实际并以非 0 退出；结束后删库。不影响 8930 上正在用的服务与 `orgos` 库。
-- `bun run smoke:llm`：接真实 DeepSeek。key 取环境的 `DEEPSEEK_API_KEY`，没有时与 `bun run dev` 一样只读 `~/.pi/agent/auth.json` 的 `deepseek.key`。自建库 `orgos_smoke`，在 8932 起服务端，跑 C1 一轮、C3 一次上报、一次越权接口请求转为上报，最后打印调用次数与成本（一次约几千 token、不到 0.01 美元）；结束后删库。
+- `bun run smoke:llm`：接真实 DeepSeek。key 取环境的 `DEEPSEEK_API_KEY`（作者本机没有时才会去读 `~/.pi/agent/auth.json` 的 `deepseek.key`）。自建库 `orgos_smoke`，在 8932 起服务端，跑 C1 一轮、C3 一次上报、一次越权接口请求转为上报，最后打印调用次数与成本（一次约几千 token、不到 0.01 美元）；结束后删库。
 
 ## 安全提示（仅限本地）
 
@@ -179,3 +188,18 @@ bun run desktop:dev     # 对着已在运行的服务端开发
 ## 目录结构
 
 见 [docs/architecture.html](docs/architecture.html)。
+
+## 参与
+
+这是一个个人实验项目，没有贡献流程上的讲究：开 issue 说想法或直接提 PR 都可以。提交前请让下面四条各自退出码为 0（CI 也会跑同样的命令）：
+
+```bash
+bun run typecheck
+bun run lint
+bun run test
+bun run e2e
+```
+
+## 许可
+
+[MIT](LICENSE) © 2026 misakaikato
