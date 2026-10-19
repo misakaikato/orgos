@@ -1,5 +1,7 @@
 # orgos
 
+[![CI](https://github.com/misakaikato/orgos/actions/workflows/ci.yml/badge.svg)](https://github.com/misakaikato/orgos/actions/workflows/ci.yml)
+
 AI 原生办公：每个人配一组代理（替你对外说话的**分身**、替你干活的**执行助手**），人和代理在同一个即时通讯里协作；信息先经代理，拿不准的才到人。
 
 > **状态**：阶段一 MVP，一个还在做的实验。数据模型、HTTP 接口与内部结构都会变，不承诺向后兼容。适合读代码、跑演示、提想法，还不适合当成依赖。
