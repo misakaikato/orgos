@@ -47,6 +47,15 @@ jobs:
       - name: 迁移
         run: bun run db:migrate
 
+      # 测试库由测试自己迁移，但库本身要先存在（本地由 scripts/dev-db.sh 建）。
+      - name: 建测试库
+        working-directory: apps/server
+        run: |
+          bun -e 'import postgres from "postgres";
+          const sql = postgres(process.env.DATABASE_URL, { max: 1, onnotice: () => {} });
+          await sql.unsafe("create database orgos_test").catch(() => {});
+          await sql.end();'
+
       - name: 类型检查
         run: bun run typecheck
 
