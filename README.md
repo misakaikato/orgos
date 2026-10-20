@@ -193,14 +193,7 @@ bun run desktop:dev     # 对着已在运行的服务端开发
 
 ## 参与
 
-这是一个个人实验项目，没有贡献流程上的讲究：开 issue 说想法或直接提 PR 都可以。提交前请让下面四条各自退出码为 0（CI 也会跑同样的命令）：
-
-```bash
-bun run typecheck
-bun run lint
-bun run test
-bun run e2e
-```
+这是一个个人实验项目：开 issue 说想法或直接提 PR 都可以。提交 PR 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，其中包含贡献者许可协议（[CLA.md](CLA.md)）——它让项目保留未来调整许可的自由，包括引入双许可或商业版本。
 
 ## 许可
 
